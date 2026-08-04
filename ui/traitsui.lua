@@ -72,12 +72,17 @@ function M.render(ctx)
 
                     local pushed = false;
                     if kit.isFn(im, 'PushID') then pcall(im.PushID, 'bdxtradd' .. id); pushed = true; end
-                    if okAdd then
+                    if inSet then
+                        -- in the set: the button REMOVES (the + only added before)
+                        if kit.litButton(im, '-', true, 22, 18) then
+                            ctx.sets.removeId(set, id);
+                        end
+                    elseif okAdd then
                         if kit.litButton(im, '+', false, 22, 18) then
                             ctx.sets.add(set, id, book, max);
                         end
                     else
-                        kit.ctext(im, kit.COL.dim, inSet and ' * ' or '   ');
+                        kit.ctext(im, kit.COL.dim, '   ');
                     end
                     if pushed and kit.isFn(im, 'PopID') then pcall(im.PopID); end
                     if kit.isFn(im, 'SameLine') then im.SameLine(); end
@@ -88,7 +93,7 @@ function M.render(ctx)
                     kit.ctext(im, col, ('%s  w%d / %spts  Lv.%s%s'):format(
                         s.name, s.trait.weight, s.setPoints or '?', s.level or '?',
                         inSet and '  [in set]' or ''));
-                    kit.tip(im, inSet and 'in the current set'
+                    kit.tip(im, inSet and 'click - to remove from the set'
                         or (okAdd and 'click + to add to the set' or nil));
                 end
                 if kit.isFn(im, 'Separator') then im.Separator(); end
