@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+*.zip
+scratch/
+tools/cache/
