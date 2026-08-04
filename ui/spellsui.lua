@@ -292,10 +292,10 @@ end
 -- list rows and the Spell Info window
 -- ---------------------------------------------------------------------------
 
--- One list row: small icon + the spell name as a Selectable. Returns
--- (leftClicked, rightClicked). In-set spells draw green; unlearned dim
--- (while on BLU); in-set wins.
-function M.listRow(ctx, id, iconSz, nameW, selected)
+-- One list row: icon (unless showIcon is false) + the spell name as a
+-- Selectable. Returns (leftClicked, rightClicked). In-set spells draw
+-- green; unlearned dim (while on BLU); in-set wins.
+function M.listRow(ctx, id, iconSz, nameW, selected, showIcon)
     local im, book = ctx.im, ctx.book;
     local s = book.spells[id];
     local pushed = pushId(im, 'bdxrow' .. id);
@@ -307,12 +307,23 @@ function M.listRow(ctx, id, iconSz, nameW, selected)
     end
     local dim = ctx.blu.onBlu() and not book.learned(id) or false;
     local inSet = ctx.sets.contains(ctx.state.editingSet, id) ~= nil;
-    local h = filetex.spell(book, s, 'grid64');
-    if h ~= nil and kit.isFn(im, 'Image') then
-        local tint = dim and { 0.45, 0.45, 0.50, 0.85 } or { 1, 1, 1, 1 };
-        local okI = pcall(im.Image, h, { iconSz, iconSz }, { 0, 0 }, { 1, 1 }, tint);
-        if not okI then pcall(im.Image, h, { iconSz, iconSz }); end
-        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    local selH = iconSz;
+    if showIcon ~= false then
+        local h = filetex.spell(book, s, 'grid64');
+        if h ~= nil and kit.isFn(im, 'Image') then
+            local tint = dim and { 0.45, 0.45, 0.50, 0.85 } or { 1, 1, 1, 1 };
+            local okI = pcall(im.Image, h, { iconSz, iconSz }, { 0, 0 }, { 1, 1 }, tint);
+            if not okI then pcall(im.Image, h, { iconSz, iconSz }); end
+            if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        end
+        -- keep the name a text-height item, vertically centered on the icon
+        selH = math.min(iconSz, 20);
+        if iconSz > selH and kit.isFn(im, 'GetCursorPosY') and kit.isFn(im, 'SetCursorPosY') then
+            local oky, cy = pcall(im.GetCursorPosY);
+            if oky and type(cy) == 'number' then
+                pcall(im.SetCursorPosY, cy + (iconSz - selH) / 2);
+            end
+        end
     end
     local textCol = inSet and kit.COL.ok or (dim and kit.COL.dim or nil);
     if kit.isFn(im, 'Selectable') then
@@ -321,12 +332,12 @@ function M.listRow(ctx, id, iconSz, nameW, selected)
             im.PushStyleColor(0, textCol);                     -- Text
             pushedCol = true;
         end
-        local ok, r = pcall(im.Selectable, kit.esc(s.name), selected, 0, { nameW, iconSz });
+        local ok, r = pcall(im.Selectable, kit.esc(s.name), selected, 0, { nameW, selH });
         if not ok then ok, r = pcall(im.Selectable, kit.esc(s.name), selected); end
         if pushedCol then im.PopStyleColor(1); end
         clicked = ok and r or false;
     else
-        clicked = kit.litButton(im, s.name, selected, nameW, iconSz);
+        clicked = kit.litButton(im, s.name, selected, nameW, selH);
     end
     if kit.isFn(im, 'IsItemClicked') then
         local okc, rc = pcall(im.IsItemClicked, 1);            -- right button
@@ -369,6 +380,7 @@ end
 function M.render(ctx)
     local im, book, st = ctx.im, ctx.book, ctx.state;
     local f = st.filters;
+    f.sort = f.sort or {};
     st.detailOpen = st.detailOpen or { false };
 
     -- filter row -- combo widths measured over every label they can show
@@ -404,6 +416,7 @@ function M.render(ctx)
     if kit.litButton(im, 'Reset', false, 60, 22) then
         f.text[1] = ''; f.category.value = nil; f.element.value = nil;
         f.spellType.value = nil; f.trait.value = nil; f.learned.value = nil;
+        f.sort.value = nil;
     end
 
     -- resolve filter spec
@@ -421,26 +434,72 @@ function M.render(ctx)
         spellType = f.spellType.value, traitCat = traitCat, learned = learned,
     });
 
-    -- result count (the set/slot meters live in the window header now) plus
-    -- the last add/remove result -- the right-click path has no window open
+    -- sort (in place -- book.filter returns a fresh array each call)
+    local sortBy = f.sort.value;
+    if sortBy ~= nil then
+        local sp = book.spells;
+        if sortBy == 'Name' then
+            table.sort(ids, function(a, b) return sp[a].name < sp[b].name; end);
+        elseif sortBy == 'Level' then
+            table.sort(ids, function(a, b)
+                local la, lb = sp[a].level or 999, sp[b].level or 999;
+                if la ~= lb then return la < lb; end
+                return sp[a].name < sp[b].name;
+            end);
+        elseif sortBy == 'Type' then
+            table.sort(ids, function(a, b)
+                local ta, tb = sp[a].spellType or '~', sp[b].spellType or '~';
+                if ta ~= tb then return ta < tb; end
+                return sp[a].name < sp[b].name;
+            end);
+        end
+    end
+
+    -- results row: count, sort, view density, and the last add/remove note
+    -- (the right-click path has no window open to show it in)
     kit.ctext(im, kit.COL.dim, ('%d spells'):format(#ids));
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    kit.ctext(im, kit.COL.dim, '   Sort:');
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    kit.combo(im, '##bdxsort', f.sort, { 'Name', 'Level', 'Type' }, 'default',
+        comboW({ 'Name', 'Level', 'Type' }, 'default'));
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    kit.ctext(im, kit.COL.dim, '  View:');
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    local density = ctx.cfg.codexDensity or 'normal';
+    local dChoices = { 'Big (64px icons)', 'Compact (no icons)' };
+    local dToKey = { ['Big (64px icons)'] = 'big', ['Compact (no icons)'] = 'compact' };
+    local dFromKey = { big = dChoices[1], compact = dChoices[2] };
+    local dstate = { value = dFromKey[density] };
+    if kit.combo(im, '##bdxview', dstate, dChoices, 'Normal', comboW(dChoices, 'Normal')) then
+        density = dstate.value and dToKey[dstate.value] or 'normal';
+        ctx.cfg.codexDensity = density;
+        if ctx.save then ctx.save(); end
+    end
     if st.addNote then
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
         kit.ctext(im, kit.COL.dim, '   ' .. st.addNote);
     end
 
-    -- the list: icon + name rows, 1-3 columns by available width
+    -- the list -- density picks icon size, column target width and cap:
+    -- big = 64px icons in 1-2 columns, normal = 24px in up to 3,
+    -- compact = text only in up to 5
     local availW = availWidth(im, 800);
-    local cols = math.max(1, math.min(3, math.floor(availW / 250)));
+    local iconSz, targetW, maxCols, showIcon = 24, 250, 3, true;
+    if density == 'big' then
+        iconSz, targetW, maxCols = 64, 340, 2;
+    elseif density == 'compact' then
+        iconSz, targetW, maxCols, showIcon = 18, 180, 5, false;
+    end
+    local cols = math.max(1, math.min(maxCols, math.floor(availW / targetW)));
     local colW = math.floor((availW - 16) / cols);   -- -16: scrollbar margin
-    local iconSz = 24;
-    local nameW = math.max(colW - iconSz - 28, 80);
+    local nameW = math.max(colW - (showIcon and iconSz or 0) - 28, 80);
 
     local function rows()
         for i, id in ipairs(ids) do
             local col = (i - 1) % cols;
             if col ~= 0 and kit.isFn(im, 'SameLine') then im.SameLine(col * colW + 8); end
-            local lclick, rclick = M.listRow(ctx, id, iconSz, nameW, st.selectedId == id);
+            local lclick, rclick = M.listRow(ctx, id, iconSz, nameW, st.selectedId == id, showIcon);
             if lclick then
                 st.selectedId = id;
                 st.detailOpen[1] = true;

@@ -34,6 +34,7 @@ local defaults = T{
     autoRestore = false,      -- re-add spells stripped by level changes
     lastApplied = T{ },       -- { ids = {20} } -- the auto-restore target
     activeSetName = '',       -- last selected saved set, reloaded at startup
+    codexDensity = 'normal',  -- codex list size: 'big' | 'normal' | 'compact'
 };
 
 local cfg = settings.load(defaults);
