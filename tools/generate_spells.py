@@ -55,9 +55,17 @@ FIELD_MP = {
     725: 116, 726: 116, 727: 116, 728: 116,   #   cost 116 MP (retail values)
 }
 FIELD_UNBRIDLED = {736}                  # Thunderbolt: Unbridled + food gate
+# base LSB has no blue_spell_mods rows for the cexi75 SoA spells; all eight
+# read off the live stats in game (Henrik, 2026-08-04)
 FIELD_MODS = {
-    720: [("MP", 30), ("INT", 8)],       # Spectral Floe (base LSB has no mod
-                                         #   rows for the cexi75 SoA spells)
+    719: [("MP", 30), ("STR", 8)],                            # Searing Tempest
+    720: [("MP", 30), ("INT", 8)],                            # Spectral Floe
+    721: [("MP", 30), ("DEX", 8)],                            # Anvil Lightning
+    722: [("MP", 30), ("VIT", 8)],                            # Entomb
+    725: [("HP", 40), ("STR", 4), ("AGI", 4)],                # Blinding Fulgor
+    726: [("MP", 30), ("MND", 8)],                            # Scouring Spate
+    727: [("MP", 30), ("AGI", 8)],                            # Silent Storm
+    728: [("MP", 30), ("VIT", 4), ("INT", 4), ("MND", 4)],    # Tenebral Crush
 }
 FIELD_NOTES = {
     736: "Requires Unbridled Learning AND the food Lengua Regia (cooked from "

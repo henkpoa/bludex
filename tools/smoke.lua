@@ -48,7 +48,11 @@ check(not has(book.filter({ stat = 'STR' }), 720), 'stat filter excludes non-gra
 check(book.spells[720].mods[1].stat == 'MP' and book.spells[720].mods[1].value == 30
     and book.spells[720].mods[2].stat == 'INT' and book.spells[720].mods[2].value == 8,
     'field: Spectral Floe MP+30 INT+8');
-check(book.spells[719].mods == nil, 'Searing Tempest stats still unknown (verify: mods)');
+check(book.spells[719].mods[2].stat == 'STR' and book.spells[719].mods[2].value == 8,
+    'field: Searing Tempest MP+30 STR+8');
+check(#book.spells[728].mods == 4, 'field: Tenebral Crush grants four stats');
+check(has(book.filter({ stat = 'AGI' }), 725) and has(book.filter({ stat = 'AGI' }), 727),
+    'stat filter: AGI finds Blinding Fulgor and Silent Storm');
 local dw = nil;
 for _, t in ipairs(book.traitChoices) do
     if t.name == 'Dual Wield' then dw = t.cat; end
