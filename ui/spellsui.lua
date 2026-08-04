@@ -102,6 +102,10 @@ function M.tooltip(ctx, id)
     if s.unbridled then lines[#lines + 1] = 'Unbridled Learning'; end
     local lt = learnedText(ctx, id);
     if lt then lines[#lines + 1] = lt; end
+    if s.castable and not s.unbridled and s.setPoints then
+        lines[#lines + 1] = ctx.sets.contains(ctx.state.editingSet, id)
+            and 'right-click: remove from set' or 'right-click: add to set';
+    end
     kit.tip(im, table.concat(lines, '\n'));
 end
 
@@ -129,15 +133,23 @@ function M.detail(ctx, id)
         kit.ctext(im, kit.COL.err, 'Learnable but NEVER castable at the 75 cap.');
     end
 
-    -- add-to-set FIRST -- the working button belongs at the top, not under
-    -- a screen of lore
+    -- add/remove FIRST -- the working button belongs at the top, not under
+    -- a screen of lore. It flips to remove when the spell is in the set.
     if s.castable and not s.unbridled and s.setPoints then
-        local addW = kit.measure(im, { 'Add to current set' }, 150);
-        if kit.litButton(im, 'Add to current set', false, addW, 26) then
-            local max = ctx.budgetMax();
-            local ok, why = ctx.sets.add(ctx.state.editingSet, id, book, max);
-            ctx.state.addNote = ok and ('Added %s.'):format(s.name) or ('Cannot add: %s.'):format(why);
-            if ok and ctx.save then ctx.save(); end
+        local btnW = kit.measure(im, { 'Add to current set', 'Remove from set' }, 150);
+        if ctx.sets.contains(ctx.state.editingSet, id) then
+            if kit.litButton(im, 'Remove from set', true, btnW, 26) then
+                ctx.sets.removeId(ctx.state.editingSet, id);
+                ctx.state.addNote = ('Removed %s.'):format(s.name);
+                if ctx.save then ctx.save(); end
+            end
+        else
+            if kit.litButton(im, 'Add to current set', false, btnW, 26) then
+                local max = ctx.budgetMax();
+                local ok, why = ctx.sets.add(ctx.state.editingSet, id, book, max);
+                ctx.state.addNote = ok and ('Added %s.'):format(s.name) or ('Cannot add: %s.'):format(why);
+                if ok and ctx.save then ctx.save(); end
+            end
         end
         if ctx.state.addNote then
             kit.ctext(im, kit.COL.dim, ctx.state.addNote);
@@ -226,19 +238,21 @@ end
 -- list rows and the Spell Info window
 -- ---------------------------------------------------------------------------
 
--- One list row: small icon + the spell name as a Selectable. Returns true on
--- click. Unlearned spells draw dimmed while on BLU.
+-- One list row: small icon + the spell name as a Selectable. Returns
+-- (leftClicked, rightClicked). In-set spells draw green; unlearned dim
+-- (while on BLU); in-set wins.
 function M.listRow(ctx, id, iconSz, nameW, selected)
     local im, book = ctx.im, ctx.book;
     local s = book.spells[id];
     local pushed = pushId(im, 'bdxrow' .. id);
-    local clicked = false;
+    local clicked, rclicked = false, false;
     if s == nil then
         clicked = kit.litButton(im, '#' .. tostring(id), selected, nameW, iconSz);
         popId(im, pushed);
-        return clicked;
+        return clicked, false;
     end
     local dim = ctx.blu.onBlu() and not book.learned(id) or false;
+    local inSet = ctx.sets.contains(ctx.state.editingSet, id) ~= nil;
     local h = filetex.spell(book, s, 'grid64');
     if h ~= nil and kit.isFn(im, 'Image') then
         local tint = dim and { 0.45, 0.45, 0.50, 0.85 } or { 1, 1, 1, 1 };
@@ -246,10 +260,11 @@ function M.listRow(ctx, id, iconSz, nameW, selected)
         if not okI then pcall(im.Image, h, { iconSz, iconSz }); end
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
     end
+    local textCol = inSet and kit.COL.ok or (dim and kit.COL.dim or nil);
     if kit.isFn(im, 'Selectable') then
         local pushedCol = false;
-        if dim and kit.isFn(im, 'PushStyleColor') and kit.isFn(im, 'PopStyleColor') then
-            im.PushStyleColor(0, kit.COL.dim);                 -- Text
+        if textCol and kit.isFn(im, 'PushStyleColor') and kit.isFn(im, 'PopStyleColor') then
+            im.PushStyleColor(0, textCol);                     -- Text
             pushedCol = true;
         end
         local ok, r = pcall(im.Selectable, kit.esc(s.name), selected, 0, { nameW, iconSz });
@@ -259,8 +274,12 @@ function M.listRow(ctx, id, iconSz, nameW, selected)
     else
         clicked = kit.litButton(im, s.name, selected, nameW, iconSz);
     end
+    if kit.isFn(im, 'IsItemClicked') then
+        local okc, rc = pcall(im.IsItemClicked, 1);            -- right button
+        rclicked = okc and rc or false;
+    end
     popId(im, pushed);
-    return clicked;
+    return clicked, rclicked;
 end
 
 -- The Spell Info window: opened by clicking a row, closable via the title
@@ -348,8 +367,13 @@ function M.render(ctx)
         spellType = f.spellType.value, traitCat = traitCat, learned = learned,
     });
 
-    -- result count (the set/slot meters live in the window header now)
+    -- result count (the set/slot meters live in the window header now) plus
+    -- the last add/remove result -- the right-click path has no window open
     kit.ctext(im, kit.COL.dim, ('%d spells'):format(#ids));
+    if st.addNote then
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        kit.ctext(im, kit.COL.dim, '   ' .. st.addNote);
+    end
 
     -- the list: icon + name rows, 1-3 columns by available width
     local availW = availWidth(im, 800);
@@ -362,10 +386,27 @@ function M.render(ctx)
         for i, id in ipairs(ids) do
             local col = (i - 1) % cols;
             if col ~= 0 and kit.isFn(im, 'SameLine') then im.SameLine(col * colW + 8); end
-            if M.listRow(ctx, id, iconSz, nameW, st.selectedId == id) then
+            local lclick, rclick = M.listRow(ctx, id, iconSz, nameW, st.selectedId == id);
+            if lclick then
                 st.selectedId = id;
                 st.detailOpen[1] = true;
                 st.detailFocus = true;
+            end
+            if rclick then
+                -- toggle set membership without opening the window
+                local s = book.spells[id];
+                if s ~= nil then
+                    if ctx.sets.contains(st.editingSet, id) then
+                        ctx.sets.removeId(st.editingSet, id);
+                        st.addNote = ('Removed %s.'):format(s.name);
+                        if ctx.save then ctx.save(); end
+                    else
+                        local ok, why = ctx.sets.add(st.editingSet, id, book, ctx.budgetMax());
+                        st.addNote = ok and ('Added %s.'):format(s.name)
+                            or ('Cannot add %s: %s.'):format(s.name, why);
+                        if ok and ctx.save then ctx.save(); end
+                    end
+                end
             end
             M.tooltip(ctx, id);
         end
