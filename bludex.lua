@@ -25,6 +25,7 @@ local book   = require('bludex\\lib\\spellbook');
 local blu    = require('bludex\\lib\\blu');
 local sets   = require('bludex\\lib\\setmodel');
 local config = require('bludex\\lib\\config');
+local blusetsimport = require('bludex\\lib\\blusetsimport');
 local host   = require('bludex\\ui\\host');
 
 local cfg = settings.load(config.defaults());
@@ -74,6 +75,7 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
     if args[2]:any('help') then
         msg('/bludex (or /bdx) - toggle the window.');
         msg('/bludex list - list saved sets.');
+        msg('/bludex import [name] - import blusets spell lists as saved sets.');
         msg('/bludex apply <name> - apply a saved set (only the changed slots).');
         msg('/bludex reset - unset every spell.');
         msg('/bludex refresh - re-request job data (wakes a stuck points read).');
@@ -167,6 +169,19 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
             for i = 1, 20 do if (entry.ids[i] or 0) ~= 0 then n = n + 1; end end
             msg(('  %s (%d spells)'):format(entry.name, n));
         end
+        return;
+    end
+
+    if args[2]:any('import') then
+        local res = blusetsimport.importAll(cfg, book,
+            #args >= 3 and table.concat(args, ' ', 3) or nil);
+        if #res.imported > 0 then saveSettings(); end
+        msg(blusetsimport.describe(res));
+        for _, name in ipairs(res.imported) do msg(('  imported: %s'):format(name)); end
+        for _, name in ipairs(res.skipped) do
+            msg(('  skipped: %s - a bludex set by that name exists.'):format(name));
+        end
+        for _, u in ipairs(res.unknown) do msg(('  unknown spell - %s'):format(u)); end
         return;
     end
 

@@ -76,7 +76,7 @@ check(book.traits.rules.assimilationPerMerit == 2, 'field: +2 per Assimilation m
 check(book.traits.rules.expectedTotalAt75 == 80, 'field: expected total 80');
 
 print('smoke: sorted apply layout');
-local slIds = { 623, 513, 0, 719 };   -- Head Butt, Pollen, empty, Searing Tempest
+local slIds = { 623, 513, 0, 719 };   -- Head Butt, Sandspin, empty, Searing Tempest
 local sl = sets.sortedLayout(slIds, book);
 check(sl[1] ~= 0 and sl[2] ~= 0 and sl[3] ~= 0 and sl[4] == 0 and sl[20] == 0,
     'sortedLayout packs into slots 1..n with a zero tail');
@@ -84,6 +84,20 @@ check(book.spells[sl[1]].level <= book.spells[sl[2]].level
     and book.spells[sl[2]].level <= book.spells[sl[3]].level,
     'sortedLayout is level-ascending');
 check(sets.sortedLayout({}, book)[1] == 0, 'sortedLayout of an empty set is all zeros');
+
+print('smoke: blusets import');
+local imp = require('bludex\\lib\\blusetsimport');
+local ids2, unk = imp.parse({ 'Head Butt', '', ' Pollen ', 'Not A Spell' }, book);
+check(ids2[1] == 623 and ids2[2] == 0 and ids2[3] == 549 and ids2[20] == 0,
+    'names map to slot ids (blank line = empty slot, whitespace trimmed)');
+check(#unk == 1 and unk[1] == 'Not A Spell', 'unknown names reported');
+check(imp.parse({}, book)[20] == 0, 'empty file -> all-zero ids');
+local icfg = { sets = { { name = 'DI', ids = {} } } };
+check(imp.describe({ found = 0, imported = {}, skipped = {}, unknown = {} })
+    :find('No blusets') ~= nil, 'describe: nothing found');
+check(imp.describe({ found = 2, imported = { 'a' }, skipped = { 'b' }, unknown = {} })
+    == 'Imported 1 set; 1 skipped (name exists).', 'describe: summary line');
+check(#imp.scan() == 0, 'scan is headless-safe (no AshitaCore -> empty)');
 
 print('smoke: dlac module adapter');
 local dm = require('bludex\\dlacmodule\\init');

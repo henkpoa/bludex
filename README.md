@@ -95,7 +95,12 @@ Do not run the standalone addon and the dlac flavor at the same time.
 /bludex list       list saved sets              /bludex reset          unset every spell
 /bludex refresh    re-request job data          /bludex delay <0.2-5>  seconds between packets
 /bludex mode safe|fast                          /bludex debug          signature/points diagnostics
+/bludex import [name]  import blusets spell lists as saved sets
 ```
+
+Migrating from the `blusets` addon? `/bludex import` (or the *Import blusets* button on
+the Sets tab) pulls every saved list from `config/addons/blusets/*.txt` in as bludex
+sets, slot for slot. A name that already exists in bludex is skipped, never overwritten.
 
 ## For developers
 
