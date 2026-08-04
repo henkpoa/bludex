@@ -1,0 +1,57 @@
+name: Sync library into dlac
+
+# On every push to main, vendor the bludex library (lib/ ui/ data/ icons/)
+# into the dlac repo as dlac/bludexlib/, so dlac users get the BLU helper
+# with no separate bludex install. The library is relocatable (modules
+# derive their require base from their own module name), so this is a pure
+# copy -- no rewriting.
+#
+# One-time setup: create a fine-grained PAT with Contents read/write on
+# henkpoa/dlac and store it as the DLAC_SYNC_TOKEN secret in henkpoa/bludex.
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  vendor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout bludex
+        uses: actions/checkout@v4
+
+      - name: Checkout dlac (dev)
+        uses: actions/checkout@v4
+        with:
+          repository: henkpoa/dlac
+          token: ${{ secrets.DLAC_SYNC_TOKEN }}
+          ref: dev
+          path: .dlac
+
+      - name: Vendor the library into dlac/bludexlib
+        run: |
+          rm -rf .dlac/bludexlib
+          mkdir -p .dlac/bludexlib
+          cp -r lib ui data icons .dlac/bludexlib/
+          if [ -f LICENSE ]; then cp LICENSE .dlac/bludexlib/LICENSE; fi
+          {
+            echo "# bludexlib -- VENDORED, do not hand-edit"
+            echo ""
+            echo "Synced from https://github.com/henkpoa/bludex @ ${GITHUB_SHA}"
+            echo "by .github/workflows/sync-dlac.yml on every push to main."
+            echo "Edit in the bludex repo; this copy is overwritten wholesale."
+          } > .dlac/bludexlib/VENDORED.md
+
+      - name: Commit and push to dlac dev
+        run: |
+          cd .dlac
+          git config user.name  "bludex-sync[bot]"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A bludexlib
+          if git diff --cached --quiet; then
+            echo "bludexlib already up to date"
+            exit 0
+          fi
+          git commit -m "bludexlib: sync from bludex@${GITHUB_SHA:0:7}"
+          git push origin dev

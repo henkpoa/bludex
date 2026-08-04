@@ -4,7 +4,8 @@
     (the "I want more Dual Wield" answer).
 ]]--
 
-local kit = require('bludex\\ui\\kit');
+local ROOT = (...):sub(1, -#('ui\\traitsui') - 1);   -- relocatable require base
+local kit = require(ROOT .. 'ui\\kit');
 
 local M = {};
 

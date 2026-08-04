@@ -8,9 +8,10 @@
     no signature -> settings override -> '?'.
 ]]--
 
-local kit      = require('bludex\\ui\\kit');
-local filetex  = require('bludex\\ui\\filetex');
-local spellsui = require('bludex\\ui\\spellsui');
+local ROOT = (...):sub(1, -#('ui\\setsui') - 1);     -- relocatable require base
+local kit      = require(ROOT .. 'ui\\kit');
+local filetex  = require(ROOT .. 'ui\\filetex');
+local spellsui = require(ROOT .. 'ui\\spellsui');
 
 local M = {};
 

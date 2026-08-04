@@ -14,6 +14,10 @@
 
 local M = {};
 
+-- relocatable base: icons live inside this library's own folder, wherever
+-- it sits ('bludex\' standalone, '<host>\bludexlib\' vendored)
+local ROOT = (...):sub(1, -#('ui\\filetex') - 1);
+
 local _fok, ffi = pcall(require, 'ffi');
 local _dok, d3d = pcall(require, 'd3d8');
 local has = _fok and _dok and ffi ~= nil and d3d ~= nil;
@@ -34,8 +38,8 @@ function M.handle(relpath)
     if tried[relpath] then return cache[relpath]; end
     tried[relpath] = true;
     pcall(function()
-        local path = string.format('%saddons\\bludex\\icons\\%s.png',
-            AshitaCore:GetInstallPath(), relpath:gsub('/', '\\'));
+        local path = string.format('%saddons\\%sicons\\%s.png',
+            AshitaCore:GetInstallPath(), ROOT, relpath:gsub('/', '\\'));
         local ptr = ffi.new('IDirect3DTexture8*[1]');
         if ffi.C.D3DXCreateTextureFromFileA(dev, path, ptr) == 0 then   -- S_OK
             local tex = d3d.gc_safe_release(ffi.cast('IDirect3DTexture8*', ptr[0]));

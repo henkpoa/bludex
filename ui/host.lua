@@ -7,11 +7,12 @@
     instead of tearing the frame. Style pushes pop on every path.
 ]]--
 
-local kit      = require('bludex\\ui\\kit');
-local filetex  = require('bludex\\ui\\filetex');
-local spellsui = require('bludex\\ui\\spellsui');
-local setsui   = require('bludex\\ui\\setsui');
-local traitsui = require('bludex\\ui\\traitsui');
+local ROOT = (...):sub(1, -#('ui\\host') - 1);       -- relocatable require base
+local kit      = require(ROOT .. 'ui\\kit');
+local filetex  = require(ROOT .. 'ui\\filetex');
+local spellsui = require(ROOT .. 'ui\\spellsui');
+local setsui   = require(ROOT .. 'ui\\setsui');
+local traitsui = require(ROOT .. 'ui\\traitsui');
 
 local M = {};
 
@@ -80,17 +81,16 @@ end
 
 local TABS = { 'Codex', 'Sets', 'Traits' };
 
-function M.render()
-    local st = M.state;
-    if st == nil then return; end
+-- The job/level watch and auto-restore, run once per frame whether or not
+-- anything renders: a level change invalidates the BLU structs like a fresh
+-- login (refresh fires inside the watch), and -- if the setting is on --
+-- any spells the change stripped from the last-applied set get re-added.
+-- Two delayed checks so the 0x061 answer has landed before we compare.
+-- The standalone render calls this itself; an EMBEDDING host (dlac's BLU
+-- helper) calls it directly every frame, even while its panel is hidden.
+function M.tick()
     local deps = M.deps;
     if deps == nil then return; end
-
-    -- The job/level watch and auto-restore run every frame, window open or
-    -- not: a level change invalidates the BLU structs like a fresh login
-    -- (refresh fires inside the watch), and -- if the setting is on -- any
-    -- spells the change stripped from the last-applied set get re-added.
-    -- Two delayed checks so the 0x061 answer has landed before we compare.
     if deps.blu.watchJobState() then
         local now = os.clock();
         M.restoreChecks = { now + 2.0, now + 8.0 };
@@ -108,25 +108,98 @@ function M.render()
             end
         end
     end
+end
 
+-- body theme: what embedded rendering needs (child panels + the blue
+-- Selectable/combo highlight -- the default theme's Header is RED); the
+-- standalone window adds its own chrome on top. Both return the push count.
+local function pushBodyTheme(im)
+    if not (kit.isFn(im, 'PushStyleColor') and kit.isFn(im, 'PopStyleColor')) then return 0; end
+    im.PushStyleColor(3,  { 0.06, 0.09, 0.15, 0.97 });     -- ChildBg
+    im.PushStyleColor(24, { 0.16, 0.34, 0.62, 0.85 });     -- Header
+    im.PushStyleColor(25, { 0.20, 0.42, 0.74, 0.85 });     -- HeaderHovered
+    im.PushStyleColor(26, { 0.24, 0.48, 0.80, 1.00 });     -- HeaderActive
+    return 4;
+end
+
+local function pushWindowTheme(im)
+    if not (kit.isFn(im, 'PushStyleColor') and kit.isFn(im, 'PopStyleColor')) then return 0; end
+    im.PushStyleColor(2,  { 0.055, 0.075, 0.125, 0.97 });  -- WindowBg
+    im.PushStyleColor(11, { 0.10, 0.18, 0.34, 1.00 });     -- TitleBgActive
+    im.PushStyleColor(10, { 0.07, 0.11, 0.20, 1.00 });     -- TitleBg
+    return 3 + pushBodyTheme(im);
+end
+
+-- header + tab row + the active tab: everything between Begin and End,
+-- shared verbatim by the standalone window and the embedded flavor
+local function renderBody(im, st, deps)
+    -- header: logo + budget
+    local logo = filetex.ui('logo-64');
+    if logo ~= nil and kit.isFn(im, 'Image') then
+        pcall(im.Image, logo, { 22, 22 });
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    end
+    kit.ctext(im, kit.COL.head, 'BLUDEX');
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    -- the header meters are the EDITING set against the budget -- the
+    -- planning numbers needed while adding from the codex. Live-vs-
+    -- planned shows per-slot in the Sets tab (dimming).
+    local max = budgetMax(deps);
+    kit.meter(im, '   Set:', deps.sets.usedPoints(st.editingSet, deps.book), max, ' pts');
+    kit.tip(im, max ~= nil
+        and 'Points used by the set you are editing /\nyour total from the game client (CatsEyeXI bonuses included).'
+        or 'Points used by the set you are editing.\nThe total appears when you are on BLU (or set budgetOverride).');
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    kit.meter(im, '   Slots:', deps.sets.count(st.editingSet), 20, '');
+    if deps.blu.onBlu() and (deps.blu.points()) == nil then
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        kit.ctext(im, kit.COL.dim, '   (live points: reading...)');
+        kit.tip(im, 'The client has not filled the points struct yet.\n'
+            .. 'Bludex is requesting the data from the server (the same\n'
+            .. '0x061 ask the native menus send). If it stays stuck:\n'
+            .. '/bludex refresh re-asks, /bludex debug shows details.');
+        deps.blu.nudgePoints();
+    elseif not deps.blu.onBlu() then
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        kit.ctext(im, kit.COL.dim, '   (not on BLU)');
+    end
+
+    -- tab row
+    local w = kit.measure(im, TABS, 90);
+    for _, t in ipairs(TABS) do
+        if kit.litButton(im, t, st.tab == t, w, 26) then st.tab = t; end
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    end
+    if kit.isFn(im, 'NewLine') then im.NewLine(); end
+    if kit.isFn(im, 'Separator') then im.Separator(); end
+
+    -- per-frame ctx for the tabs
+    local ctx = {
+        im = im, book = deps.book, blu = deps.blu, sets = deps.sets,
+        cfg = deps.cfg, save = deps.save, state = st,
+        budgetMax = function() return budgetMax(deps); end,
+    };
+    local tabfn = (st.tab == 'Sets' and setsui.render)
+        or (st.tab == 'Traits' and traitsui.render)
+        or spellsui.render;
+    local tok, terr = pcall(tabfn, ctx);
+    if not tok then
+        kit.ctext(im, kit.COL.err, 'tab error: ' .. tostring(terr));
+    end
+end
+
+-- the standalone window (the bludex addon's own flavor)
+function M.render()
+    local st = M.state;
+    if st == nil then return; end
+    local deps = M.deps;
+    if deps == nil then return; end
+    M.tick();
     if not st.open[1] then return; end
     local im = deps.im;
     if not kit.isFn(im, 'Begin') or not kit.isFn(im, 'End') then return; end
 
-    -- theme: dark navy window, blue title
-    local pushed = 0;
-    if kit.isFn(im, 'PushStyleColor') and kit.isFn(im, 'PopStyleColor') then
-        im.PushStyleColor(2,  { 0.055, 0.075, 0.125, 0.97 });  -- WindowBg
-        im.PushStyleColor(11, { 0.10, 0.18, 0.34, 1.00 });     -- TitleBgActive
-        im.PushStyleColor(10, { 0.07, 0.11, 0.20, 1.00 });     -- TitleBg
-        im.PushStyleColor(3,  { 0.06, 0.09, 0.15, 0.97 });     -- ChildBg
-        -- Selectable/combo-item highlight: the default theme's Header is RED
-        -- (the selected saved-set row lit up red in the field) -- go blue.
-        im.PushStyleColor(24, { 0.16, 0.34, 0.62, 0.85 });     -- Header
-        im.PushStyleColor(25, { 0.20, 0.42, 0.74, 0.85 });     -- HeaderHovered
-        im.PushStyleColor(26, { 0.24, 0.48, 0.80, 1.00 });     -- HeaderActive
-        pushed = 7;
-    end
+    local pushed = pushWindowTheme(im);
     if kit.isFn(im, 'SetNextWindowSizeConstraints') then
         -- 920 wide fits the measured filter row; below that the Reset button clips
         pcall(im.SetNextWindowSizeConstraints, { 920, 520 }, { 4096, 4096 });
@@ -137,61 +210,27 @@ function M.render()
         visible = im.Begin('Bludex##bdxmain', st.open);
     end);
     if ok and visible then
-        -- header: logo + budget
-        local logo = filetex.ui('logo-64');
-        if logo ~= nil and kit.isFn(im, 'Image') then
-            pcall(im.Image, logo, { 22, 22 });
-            if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        end
-        kit.ctext(im, kit.COL.head, 'BLUDEX');
-        if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        -- the header meters are the EDITING set against the budget -- the
-        -- planning numbers needed while adding from the codex. Live-vs-
-        -- planned shows per-slot in the Sets tab (dimming).
-        local max = budgetMax(deps);
-        kit.meter(im, '   Set:', deps.sets.usedPoints(st.editingSet, deps.book), max, ' pts');
-        kit.tip(im, max ~= nil
-            and 'Points used by the set you are editing /\nyour total from the game client (CatsEyeXI bonuses included).'
-            or 'Points used by the set you are editing.\nThe total appears when you are on BLU (or set budgetOverride).');
-        if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        kit.meter(im, '   Slots:', deps.sets.count(st.editingSet), 20, '');
-        if deps.blu.onBlu() and (deps.blu.points()) == nil then
-            if kit.isFn(im, 'SameLine') then im.SameLine(); end
-            kit.ctext(im, kit.COL.dim, '   (live points: reading...)');
-            kit.tip(im, 'The client has not filled the points struct yet.\n'
-                .. 'Bludex is requesting the data from the server (the same\n'
-                .. '0x061 ask the native menus send). If it stays stuck:\n'
-                .. '/bludex refresh re-asks, /bludex debug shows details.');
-            deps.blu.nudgePoints();
-        elseif not deps.blu.onBlu() then
-            if kit.isFn(im, 'SameLine') then im.SameLine(); end
-            kit.ctext(im, kit.COL.dim, '   (not on BLU)');
-        end
-
-        -- tab row
-        local w = kit.measure(im, TABS, 90);
-        for _, t in ipairs(TABS) do
-            if kit.litButton(im, t, st.tab == t, w, 26) then st.tab = t; end
-            if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        end
-        if kit.isFn(im, 'NewLine') then im.NewLine(); end
-        if kit.isFn(im, 'Separator') then im.Separator(); end
-
-        -- per-frame ctx for the tabs
-        local ctx = {
-            im = im, book = deps.book, blu = deps.blu, sets = deps.sets,
-            cfg = deps.cfg, save = deps.save, state = st,
-            budgetMax = function() return budgetMax(deps); end,
-        };
-        local tabfn = (st.tab == 'Sets' and setsui.render)
-            or (st.tab == 'Traits' and traitsui.render)
-            or spellsui.render;
-        local tok, terr = pcall(tabfn, ctx);
-        if not tok then
-            kit.ctext(im, kit.COL.err, 'tab error: ' .. tostring(terr));
-        end
+        renderBody(im, st, deps);
     end
     if ok then im.End(); end
+    if pushed > 0 then im.PopStyleColor(pushed); end
+end
+
+-- The embedded flavor for a hosting addon's own window (dlac's BLU helper):
+-- no Begin/End, no window chrome -- the body draws into whatever window or
+-- child is current. The host addon calls M.init once, M.tick() every frame
+-- (visible or not), and this when its panel shows. See INTEGRATION.md.
+function M.renderEmbedded()
+    local st = M.state;
+    if st == nil then return; end
+    local deps = M.deps;
+    if deps == nil then return; end
+    local im = deps.im;
+    local pushed = pushBodyTheme(im);
+    local ok, err = pcall(renderBody, im, st, deps);
+    if not ok then
+        kit.ctext(im, kit.COL.err, 'bludex error: ' .. tostring(err));
+    end
     if pushed > 0 then im.PopStyleColor(pushed); end
 end
 

@@ -21,23 +21,13 @@ local imgui    = require('imgui');
 -- resolves to addons/bludex/X.lua for every module in this addon's state.
 package.path = package.path .. ';' .. AshitaCore:GetInstallPath() .. 'addons\\?.lua';
 
-local book = require('bludex\\lib\\spellbook');
-local blu  = require('bludex\\lib\\blu');
-local sets = require('bludex\\lib\\setmodel');
-local host = require('bludex\\ui\\host');
+local book   = require('bludex\\lib\\spellbook');
+local blu    = require('bludex\\lib\\blu');
+local sets   = require('bludex\\lib\\setmodel');
+local config = require('bludex\\lib\\config');
+local host   = require('bludex\\ui\\host');
 
-local defaults = T{
-    sets = T{ },              -- { { name = s, ids = {20 real ids} }, ... }
-    budgetOverride = 0,       -- shown when the live budget is unavailable
-    applyDelay = 1.1,         -- seconds between set-spell packets
-    applyMode = 'safe',       -- 'safe' (client-paced) | 'fast' (injected)
-    autoRestore = false,      -- re-add spells stripped by level changes
-    lastApplied = T{ },       -- { ids = {20} } -- the auto-restore target
-    activeSetName = '',       -- last selected saved set, reloaded at startup
-    codexDensity = 'normal',  -- codex list size: 'big' | 'normal' | 'compact'
-};
-
-local cfg = settings.load(defaults);
+local cfg = settings.load(config.defaults());
 
 local function saveSettings()
     settings.save();

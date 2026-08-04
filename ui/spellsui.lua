@@ -9,8 +9,9 @@
     cell) stays exported for the Sets tab slot grid.
 ]]--
 
-local kit     = require('bludex\\ui\\kit');
-local filetex = require('bludex\\ui\\filetex');
+local ROOT = (...):sub(1, -#('ui\\spellsui') - 1);   -- relocatable require base
+local kit     = require(ROOT .. 'ui\\kit');
+local filetex = require(ROOT .. 'ui\\filetex');
 
 local M = {};
 

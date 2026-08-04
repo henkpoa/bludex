@@ -7,9 +7,13 @@
     (learned()) is runtime-only and guarded, so this module loads headless.
 ]]--
 
-local data   = require('bludex\\data\\spells');
-local traits = require('bludex\\data\\traits');
-local okh, hints = pcall(function() return require('bludex\\data\\hints'); end);
+-- relocatable require base: 'bludex\' standalone, '<host>\bludexlib\' when
+-- vendored inside another addon (see INTEGRATION.md)
+local ROOT = (...):sub(1, -#('lib\\spellbook') - 1);
+
+local data   = require(ROOT .. 'data\\spells');
+local traits = require(ROOT .. 'data\\traits');
+local okh, hints = pcall(function() return require(ROOT .. 'data\\hints'); end);
 if not okh then hints = { hints = {} }; end
 
 local M = {
