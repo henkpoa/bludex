@@ -141,13 +141,13 @@ local function slotGrid(ctx)
                 -- same call shape as spellButton (frame padding 2) so image
                 -- cells always land at cell+4 regardless of which art loads
                 local okB = pcall(im.ImageButton, h, { cell, cell }, { 0, 0 }, { 1, 1 }, 2,
-                    { 0, 0, 0, 0 }, { 1, 1, 1, 0.55 });
+                    { 0, 0, 0, 0 }, { 1, 1, 1, 0.9 });
                 if not okB then pcall(im.ImageButton, h, { cell, cell }); end
                 if styled then im.PopStyleColor(3); end
             else
-                -- +4: match the image cells' 2px frame padding per side, or
-                -- rows with a mix of icons and dashes drift out of line
-                kit.litButton(im, '-', false, cell + 4, cell + 4);
+                -- +4: match the image cells' 2px frame padding per side.
+                -- '##e' = a blank cell (the '-' read as content in the field)
+                kit.litButton(im, '##e', false, cell + 4, cell + 4);
             end
             if pushed and kit.isFn(im, 'PopID') then pcall(im.PopID); end
             kit.tip(im, ('slot %d (empty)'):format(i));
@@ -164,14 +164,37 @@ local function slotGrid(ctx)
     kit.meter(im, 'Slots ', ctx.sets.count(st.editingSet), 20, '');
     kit.ctext(im, kit.COL.dim, ('Total MP %d'):format(ctx.sets.usedMP(st.editingSet, book)));
 
-    -- game actions (widths measured -- 'Apply in gam' clipped in the field)
+    -- game actions (widths measured -- 'Apply in gam' clipped in the field).
+    -- The Apply button wears the diff state: green = the live set differs
+    -- (click me), inert = already matching, plain = live state unknown.
     if kit.isFn(im, 'Separator') then im.Separator(); end
     local applyW = kit.measure(im, { 'Apply in game', 'Applying...' }, 100);
     local readW  = kit.measure(im, { 'Read current' }, 90);
     local clearW = kit.measure(im, { 'Clear' }, 50);
+    local dirty = nil;                     -- nil = unknown (live unreadable)
+    if liveIds ~= nil then
+        dirty = false;
+        local wantN, liveN = 0, 0;
+        for i = 1, 20 do
+            local id = set.ids[i] or 0;
+            if id ~= 0 then
+                wantN = wantN + 1;
+                if not liveIds[id] then dirty = true; end
+            end
+        end
+        for _ in pairs(liveIds) do liveN = liveN + 1; end
+        if liveN ~= wantN then dirty = true; end
+    end
     local canApply = ctx.blu.canApply() and not ctx.blu.applying;
-    if kit.litButton(im, ctx.blu.applying and 'Applying...' or 'Apply in game', false, applyW, 26) then
-        if canApply then
+    local pal = nil;
+    if not ctx.blu.applying then
+        if dirty == true then pal = kit.PAL.go;
+        elseif dirty == false then pal = kit.PAL.off; end
+    end
+    if kit.litButton(im, ctx.blu.applying and 'Applying...' or 'Apply in game', false, applyW, 26, pal) then
+        if dirty == false then
+            st.applyNote = 'Already up to date - nothing to apply.';
+        elseif canApply then
             if ctx.blu.applyDiff(st.editingSet.ids, ctx.book) then
                 -- snapshot the intent: the auto-restore target after level changes
                 local snap = {};
@@ -298,6 +321,17 @@ end
 
 function M.render(ctx)
     local im = ctx.im;
+    -- child widths follow their widest measured rows (the clipping law --
+    -- 'Clea', 'Man' and 'Dele' all clipped in the field at the old fixed
+    -- widths)
+    local rowW = kit.measure(im, { 'New', 'Save', 'Delete' }, 50);
+    LEFT_W = math.max(210, rowW * 3 + 32);
+    local gameRow = kit.measure(im, { 'Apply in game', 'Applying...' }, 100)
+        + kit.measure(im, { 'Read current' }, 90)
+        + kit.measure(im, { 'Clear' }, 50);
+    local levelRow = kit.measure(im, { 'Level change:' }, 60)
+        + kit.measure(im, { 'Auto-restore', 'Manual' }, 64) * 2;
+    MID_W = math.max(330, gameRow + 34, levelRow + 34);
     if kit.isFn(im, 'BeginChild') and kit.isFn(im, 'EndChild') then
         if im.BeginChild('bdxsaved', { LEFT_W, 0 }, true) then savedList(ctx); end
         im.EndChild();

@@ -107,15 +107,29 @@ function M.header(im, s)
     if isFn(im, 'Separator') then im.Separator(); end
 end
 
+-- button palettes for litButton's pal override
+M.PAL = {
+    go  = {   -- green: an action that WANTS clicking (pending changes)
+        base = { 0.14, 0.46, 0.24, 1.00 },
+        hov  = { 0.18, 0.58, 0.30, 1.00 },
+        act  = { 0.22, 0.68, 0.36, 1.00 },
+    },
+    off = {   -- inert: nothing to do; barely-there, no hover response
+        base = { 0.08, 0.10, 0.15, 1.00 },
+        hov  = { 0.09, 0.12, 0.17, 1.00 },
+        act  = { 0.09, 0.12, 0.17, 1.00 },
+    },
+};
+
 -- lit/unlit button (the craftbar choice shape). Returns true on click.
--- Pops on every path.
-function M.litButton(im, label, lit, w, h)
+-- Pops on every path. `pal` overrides the colors ({base, hov, act}).
+function M.litButton(im, label, lit, w, h, pal)
     if not isFn(im, 'Button') then return false; end
     local pushed = false;
     if isFn(im, 'PushStyleColor') and isFn(im, 'PopStyleColor') then
-        im.PushStyleColor(21, lit and M.COL.lit or M.COL.unlit);      -- Button
-        im.PushStyleColor(22, lit and M.COL.litHov or M.COL.lit);     -- Hovered
-        im.PushStyleColor(23, M.COL.litHov);                          -- Active
+        im.PushStyleColor(21, pal and pal.base or (lit and M.COL.lit or M.COL.unlit));
+        im.PushStyleColor(22, pal and pal.hov or (lit and M.COL.litHov or M.COL.lit));
+        im.PushStyleColor(23, pal and pal.act or M.COL.litHov);
         pushed = true;
     end
     local ok, clicked = pcall(im.Button, esc(label), w and { w, h or 24 } or nil);
