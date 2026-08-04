@@ -1,12 +1,17 @@
-# Bludex as a library — embedding contract (dlac's BLU helper)
+# Bludex as a library — the two doors
 
-Bludex is one codebase with two doors:
+One codebase, two first-class distributions:
 
 - **Standalone addon** — this repo as `addons/bludex/`, entry `bludex.lua`.
-  For people who do not run dlac.
-- **Vendored library** — everything except `bludex.lua`/`tools/` copied into
-  another addon (dlac) as `addons/dlac/bludexlib/`. dlac users get the BLU
-  helper with **no separate bludex install**.
+  For players who do not run dlac.
+- **dlac Job helper module** — vendored into dlac at
+  `jobhelpers/blu/bludex/` per dlac's module framework
+  (`docs/reference/jobhelper-authoring-guide.md`, `api = 2`). dlac users get
+  the BLU helper with **no separate bludex install**.
+
+**Do not run both flavors at once** — each is a full brain (level-change
+watch, 0x061 refresh, packet sends); two active copies would both answer the
+same events.
 
 ## Why a plain copy works: relocatable requires
 
@@ -15,69 +20,58 @@ it as `...`):
 
 ```lua
 local ROOT = (...):sub(1, -#('ui\\host') - 1);
--- 'bludex\ui\host'          -> ROOT = 'bludex\'
--- 'dlac\bludexlib\ui\host'  -> ROOT = 'dlac\bludexlib\'
+-- 'bludex\ui\host'                      -> ROOT = 'bludex\'
+-- 'dlac\jobhelpers\blu\bludex\ui\host'  -> ROOT = 'dlac\jobhelpers\blu\bludex\'
 local kit = require(ROOT .. 'ui\\kit');
 ```
 
 `ui/filetex.lua` builds icon paths from the same ROOT, so the vendored copy
-uses its own `bludexlib/icons/`. **No paths are rewritten when vendoring** —
-the sync is `cp -r lib ui data icons`.
+uses its own `icons/`. **Nothing is rewritten when vendoring** — the sync is
+a pure copy. This is the same rename-safety `S.sibling` gives first-party
+dlac modules, derived from the same authority (the loaded module name).
 
 ## The CI sync
 
-`.github/workflows/sync-dlac.yml`: every push to bludex `main` copies the
-library into the dlac repo at `bludexlib/` and commits to dlac's **dev**
-branch (the dev→main law holds in both repos).
+`.github/workflows/sync-dlac.yml`: every push to bludex `main` copies
 
-One-time setup: create a fine-grained PAT with *Contents: read/write* on
-`henkpoa/dlac`, save it as the **`DLAC_SYNC_TOKEN`** secret in
-`henkpoa/bludex` → Settings → Secrets → Actions.
-
-## What the embedding addon writes (once, ~40 lines)
-
-```lua
--- dlac/bluhelper.lua (sketch; lives in the dlac repo, hand-written once)
-local ok, host = pcall(require, 'dlac\\bludexlib\\ui\\host');
-if not ok then return { available = false }; end   -- vendored copy missing
-local M = { available = true };
-
-function M.init(imgui, cfgSlice, save)
-    -- cfgSlice: a table inside dlac's settings tree seeded from
-    -- require('dlac\\bludexlib\\lib\\config').defaults()
-    host.init({
-        im   = imgui,
-        book = require('dlac\\bludexlib\\lib\\spellbook'),
-        blu  = require('dlac\\bludexlib\\lib\\blu'),
-        sets = require('dlac\\bludexlib\\lib\\setmodel'),
-        cfg  = cfgSlice,
-        save = save,
-    });
-end
-
-M.tick         = host.tick;            -- EVERY d3d_present frame, always
-M.render       = host.renderEmbedded;  -- inside dlac's own window/panel
-M.renderWindow = host.render;          -- or: the floating Bludex window
-M.toggleWindow = host.toggle;          --     (pick one flavor)
-return M;
+```
+lib/ ui/ data/ icons/          the relocatable library
+dlacmodule/init.lua            -> jobhelpers/blu/bludex/init.lua  (the contract)
+dlacmodule/README.md           -> jobhelpers/blu/bludex/README.md (the approval doc)
 ```
 
-Host API surface: `init(deps)`, `tick()`, `render()` (floating window,
-checks its own open flag), `renderEmbedded()` (body only, no Begin/End,
-pushes/pops its own panel theme), `toggle()`, `isOpen()`.
+into `henkpoa/dlac` on its **dev** branch (the dev→main law holds in both
+repos), plus a `VENDORED.md` marker. One-time setup: a fine-grained PAT with
+*Contents: read/write* on `henkpoa/dlac`, stored as the **`DLAC_SYNC_TOKEN`**
+secret in `henkpoa/bludex`.
 
-## Rules and caveats
+## The adapter (`dlacmodule/init.lua`) — how the contract is satisfied
 
-- **Never hand-edit `bludexlib/`** in dlac — the sync overwrites it
-  wholesale. Fix things here.
-- **Do not run the standalone addon and the dlac helper at the same time**
-  with `autoRestore` enabled in both: each would answer level changes with
-  its own packets. One active BLU brain per client.
-- Settings do not migrate between the two flavors automatically (Ashita
-  settings are per-addon). Saved sets built in one live in that flavor's
-  settings file.
-- Chat output is prefixed `bludex` in both flavors (credit where due).
-- License: GPL-3 (inherited via the blusets port) — the vendored copy
-  carries the LICENSE file along; dlac must remain GPL-compatible.
-- Commands (`/bludex ...`) are wired by `bludex.lua` and exist only in the
-  standalone flavor; dlac wires its own (e.g. `/dlac blu ...`) if wanted.
+| Guide requirement | How it is met |
+|---|---|
+| `api = 2`, `label`, `jobs`, `panel` | Contract table returned by `init.lua`; `jobs = { 'BLU' }`. |
+| Panels may not open windows | `host.renderEmbedded()` renders body-only; the codex's floating Spell Info window becomes an **in-panel detail pane** (`ctx.embedded`). |
+| Settings: framework store, scalars only | The adapter's codec encodes saved sets (`name\tid,csv` lines) and the last-applied snapshot (`id` csv) as strings; the library keeps mutating its usual `cfg` table and `save()` re-encodes. Declared keys/defaults on the contract. |
+| Act whether or not the Panel is open | `S.combat.subscribe` beat → `host.tick()` (level-change watch + armed Restore), gated `S.me.acting().active == true` — an unreadable world is not permission. |
+| The host's imgui handle, never your own | `panel(ctx)` assigns `ctx.imgui` into the host deps each render. |
+| Naming law | The rule is called **Restore** (condition-named), never 'Auto-…'. All strings PROPOSED for maintainer sign-off. |
+| One unit of approval, legible from the folder | `dlacmodule/README.md` documents the full envelope: what is read, the two packet kinds sent and when, what is written. |
+| Containment | Library load is pcall'd; a failed load leaves an inert module whose Panel says so. Every imgui call inside the library is guarded (the kit's laws are dlac's own, blue-shifted). |
+
+Still manual on the dlac side (deliberately not synced): adding the module's
+files to the test rosters (`JOBHELP` in `tests/run_tests.lua`) if wanted,
+string sign-off, and the server-approval conversation itself.
+
+## The generic embedding surface (any other host)
+
+`ui/host.lua` exposes: `init(deps)` (`{ im, book, blu, sets, cfg, save }`),
+`tick()` (call every frame), `render()` (standalone floating window),
+`renderEmbedded()` (body-only, own theme pushes, `embedded` ctx),
+`toggle()`, `isOpen()`. Settings defaults come from `lib/config.lua` so
+flavors cannot drift. Chat is prefixed `bludex` everywhere.
+
+## License
+
+GPL-3.0 (inherited via the blusets port); the sync carries `LICENSE` into
+the module folder. Saved sets do not migrate between flavors automatically
+(different stores); rebuild or re-save them once when switching.

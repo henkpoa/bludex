@@ -249,11 +249,12 @@ local function slotGrid(ctx)
 
     -- level-change behavior: restore the last-applied set automatically, or
     -- leave everything to the Apply button
+    -- the naming law: name the rule for its condition, never 'Auto <thing>'
     kit.ctext(im, kit.COL.dim, 'Level change:');
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    local lvW = kit.measure(im, { 'Auto-restore', 'Manual' }, 64);
+    local lvW = kit.measure(im, { 'Restore', 'Manual' }, 64);
     local auto = ctx.cfg.autoRestore == true;
-    if kit.litButton(im, 'Auto-restore', auto, lvW, 20) and not auto then
+    if kit.litButton(im, 'Restore', auto, lvW, 20) and not auto then
         ctx.cfg.autoRestore = true;
         if ctx.save then ctx.save(); end
     end
@@ -340,7 +341,7 @@ function M.render(ctx)
         + kit.measure(im, { 'Read current' }, 90)
         + kit.measure(im, { 'Clear' }, 50);
     local levelRow = kit.measure(im, { 'Level change:' }, 60)
-        + kit.measure(im, { 'Auto-restore', 'Manual' }, 64) * 2;
+        + kit.measure(im, { 'Restore', 'Manual' }, 64) * 2;
     MID_W = math.max(330, gameRow + 34, levelRow + 34);
     if kit.isFn(im, 'BeginChild') and kit.isFn(im, 'EndChild') then
         if im.BeginChild('bdxsaved', { LEFT_W, 0 }, true) then savedList(ctx); end

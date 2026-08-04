@@ -131,8 +131,10 @@ local function pushWindowTheme(im)
 end
 
 -- header + tab row + the active tab: everything between Begin and End,
--- shared verbatim by the standalone window and the embedded flavor
-local function renderBody(im, st, deps)
+-- shared verbatim by the standalone window and the embedded flavor.
+-- `embedded` reaches the tabs through ctx: a dlac Job helper Panel may not
+-- open windows, so the codex swaps its floating Spell Info for a pane.
+local function renderBody(im, st, deps, embedded)
     -- header: logo + budget
     local logo = filetex.ui('logo-64');
     if logo ~= nil and kit.isFn(im, 'Image') then
@@ -177,6 +179,7 @@ local function renderBody(im, st, deps)
     local ctx = {
         im = im, book = deps.book, blu = deps.blu, sets = deps.sets,
         cfg = deps.cfg, save = deps.save, state = st,
+        embedded = embedded == true,
         budgetMax = function() return budgetMax(deps); end,
     };
     local tabfn = (st.tab == 'Sets' and setsui.render)
@@ -210,7 +213,7 @@ function M.render()
         visible = im.Begin('Bludex##bdxmain', st.open);
     end);
     if ok and visible then
-        renderBody(im, st, deps);
+        renderBody(im, st, deps, false);
     end
     if ok then im.End(); end
     if pushed > 0 then im.PopStyleColor(pushed); end
@@ -227,7 +230,7 @@ function M.renderEmbedded()
     if deps == nil then return; end
     local im = deps.im;
     local pushed = pushBodyTheme(im);
-    local ok, err = pcall(renderBody, im, st, deps);
+    local ok, err = pcall(renderBody, im, st, deps, true);
     if not ok then
         kit.ctext(im, kit.COL.err, 'bludex error: ' .. tostring(err));
     end

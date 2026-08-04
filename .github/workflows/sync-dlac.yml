@@ -1,10 +1,10 @@
 name: Sync library into dlac
 
-# On every push to main, vendor the bludex library (lib/ ui/ data/ icons/)
-# into the dlac repo as dlac/bludexlib/, so dlac users get the BLU helper
-# with no separate bludex install. The library is relocatable (modules
-# derive their require base from their own module name), so this is a pure
-# copy -- no rewriting.
+# On every push to main, vendor bludex into the dlac repo as the Job helper
+# module jobhelpers/blu/bludex/ (dlac's module contract, api = 2): the
+# relocatable library (lib/ ui/ data/ icons/) plus the adapter authored in
+# dlacmodule/ (init.lua + README.md). Modules derive their require base from
+# their own module name, so this is a pure copy -- no rewriting.
 #
 # One-time setup: create a fine-grained PAT with Contents read/write on
 # henkpoa/dlac and store it as the DLAC_SYNC_TOKEN secret in henkpoa/bludex.
@@ -29,29 +29,32 @@ jobs:
           ref: dev
           path: .dlac
 
-      - name: Vendor the library into dlac/bludexlib
+      - name: Vendor the module into dlac/jobhelpers/blu/bludex
         run: |
-          rm -rf .dlac/bludexlib
-          mkdir -p .dlac/bludexlib
-          cp -r lib ui data icons .dlac/bludexlib/
-          if [ -f LICENSE ]; then cp LICENSE .dlac/bludexlib/LICENSE; fi
+          DEST=.dlac/jobhelpers/blu/bludex
+          rm -rf "$DEST"
+          mkdir -p "$DEST"
+          cp -r lib ui data icons "$DEST"/
+          cp dlacmodule/init.lua dlacmodule/README.md "$DEST"/
+          if [ -f LICENSE ]; then cp LICENSE "$DEST"/LICENSE; fi
           {
-            echo "# bludexlib -- VENDORED, do not hand-edit"
+            echo "# VENDORED -- do not hand-edit"
             echo ""
             echo "Synced from https://github.com/henkpoa/bludex @ ${GITHUB_SHA}"
             echo "by .github/workflows/sync-dlac.yml on every push to main."
-            echo "Edit in the bludex repo; this copy is overwritten wholesale."
-          } > .dlac/bludexlib/VENDORED.md
+            echo "init.lua and README.md are authored there under dlacmodule/."
+            echo "Edit in the bludex repo; this folder is overwritten wholesale."
+          } > "$DEST"/VENDORED.md
 
       - name: Commit and push to dlac dev
         run: |
           cd .dlac
           git config user.name  "bludex-sync[bot]"
           git config user.email "actions@users.noreply.github.com"
-          git add -A bludexlib
+          git add -A jobhelpers/blu/bludex
           if git diff --cached --quiet; then
-            echo "bludexlib already up to date"
+            echo "module already up to date"
             exit 0
           fi
-          git commit -m "bludexlib: sync from bludex@${GITHUB_SHA:0:7}"
+          git commit -m "jobhelpers/blu/bludex: sync from bludex@${GITHUB_SHA:0:7}"
           git push origin dev

@@ -504,6 +504,19 @@ function M.render(ctx)
     local colW = math.floor((availW - 16) / cols);   -- -16: scrollbar margin
     local nameW = math.max(colW - (showIcon and iconSz or 0) - 28, 80);
 
+    -- Embedded (dlac Job helper Panel) may not open windows -- the authoring
+    -- guide forbids Begin/End from a Panel -- so there the detail renders as
+    -- an in-panel child on the right instead of the floating Spell Info.
+    local DETAIL_W = 372;
+    local paneDetail = ctx.embedded == true and st.detailOpen[1] and st.selectedId ~= nil;
+    local listW = 0;
+    if paneDetail then
+        listW = math.max(availW - DETAIL_W - 12, 240);
+        cols = math.max(1, math.min(cols, math.floor(listW / targetW)));
+        colW = math.floor((listW - 16) / cols);
+        nameW = math.max(colW - (showIcon and iconSz or 0) - 28, 80);
+    end
+
     local function rows()
         for i, id in ipairs(ids) do
             local col = (i - 1) % cols;
@@ -535,13 +548,28 @@ function M.render(ctx)
     end
 
     if kit.isFn(im, 'BeginChild') and kit.isFn(im, 'EndChild') then
-        if im.BeginChild('bdxlist', { 0, 0 }, false) then rows(); end
+        if im.BeginChild('bdxlist', { paneDetail and listW or 0, 0 }, false) then rows(); end
         im.EndChild();
+        if paneDetail then
+            if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            if im.BeginChild('bdxdetail', { DETAIL_W, 0 }, true) then
+                if kit.litButton(im, 'Close', false, 60, 22) then
+                    st.detailOpen[1] = false;
+                end
+                local dok, derr = pcall(M.detail, ctx, st.selectedId);
+                if not dok then
+                    kit.ctext(im, kit.COL.err, 'detail error: ' .. tostring(derr));
+                end
+            end
+            im.EndChild();
+        end
     else
         rows();
     end
 
-    M.detailWindow(ctx);
+    if ctx.embedded ~= true then
+        M.detailWindow(ctx);
+    end
 end
 
 return M;

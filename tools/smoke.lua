@@ -75,4 +75,22 @@ check(sets.prettyStat('DUAL_WIELD') == 'Dual Wield', 'prettyStat');
 check(book.traits.rules.assimilationPerMerit == 2, 'field: +2 per Assimilation merit');
 check(book.traits.rules.expectedTotalAt75 == 80, 'field: expected total 80');
 
+print('smoke: dlac module adapter');
+local dm = require('bludex\\dlacmodule\\init');
+check(dm.api == 2 and type(dm.panel) == 'function' and type(dm.init) == 'function',
+    'contract shape (api 2, panel, init)');
+check(dm.config and dm.config.keys and dm.config.keys.sets == 'string'
+    and dm.config.defaults.autoRestore == false, 'config declaration');
+local ids = {}; for i = 1, 20 do ids[i] = 0; end
+ids[1] = 623; ids[7] = 700;
+local rt = dm._codec.decodeIds(dm._codec.encodeIds(ids));
+check(rt[1] == 623 and rt[7] == 700 and rt[20] == 0 and #rt == 20, 'ids codec roundtrip');
+local sl = dm._codec.decodeSets(dm._codec.encodeSets({
+    { name = 'Solo DD', ids = ids }, { name = 'x', ids = {} },
+}));
+check(#sl == 2 and sl[1].name == 'Solo DD' and sl[1].ids[7] == 700
+    and sl[2].ids[1] == 0, 'sets codec roundtrip');
+check(dm._codec.decodeSets('')[1] == nil and dm._codec.decodeIds(nil)[20] == 0,
+    'codec tolerates empty and nil');
+
 print('smoke: all green');
