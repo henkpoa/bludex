@@ -43,12 +43,13 @@ local function savedList(ctx)
     end
     if kit.isFn(im, 'Separator') then im.Separator(); end
 
-    if kit.litButton(im, 'New', false, 60, 22) then
+    local rowW = kit.measure(im, { 'New', 'Save', 'Delete' }, 50);
+    if kit.litButton(im, 'New', false, rowW, 22) then
         st.editingSet = ctx.sets.new(('Set %d'):format(#cfg.sets + 1));
         st.activeSet = nil;
     end
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    if kit.litButton(im, 'Save', false, 60, 22) then
+    if kit.litButton(im, 'Save', false, rowW, 22) then
         local copy = ctx.sets.clone(st.editingSet, st.editingSet.name);
         copy.name = st.editingSet.name;
         if st.activeSet and cfg.sets[st.activeSet] then
@@ -61,7 +62,7 @@ local function savedList(ctx)
         st.applyNote = 'Saved.';
     end
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    if kit.litButton(im, 'Delete', false, 60, 22) then
+    if kit.litButton(im, 'Delete', false, rowW, 22) then
         if st.activeSet and cfg.sets[st.activeSet] then
             table.remove(cfg.sets, st.activeSet);
             st.activeSet = nil;
@@ -88,21 +89,38 @@ local function slotGrid(ctx)
     local im, st, book = ctx.im, ctx.state, ctx.book;
     local set = st.editingSet;
     kit.header(im, 'Slots');
+
+    -- what the CLIENT has set right now, refreshed every frame: spells not
+    -- yet live draw dimmed and light up one by one as an apply lands them.
+    -- nil when the live set is unreadable (then nothing is dimmed).
+    local liveIds = nil;
+    local live = ctx.blu.currentSet();
+    if #live == 20 then
+        liveIds = {};
+        for i = 1, 20 do if live[i] ~= 0 then liveIds[live[i]] = true; end end
+    end
+
     local cell = 48;
     for i = 1, 20 do
         if ((i - 1) % 5) ~= 0 and kit.isFn(im, 'SameLine') then im.SameLine(); end
         local id = set.ids[i] or 0;
         if id ~= 0 then
-            if spellsui.spellButton(ctx, id, cell, false, false) then
+            local inGame = liveIds == nil or liveIds[id] == true;
+            if spellsui.spellButton(ctx, id, cell, false, not inGame) then
                 ctx.sets.removeSlot(set, i);
                 st.applyNote = nil;
             end
+            local liveLine = '';
+            if liveIds ~= nil then
+                liveLine = inGame and '\nactive in game' or '\nnot active in game (Apply sends it)';
+            end
             local s = book.spells[id];
             if s ~= nil then
-                kit.tip(im, ('%s\n%d pts%s\nclick to remove'):format(
-                    s.name, s.setPoints or 0, s.mpCost and ('  ' .. s.mpCost .. ' MP') or ''));
+                kit.tip(im, ('%s\n%d pts%s%s\nclick to remove'):format(
+                    s.name, s.setPoints or 0,
+                    s.mpCost and ('  ' .. s.mpCost .. ' MP') or '', liveLine));
             else
-                kit.tip(im, ('slot %d: spell id %d is not in the data\nclick to remove'):format(i, id));
+                kit.tip(im, ('slot %d: spell id %d is not in the data%s\nclick to remove'):format(i, id, liveLine));
             end
         else
             local pushed = false;
@@ -116,10 +134,16 @@ local function slotGrid(ctx)
                     im.PushStyleColor(23, { 0.20, 0.42, 0.74, 0.50 });
                     styled = true;
                 end
-                pcall(im.ImageButton, h, { cell, cell });
+                -- same call shape as spellButton (frame padding 2) so image
+                -- cells always land at cell+4 regardless of which art loads
+                local okB = pcall(im.ImageButton, h, { cell, cell }, { 0, 0 }, { 1, 1 }, 2,
+                    { 0, 0, 0, 0 }, { 1, 1, 1, 0.55 });
+                if not okB then pcall(im.ImageButton, h, { cell, cell }); end
                 if styled then im.PopStyleColor(3); end
             else
-                kit.litButton(im, '-', false, cell, cell);
+                -- +4: match the image cells' 2px frame padding per side, or
+                -- rows with a mix of icons and dashes drift out of line
+                kit.litButton(im, '-', false, cell + 4, cell + 4);
             end
             if pushed and kit.isFn(im, 'PopID') then pcall(im.PopID); end
             kit.tip(im, ('slot %d (empty)'):format(i));
@@ -136,10 +160,13 @@ local function slotGrid(ctx)
     kit.meter(im, 'Slots ', ctx.sets.count(st.editingSet), 20, '');
     kit.ctext(im, kit.COL.dim, ('Total MP %d'):format(ctx.sets.usedMP(st.editingSet, book)));
 
-    -- game actions
+    -- game actions (widths measured -- 'Apply in gam' clipped in the field)
     if kit.isFn(im, 'Separator') then im.Separator(); end
+    local applyW = kit.measure(im, { 'Apply in game', 'Applying...' }, 100);
+    local readW  = kit.measure(im, { 'Read current' }, 90);
+    local clearW = kit.measure(im, { 'Clear' }, 50);
     local canApply = ctx.blu.canApply() and not ctx.blu.applying;
-    if kit.litButton(im, ctx.blu.applying and 'Applying...' or 'Apply in game', false, 110, 26) then
+    if kit.litButton(im, ctx.blu.applying and 'Applying...' or 'Apply in game', false, applyW, 26) then
         if canApply then
             ctx.blu.applyDiff(st.editingSet.ids);
             st.applyNote = 'Applying the changed slots - watch the chat log.';
@@ -151,7 +178,7 @@ local function slotGrid(ctx)
         end
     end
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    if kit.litButton(im, 'Read current', false, 100, 26) then
+    if kit.litButton(im, 'Read current', false, readW, 26) then
         local live = ctx.blu.currentSet();
         if #live == 20 then
             local unknown = 0;
@@ -168,7 +195,7 @@ local function slotGrid(ctx)
         end
     end
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    if kit.litButton(im, 'Clear', false, 60, 26) then
+    if kit.litButton(im, 'Clear', false, clearW, 26) then
         ctx.sets.clear(st.editingSet);
         st.applyNote = nil;
     end

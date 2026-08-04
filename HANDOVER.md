@@ -11,12 +11,12 @@
 | Piece | State |
 |---|---|
 | Icon grid (Codex tab), 135 spells, filters row, tab row | **FIELD-CONFIRMED** — screenshot 03:26, icons look great |
-| Live set-point budget in the header | **FIELD-CONFIRMED** 03:26 (`0 / 79`, CEXI bonuses included) — **REGRESSED by morning**: stuck on "reading...", survives zoning/job changes. Same code as the working night read. Prime suspect: the blusets-documented private-server quirk (job structs stale until the native menus touch them). `/bludex debug` now prints sig status + ungated raw reads — run it before anything else. |
+| Live set-point budget in the header | **FIELD-CONFIRMED, regression RESOLVED** — stuck on "reading..." early morning (survived zoning/job changes), then came back (`44 / 79` in the 09:xx screenshot) consistent with the blusets-documented quirk: private servers leave job structs stale until the native equip/Set Spells menus touch them. If it recurs: open the native Set Spells menu once; `/bludex debug` prints sig status + ungated raw reads. |
 | Red frames behind icons | **FIXED** `cf661f1` — ImageButton frames drew the default theme's red Button color; now transparent with soft blue hover. **Not yet re-checked in game** (fix landed as Henrik logged off) |
 | Detail panel (click a spell → 320px sprite + all data) | **UNKNOWN** — grid ran to the window edge in the screenshot; possibly cropped, possibly not rendering. **First thing to check next session.** |
 | Sets tab (saved sets, 20 slots, meters, Apply/Read/Clear, quick-add) | Built, compiles, logic smoke-tested — **never opened in game** |
 | Traits tab (ladders, feeders, add-for-next-tier) | Built, compiles — **never opened in game** |
-| Apply-in-game (0x102 packets, skips unlearned) | **FIELD-FIRED 2026-08-04, works** — but the reset-everything-first behavior annoyed in the field. Replaced by **diff apply** (`blu.applyDiff`: removals first, then adds; untouched slots stay; falls back to full apply when the live read fails). Full-reset path still behind `/bludex reset`. **Diff apply itself not yet field-fired.** Also ported blusets' **fast mode** (injected 0x102s, delay honored to 0.2s; `/bludex mode`, `/bludex delay`) — **never fired**. One spell per packet is a protocol limit; there is no multi-spell packet. |
+| Apply-in-game (0x102 packets, skips unlearned) | **FIELD-PROVEN 2026-08-04**, twice over: full reset+apply worked, then **diff apply worked and "speeds it up by a huge amount" (Henrik)** — removals first then adds, untouched slots stay, falls back to full apply when the live read fails. Full unset behind `/bludex reset`. **Fast mode field verdict: "doesn't feel like it works well" on CEXI — safe mode is the one we want.** Keep mode=safe; fast stays available for experiments (`/bludex mode`, `/bludex delay`). One spell per packet is a protocol limit; no multi-spell 0x102 exists. |
 | `/bludex` `/bdx` toggle, `list`, `apply <name>` | Toggle confirmed; list/apply untested |
 | Headless smoke (`tools/smoke.lua`, 23 checks) | Green. Run from `Ashita/addons/`: `lua bludex/tools/smoke.lua` |
 
@@ -43,6 +43,14 @@
   instead of being a silently dead button.
 - **Filter combos now measure their widths** (kit.measure + arrow) — the
   "All eleme▼" clipping is gone; open item 5 is done.
+- **Sets tab field polish (after the 09:xx screenshot):** slot icons dim when
+  the spell is not in the LIVE client set and light up one by one as an apply
+  lands them (per-frame `currentSet()` compare, no event plumbing). Slot-cell
+  alignment fixed — image cells are size+4 (2px frame padding per side), so
+  the text fallbacks ('-', '#id', name) now draw at size+4 too. Apply/Read
+  current/New/Save/Delete buttons measure their widths ("Apply in gam" was
+  clipped in the field). Selectable highlight (Header 24-26) pushed blue —
+  the selected saved-set row was default-theme RED.
 
 ## 3. Open items, in order
 

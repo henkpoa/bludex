@@ -33,7 +33,9 @@ function M.spellButton(ctx, id, size, selected, dimmed)
     if s == nil then
         -- an id the data does not know (a live-read slot can carry one):
         -- an inert-looking but still clickable cell, never an error.
-        clicked = kit.litButton(im, '#' .. tostring(id), selected, size, size);
+        -- +4: image cells are size + 2px frame padding per side; text cells
+        -- must match or mixed rows drift out of alignment.
+        clicked = kit.litButton(im, '#' .. tostring(id), selected, size + 4, size + 4);
         popId(im, pushed);
         return clicked;
     end
@@ -58,7 +60,8 @@ function M.spellButton(ctx, id, size, selected, dimmed)
         if styled then im.PopStyleColor(3); end
         clicked = ok and r or false;
     else
-        clicked = kit.litButton(im, s.name:sub(1, 10), selected, size, size);
+        -- +4 to match the image cells' frame padding (see above)
+        clicked = kit.litButton(im, s.name:sub(1, 10), selected, size + 4, size + 4);
     end
     popId(im, pushed);
     return clicked;

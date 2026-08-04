@@ -74,7 +74,12 @@ function M.render()
         im.PushStyleColor(11, { 0.10, 0.18, 0.34, 1.00 });     -- TitleBgActive
         im.PushStyleColor(10, { 0.07, 0.11, 0.20, 1.00 });     -- TitleBg
         im.PushStyleColor(3,  { 0.06, 0.09, 0.15, 0.97 });     -- ChildBg
-        pushed = 4;
+        -- Selectable/combo-item highlight: the default theme's Header is RED
+        -- (the selected saved-set row lit up red in the field) -- go blue.
+        im.PushStyleColor(24, { 0.16, 0.34, 0.62, 0.85 });     -- Header
+        im.PushStyleColor(25, { 0.20, 0.42, 0.74, 0.85 });     -- HeaderHovered
+        im.PushStyleColor(26, { 0.24, 0.48, 0.80, 1.00 });     -- HeaderActive
+        pushed = 7;
     end
     if kit.isFn(im, 'SetNextWindowSizeConstraints') then
         -- 920 wide fits the measured filter row; below that the Reset button clips
