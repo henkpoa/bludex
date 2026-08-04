@@ -63,6 +63,7 @@ function M.canAdd(set, id, book, budgetMax)
     if s == nil then return false, 'unknown spell'; end
     if not s.castable then return false, 'not castable at 75'; end
     if s.unbridled then return false, 'Unbridled spells cannot be set'; end
+    if not book.learned(id) then return false, 'not learned'; end
     if s.setPoints == nil then return false, 'set cost unknown'; end
     if M.contains(set, id) then return false, 'already in set'; end
     if M.freeSlot(set) == nil then return false, 'no free slot'; end

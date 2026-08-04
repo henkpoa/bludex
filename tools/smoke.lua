@@ -45,6 +45,9 @@ local dwSpells = book.filter({ traitCat = dw });
 check(#dwSpells >= 2, 'spells feed Dual Wield');
 
 print('smoke: set model');
+-- headless there is no AshitaCore, so every spell counts as learned here
+-- (canAdd requires learned in-game -- the codex/traits add paths gate on it)
+book.learned = function() return true; end
 local s = sets.new('Smoke');
 check(sets.count(s) == 0, 'new set empty');
 local ok = sets.add(s, 623, book, 80);

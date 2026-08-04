@@ -103,8 +103,11 @@ function M.tooltip(ctx, id)
     local lt = learnedText(ctx, id);
     if lt then lines[#lines + 1] = lt; end
     if s.castable and not s.unbridled and s.setPoints then
-        lines[#lines + 1] = ctx.sets.contains(ctx.state.editingSet, id)
-            and 'right-click: remove from set' or 'right-click: add to set';
+        if ctx.sets.contains(ctx.state.editingSet, id) then
+            lines[#lines + 1] = 'right-click: remove from set';
+        elseif book.learned(id) then
+            lines[#lines + 1] = 'right-click: add to set';
+        end
     end
     kit.tip(im, table.concat(lines, '\n'));
 end
@@ -138,11 +141,15 @@ function M.detail(ctx, id)
     if s.castable and not s.unbridled and s.setPoints then
         local btnW = kit.measure(im, { 'Add to current set', 'Remove from set' }, 150);
         if ctx.sets.contains(ctx.state.editingSet, id) then
+            -- removal always works, even for spells that predate the
+            -- learned gate (or came in from a live read)
             if kit.litButton(im, 'Remove from set', true, btnW, 26) then
                 ctx.sets.removeId(ctx.state.editingSet, id);
                 ctx.state.addNote = ('Removed %s.'):format(s.name);
                 if ctx.save then ctx.save(); end
             end
+        elseif not book.learned(id) then
+            kit.ctext(im, kit.COL.err, 'Not learned - learn it before it can be set.');
         else
             if kit.litButton(im, 'Add to current set', false, btnW, 26) then
                 local max = ctx.budgetMax();
