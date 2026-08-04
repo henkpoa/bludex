@@ -107,8 +107,10 @@ function M.render()
         elseif deps.blu.onBlu() then
             kit.ctext(im, kit.COL.dim, '   points: reading...');
             kit.tip(im, 'The client has not filled the points struct yet.\n'
-                .. 'Opening the game\'s own Set Spells menu once usually wakes it\n'
-                .. '(a private-server quirk). /bludex debug shows the details.');
+                .. 'Bludex is requesting the data from the server (the same\n'
+                .. '0x061 ask the native menus send). If it stays stuck:\n'
+                .. '/bludex refresh re-asks, /bludex debug shows details.');
+            deps.blu.nudgePoints();
         else
             kit.ctext(im, kit.COL.dim, '   (not on BLU - budget shown when you are)');
         end

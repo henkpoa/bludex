@@ -82,6 +82,7 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
         msg('/bludex list - list saved sets.');
         msg('/bludex apply <name> - apply a saved set (only the changed slots).');
         msg('/bludex reset - unset every spell.');
+        msg('/bludex refresh - re-request job data (wakes a stuck points read).');
         msg('/bludex delay <0.2-5> - seconds between set-spell packets.');
         msg('/bludex mode safe|fast - client-paced sends vs injected packets.');
         msg('/bludex debug - signature / points / live-set diagnostics.');
@@ -140,6 +141,15 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
         msg(('Apply mode: %s.'):format(m));
         if m == 'fast' then
             msg('fast = hand-injected 0x102 packets; the delay is honored below 1s. If spells go missing after an apply, the server dropped packets - go back to safe.');
+        end
+        return;
+    end
+
+    if args[2]:any('refresh') then
+        if blu.requestJobData() then
+            msg('Requested a job-data refresh from the server (packet 0x061) - the points header should fill within a second.');
+        else
+            msg('Could not send the refresh request.');
         end
         return;
     end

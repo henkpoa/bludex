@@ -161,6 +161,40 @@ function M.pointsRaw()
     return true, max, spent;
 end
 
+-- ---------------------------------------------------------------------------
+-- the points nudge: on LSB-family servers (CatsEyeXI) the client's BLU
+-- structs stay stale after login until the native status/equip/Set Spells
+-- menus fire a C2S 0x061 player-info request -- the server answers with the
+-- job-extra battery that fills them. Injecting the same request wakes the
+-- struct without opening a menu. 0x061 is a read-only "resend my stats" ask.
+-- ---------------------------------------------------------------------------
+local nudge = { last = 0, tries = 0 };
+
+function M.requestJobData()
+    local ok = pcall(function()
+        -- full packet bytes incl. header: id 0x61, size 0x08 (byte1 = size/2)
+        AshitaCore:GetPacketManager():AddOutgoingPacket(0x061,
+            { 0x61, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 });
+    end);
+    return ok;
+end
+
+-- Call freely (the header does, every frame it shows 'reading...'): fires
+-- only on BLU, only when the signature is alive but the struct reads zero,
+-- at most 3 times, 10s apart. A successful read re-arms it.
+function M.nudgePoints()
+    if not M.onBlu() then return; end
+    local okRaw, max = M.pointsRaw();
+    if not okRaw then return; end                    -- signature dead: no packet can help
+    if max ~= nil and max > 0 then nudge.tries = 0; return; end
+    if nudge.tries >= 3 then return; end
+    local now = os.clock();
+    if now - nudge.last < 10 then return; end
+    nudge.last = now;
+    nudge.tries = nudge.tries + 1;
+    M.requestJobData();
+end
+
 function M.canApply()
     return sig.equipex ~= nil and sig.offset ~= nil and M.onBlu();
 end
