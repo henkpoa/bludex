@@ -348,12 +348,8 @@ function M.render(ctx)
         spellType = f.spellType.value, traitCat = traitCat, learned = learned,
     });
 
-    -- browse header: result count + the editing set's budget, always in view
+    -- result count (the set/slot meters live in the window header now)
     kit.ctext(im, kit.COL.dim, ('%d spells'):format(#ids));
-    if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    kit.meter(im, '    Set:', ctx.sets.usedPoints(st.editingSet, book), ctx.budgetMax(), ' pts');
-    if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    kit.meter(im, '   Slots:', ctx.sets.count(st.editingSet), 20, '');
 
     -- the list: icon + name rows, 1-3 columns by available width
     local availW = availWidth(im, 800);

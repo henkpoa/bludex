@@ -132,20 +132,27 @@ function M.render()
         end
         kit.ctext(im, kit.COL.head, 'BLUDEX');
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        local max, spent = deps.blu.points();
-        if max then
-            kit.ctext(im, kit.COL.accent,
-                ('   Blue Magic Points: %d / %d'):format(spent or 0, max));
-            kit.tip(im, 'Live from the game client -\nCatsEyeXI merit and learning bonuses included.');
-        elseif deps.blu.onBlu() then
-            kit.ctext(im, kit.COL.dim, '   points: reading...');
+        -- the header meters are the EDITING set against the budget -- the
+        -- planning numbers needed while adding from the codex. Live-vs-
+        -- planned shows per-slot in the Sets tab (dimming).
+        local max = budgetMax(deps);
+        kit.meter(im, '   Set:', deps.sets.usedPoints(st.editingSet, deps.book), max, ' pts');
+        kit.tip(im, max ~= nil
+            and 'Points used by the set you are editing /\nyour total from the game client (CatsEyeXI bonuses included).'
+            or 'Points used by the set you are editing.\nThe total appears when you are on BLU (or set budgetOverride).');
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        kit.meter(im, '   Slots:', deps.sets.count(st.editingSet), 20, '');
+        if deps.blu.onBlu() and (deps.blu.points()) == nil then
+            if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            kit.ctext(im, kit.COL.dim, '   (live points: reading...)');
             kit.tip(im, 'The client has not filled the points struct yet.\n'
                 .. 'Bludex is requesting the data from the server (the same\n'
                 .. '0x061 ask the native menus send). If it stays stuck:\n'
                 .. '/bludex refresh re-asks, /bludex debug shows details.');
             deps.blu.nudgePoints();
-        else
-            kit.ctext(im, kit.COL.dim, '   (not on BLU - budget shown when you are)');
+        elseif not deps.blu.onBlu() then
+            if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            kit.ctext(im, kit.COL.dim, '   (not on BLU)');
         end
 
         -- tab row
