@@ -41,6 +41,18 @@ end
 function M.init(deps)
     M.deps = deps;                      -- { im, book, blu, sets, cfg, save }
     M.state = freshState(deps.sets);
+    -- restore the last active saved set (matched by name -- indices shift
+    -- when sets are deleted), exactly as if it had been clicked
+    local want = deps.cfg.activeSetName;
+    if want ~= nil and want ~= '' then
+        for i, entry in ipairs(deps.cfg.sets) do
+            if entry.name == want then
+                M.state.activeSet = i;
+                M.state.editingSet = deps.sets.clone(entry, entry.name);
+                break;
+            end
+        end
+    end
 end
 
 function M.toggle()

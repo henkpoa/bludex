@@ -35,6 +35,8 @@ local function savedList(ctx)
                 st.activeSet = i;
                 st.editingSet = ctx.sets.clone(entry, entry.name);
                 st.applyNote = nil;
+                cfg.activeSetName = entry.name;    -- remembered across loads
+                if ctx.save then ctx.save(); end
             end
         end
     end
@@ -58,6 +60,7 @@ local function savedList(ctx)
             table.insert(cfg.sets, copy);
             st.activeSet = #cfg.sets;
         end
+        cfg.activeSetName = copy.name;             -- remembered across loads
         if ctx.save then ctx.save(); end
         st.applyNote = 'Saved.';
     end
@@ -66,6 +69,7 @@ local function savedList(ctx)
         if st.activeSet and cfg.sets[st.activeSet] then
             table.remove(cfg.sets, st.activeSet);
             st.activeSet = nil;
+            cfg.activeSetName = '';
             if ctx.save then ctx.save(); end
             st.applyNote = 'Deleted.';
         end

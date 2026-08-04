@@ -33,6 +33,7 @@ local defaults = T{
     applyMode = 'safe',       -- 'safe' (client-paced) | 'fast' (injected)
     autoRestore = false,      -- re-add spells stripped by level changes
     lastApplied = T{ },       -- { ids = {20} } -- the auto-restore target
+    activeSetName = '',       -- last selected saved set, reloaded at startup
 };
 
 local cfg = settings.load(defaults);
