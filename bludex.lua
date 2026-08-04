@@ -30,6 +30,7 @@ local defaults = T{
     sets = T{ },              -- { { name = s, ids = {20 real ids} }, ... }
     budgetOverride = 0,       -- shown when the live budget is unavailable
     applyDelay = 1.1,         -- seconds between set-spell packets
+    applyMode = 'safe',       -- 'safe' (client-paced) | 'fast' (injected)
 };
 
 local cfg = settings.load(defaults);
@@ -43,12 +44,14 @@ host.init({
     cfg = cfg, save = saveSettings,
 });
 blu.delay = cfg.applyDelay or 1.1;
+blu.mode  = cfg.applyMode or 'safe';
 
 settings.register('settings', 'bdx_settings_update', function(s)
     if s ~= nil then
         cfg = s;
         host.deps.cfg = cfg;
         blu.delay = cfg.applyDelay or 1.1;
+        blu.mode  = cfg.applyMode or 'safe';
     end
 end);
 
@@ -77,7 +80,76 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
     if args[2]:any('help') then
         msg('/bludex (or /bdx) - toggle the window.');
         msg('/bludex list - list saved sets.');
-        msg('/bludex apply <name> - apply a saved set in game.');
+        msg('/bludex apply <name> - apply a saved set (only the changed slots).');
+        msg('/bludex reset - unset every spell.');
+        msg('/bludex delay <0.2-5> - seconds between set-spell packets.');
+        msg('/bludex mode safe|fast - client-paced sends vs injected packets.');
+        msg('/bludex debug - signature / points / live-set diagnostics.');
+        return;
+    end
+
+    if args[2]:any('debug') then
+        local st = blu.sigStatus();
+        msg(('signatures: offset=%s points=%s equipex=%s'):format(
+            st.offset and 'ok' or 'MISSING',
+            st.points and 'ok' or 'MISSING',
+            st.equipex and 'ok' or 'MISSING'));
+        msg(('job: BLU main=%s sub=%s'):format(
+            blu.isBluMain() and 'yes' or 'no', blu.isBluSub() and 'yes' or 'no'));
+        local ok, pmax, pspent = blu.pointsRaw();
+        if ok then
+            msg(('points raw: max=%s spent=%s%s'):format(tostring(pmax), tostring(pspent),
+                (pmax == 0) and '  <- struct is zero; open the native Set Spells menu once' or ''));
+        else
+            msg('points raw: read failed (signature missing or pointer chain dead)');
+        end
+        local live = blu.currentSet();
+        if #live == 20 then
+            local n = 0;
+            for i = 1, 20 do if live[i] ~= 0 then n = n + 1; end end
+            msg(('live set: readable, %d/20 slots filled'):format(n));
+        else
+            msg('live set: NOT readable');
+        end
+        msg(('mode=%s delay=%.2f applying=%s'):format(blu.mode, blu.delay, tostring(blu.applying)));
+        return;
+    end
+
+    if args[2]:any('delay') and #args >= 3 then
+        local d = tonumber(args[3]);
+        if d == nil or d < 0.2 or d > 5 then
+            msg('Usage: /bludex delay <seconds, 0.2-5>. Safe mode never runs below 1.0 - the client itself paces it; use fast mode to go lower.');
+            return;
+        end
+        cfg.applyDelay = d;
+        blu.delay = d;
+        saveSettings();
+        msg(('Apply delay set to %.2fs.'):format(d));
+        return;
+    end
+
+    if args[2]:any('mode') and #args >= 3 then
+        local m = args[3]:lower();
+        if m ~= 'safe' and m ~= 'fast' then
+            msg('Usage: /bludex mode safe|fast.');
+            return;
+        end
+        cfg.applyMode = m;
+        blu.mode = m;
+        saveSettings();
+        msg(('Apply mode: %s.'):format(m));
+        if m == 'fast' then
+            msg('fast = hand-injected 0x102 packets; the delay is honored below 1s. If spells go missing after an apply, the server dropped packets - go back to safe.');
+        end
+        return;
+    end
+
+    if args[2]:any('reset') then
+        if blu.resetAll() then
+            msg('Reset queued - all set spells unset.');
+        else
+            msg('Cannot reset: BLU is not your main or sub job (or signatures failed).');
+        end
         return;
     end
 
@@ -100,7 +172,7 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
             msg('No saved set by that name. /bludex list shows them.');
             return;
         end
-        blu.applySet(entry.ids);
+        blu.applyDiff(entry.ids);
         return;
     end
 

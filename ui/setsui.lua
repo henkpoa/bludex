@@ -141,8 +141,8 @@ local function slotGrid(ctx)
     local canApply = ctx.blu.canApply() and not ctx.blu.applying;
     if kit.litButton(im, ctx.blu.applying and 'Applying...' or 'Apply in game', false, 110, 26) then
         if canApply then
-            ctx.blu.applySet(st.editingSet.ids);
-            st.applyNote = 'Applying - watch the chat log.';
+            ctx.blu.applyDiff(st.editingSet.ids);
+            st.applyNote = 'Applying the changed slots - watch the chat log.';
         elseif not ctx.blu.applying then
             -- a dead button with no reason is a field mystery -- say why
             st.applyNote = ctx.blu.onBlu()

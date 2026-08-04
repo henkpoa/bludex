@@ -101,6 +101,9 @@ function M.render()
             kit.tip(im, 'Live from the game client -\nCatsEyeXI merit and learning bonuses included.');
         elseif deps.blu.onBlu() then
             kit.ctext(im, kit.COL.dim, '   points: reading...');
+            kit.tip(im, 'The client has not filled the points struct yet.\n'
+                .. 'Opening the game\'s own Set Spells menu once usually wakes it\n'
+                .. '(a private-server quirk). /bludex debug shows the details.');
         else
             kit.ctext(im, kit.COL.dim, '   (not on BLU - budget shown when you are)');
         end

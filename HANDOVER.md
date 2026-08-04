@@ -11,12 +11,12 @@
 | Piece | State |
 |---|---|
 | Icon grid (Codex tab), 135 spells, filters row, tab row | **FIELD-CONFIRMED** — screenshot 03:26, icons look great |
-| Live set-point budget in the header | **FIELD-CONFIRMED** — showed `0 / 79`, exactly Henrik's real total, CEXI custom bonuses included (read from client memory via the blusets signature, `lib/blu.lua points()`) |
+| Live set-point budget in the header | **FIELD-CONFIRMED** 03:26 (`0 / 79`, CEXI bonuses included) — **REGRESSED by morning**: stuck on "reading...", survives zoning/job changes. Same code as the working night read. Prime suspect: the blusets-documented private-server quirk (job structs stale until the native menus touch them). `/bludex debug` now prints sig status + ungated raw reads — run it before anything else. |
 | Red frames behind icons | **FIXED** `cf661f1` — ImageButton frames drew the default theme's red Button color; now transparent with soft blue hover. **Not yet re-checked in game** (fix landed as Henrik logged off) |
 | Detail panel (click a spell → 320px sprite + all data) | **UNKNOWN** — grid ran to the window edge in the screenshot; possibly cropped, possibly not rendering. **First thing to check next session.** |
 | Sets tab (saved sets, 20 slots, meters, Apply/Read/Clear, quick-add) | Built, compiles, logic smoke-tested — **never opened in game** |
 | Traits tab (ladders, feeders, add-for-next-tier) | Built, compiles — **never opened in game** |
-| Apply-in-game (0x102 packets, safe mode, 1.1s delays, skips unlearned) | Ported from blusets, **NEVER FIRED**. Test deliberately: on BLU, a 2-3 spell set first, watch the chat log. It resets the current set before applying. |
+| Apply-in-game (0x102 packets, skips unlearned) | **FIELD-FIRED 2026-08-04, works** — but the reset-everything-first behavior annoyed in the field. Replaced by **diff apply** (`blu.applyDiff`: removals first, then adds; untouched slots stay; falls back to full apply when the live read fails). Full-reset path still behind `/bludex reset`. **Diff apply itself not yet field-fired.** Also ported blusets' **fast mode** (injected 0x102s, delay honored to 0.2s; `/bludex mode`, `/bludex delay`) — **never fired**. One spell per packet is a protocol limit; there is no multi-spell packet. |
 | `/bludex` `/bdx` toggle, `list`, `apply <name>` | Toggle confirmed; list/apply untested |
 | Headless smoke (`tools/smoke.lua`, 23 checks) | Green. Run from `Ashita/addons/`: `lua bludex/tools/smoke.lua` |
 
