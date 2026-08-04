@@ -31,6 +31,53 @@ Bludex combines what `blucheck` and `blusets` did — and goes further:
 - **Trait explorer** — every blue trait ladder (Dual Wield, Attack Bonus, …), which
   spells feed it, and what to add for the next tier.
 
+## A tour
+
+### The codex
+
+![The codex — Medium view, sorted by name, hovering Healing Breeze](docs/screenshots/codex.png)
+
+Every castable spell, filterable and sortable, at your chosen density (Medium 32px
+here). **Green names are in your current set**, dim names aren't learned yet. Hovering
+shows the tooltip: artwork, category/level/kind, set cost, the spell's stat bonuses,
+its trait — and your set's live progress toward that trait's next rank (`0 / 2 - for
+rank 1`). Right-click adds or removes without opening anything. The header is always
+in view: the editing set's points and slots, and **Save / Apply / Revert** — Apply
+glows green because this set hasn't been sent to the game yet.
+
+### Spell Info
+
+![Spell Info — Healing Breeze](docs/screenshots/spell-info.png)
+
+Left-click any spell for the full picture in its own window: the add/remove button
+right at the top, then the artwork and everything the data layer knows — type,
+element, monster family, level, MP/cast/recast, AoE, set cost, trait contribution,
+stat bonuses, and every zone and mob that can teach it. In the dlac flavor this window
+floats free of dlac's main box.
+
+### The set planner
+
+![The Sets tab — grid layout, stats and traits](docs/screenshots/sets.png)
+
+Your 20 slots as a spatial grid (or a named list — the `Grid | List` toggle), with the
+live budget, slot count, and total MP beneath. Empty slots are quiet rings; icons dim
+until the game actually has them equipped. The right panel totals the set's always-on
+stat bonuses and trait ladder progress, including what one more feeder spell would
+unlock. `Level change: Restore` is armed here — after a level sync strips spells,
+Bludex re-adds them automatically. The amber **`castable in 58s`** in the header is
+the game's own post-change cast lock, counted down for you (a chat line announces when
+it ends).
+
+### The trait explorer
+
+![The Traits tab — Dual Wield expanded](docs/screenshots/traits.png)
+
+Every blue trait as a ladder: which tiers exist, which one your set has active
+(green), and how much weight the next needs. Expand a trait to see its feeder spells —
+green ones are in your set, red ones you haven't learned — and right-click to add or
+remove them on the spot. The same tooltips, densities, and Spell Info clicks as the
+codex: one grammar everywhere.
+
 ## Install
 
 **Standalone:** drop this repository into `Ashita/addons/bludex/` and `/addon load bludex`.
