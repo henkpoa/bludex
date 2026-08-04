@@ -340,10 +340,6 @@ function M.resetAll()
     return ok;
 end
 
-local function msg(s)
-    print(chat.header('bludex'):append(chat.message(s)));
-end
-
 -- Sort spell ids ascending by BLU spell level (unknown levels last). THE
 -- LEVEL LAW: a level-down strips set spells the lowered level cannot hold,
 -- and a synced-down apply gets its tail rejected -- so castable spells must
