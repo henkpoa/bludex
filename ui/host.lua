@@ -197,6 +197,16 @@ local function renderBody(im, st, deps, embedded)
     if not tok then
         kit.ctext(im, kit.COL.err, 'tab error: ' .. tostring(terr));
     end
+    -- The Spell Info window serves EVERY tab (codex and traits rows both
+    -- open it), so it draws once here after the active tab -- except in the
+    -- embedded-Panel fallback, where a Panel may not open windows (the
+    -- codex's in-panel pane covers it there).
+    if not ctx.embedded then
+        local dok, derr = pcall(spellsui.detailWindow, ctx);
+        if not dok then
+            kit.ctext(im, kit.COL.err, 'detail error: ' .. tostring(derr));
+        end
+    end
 end
 
 -- the floating Bludex window itself (Begin/End + chrome), shared by the

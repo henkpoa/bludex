@@ -104,6 +104,7 @@ local function loadCfg(S)
         lastApplied    = { ids = codec.decodeIds(S.cfg.get('lastApplied')) },
         activeSetName  = S.cfg.get('activeSetName'),
         codexDensity   = S.cfg.get('codexDensity'),
+        traitsDensity  = S.cfg.get('traitsDensity'),
         applyMode      = S.cfg.get('applyMode'),
         applyDelay     = S.cfg.get('applyDelay'),
         budgetOverride = S.cfg.get('budgetOverride'),
@@ -125,6 +126,7 @@ local function saveCfg()
             (cfg.lastApplied and cfg.lastApplied.ids) and codec.encodeIds(cfg.lastApplied.ids) or '');
         Sref.cfg.set('activeSetName', tostring(cfg.activeSetName or ''));
         Sref.cfg.set('codexDensity', tostring(cfg.codexDensity or 'normal'));
+        Sref.cfg.set('traitsDensity', tostring(cfg.traitsDensity or 'normal'));
         Sref.cfg.set('applyMode', tostring(cfg.applyMode or 'safe'));
         Sref.cfg.set('applyDelay', tonumber(cfg.applyDelay) or 1.1);
         Sref.cfg.set('budgetOverride', tonumber(cfg.budgetOverride) or 0);
@@ -143,13 +145,13 @@ return {
     config = {
         keys = {
             sets = 'string', lastApplied = 'string', activeSetName = 'string',
-            codexDensity = 'string', applyMode = 'string',
+            codexDensity = 'string', traitsDensity = 'string', applyMode = 'string',
             applyDelay = 'number', budgetOverride = 'number',
             autoRestore = 'boolean',
         },
         defaults = {
             sets = '', lastApplied = '', activeSetName = '',
-            codexDensity = 'normal', applyMode = 'safe',
+            codexDensity = 'normal', traitsDensity = 'normal', applyMode = 'safe',
             applyDelay = 1.1, budgetOverride = 0,
             autoRestore = false,
         },
