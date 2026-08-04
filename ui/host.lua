@@ -42,7 +42,12 @@ function M.init(deps)
 end
 
 function M.toggle()
-    if M.state then M.state.open[1] = not M.state.open[1]; end
+    if M.state then
+        M.state.open[1] = not M.state.open[1];
+        -- every open re-asks the server for job data (field-confirmed cure
+        -- for the stale points/set structs)
+        if M.state.open[1] and M.deps then M.deps.blu.refreshIfOnBlu(); end
+    end
 end
 
 function M.isOpen()
@@ -66,6 +71,9 @@ function M.render()
     local deps = M.deps;
     local im = deps.im;
     if not kit.isFn(im, 'Begin') or not kit.isFn(im, 'End') then return; end
+
+    -- level / job changes invalidate the BLU structs like a fresh login does
+    deps.blu.watchJobState();
 
     -- theme: dark navy window, blue title
     local pushed = 0;

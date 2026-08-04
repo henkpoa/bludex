@@ -195,6 +195,32 @@ function M.nudgePoints()
     M.requestJobData();
 end
 
+-- One refresh on window open (field-confirmed cure for the stale structs):
+-- cheap freshness for the points read and the live set.
+function M.refreshIfOnBlu()
+    if M.onBlu() then M.requestJobData(); end
+end
+
+-- Fire a refresh whenever the job identity changes -- level up/down or a
+-- main/sub swap invalidates the BLU structs the same way login does. Called
+-- once per frame while the window is open; the compare makes it a no-op
+-- almost always. First sight only sets the baseline (the on-open refresh
+-- already covered that moment).
+local watched = nil;
+function M.watchJobState()
+    local ok, cur = pcall(function()
+        local p = player();
+        return ('%d.%d/%d.%d'):format(p:GetMainJob(), p:GetMainJobLevel(),
+            p:GetSubJob(), p:GetSubJobLevel());
+    end);
+    if not ok or cur == nil then return; end
+    if watched == nil then watched = cur; return; end
+    if cur ~= watched then
+        watched = cur;
+        if M.onBlu() then M.requestJobData(); end
+    end
+end
+
 function M.canApply()
     return sig.equipex ~= nil and sig.offset ~= nil and M.onBlu();
 end
