@@ -32,12 +32,23 @@ function M.spellButton(ctx, id, size, selected, dimmed)
     local pushed = pushId(im, 'bdxsp' .. id);
     local h = filetex.spell(book, s, size >= 96 and 'grid128' or 'grid64');
     if h ~= nil and kit.isFn(im, 'ImageButton') then
+        -- ImageButton's frame draws in the style Button color (red in the
+        -- default Ashita theme) -- make it transparent so only the sprite
+        -- shows; hover/active glow soft blue.
+        local styled = false;
+        if kit.isFn(im, 'PushStyleColor') and kit.isFn(im, 'PopStyleColor') then
+            im.PushStyleColor(21, { 0, 0, 0, 0 });                 -- Button
+            im.PushStyleColor(22, { 0.20, 0.42, 0.74, 0.45 });     -- Hovered
+            im.PushStyleColor(23, { 0.20, 0.42, 0.74, 0.70 });     -- Active
+            styled = true;
+        end
         local bg = selected and { 0.20, 0.42, 0.74, 0.85 } or { 0, 0, 0, 0 };
         local tint = dimmed and { 0.45, 0.45, 0.50, 0.85 } or { 1, 1, 1, 1 };
         local ok, r = pcall(im.ImageButton, h, { size, size }, { 0, 0 }, { 1, 1 }, 2, bg, tint);
         if not ok then
             ok, r = pcall(im.ImageButton, h, { size, size });
         end
+        if styled then im.PopStyleColor(3); end
         clicked = ok and r or false;
     else
         clicked = kit.litButton(im, s.name:sub(1, 10), selected, size, size);

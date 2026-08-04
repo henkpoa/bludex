@@ -105,7 +105,15 @@ local function slotGrid(ctx)
             if kit.isFn(im, 'PushID') then pcall(im.PushID, 'bdxslot' .. i); pushed = true; end
             local h = filetex.ui('slot-empty-64');
             if h ~= nil and kit.isFn(im, 'ImageButton') then
+                local styled = false;
+                if kit.isFn(im, 'PushStyleColor') and kit.isFn(im, 'PopStyleColor') then
+                    im.PushStyleColor(21, { 0, 0, 0, 0 });
+                    im.PushStyleColor(22, { 0.20, 0.42, 0.74, 0.30 });
+                    im.PushStyleColor(23, { 0.20, 0.42, 0.74, 0.50 });
+                    styled = true;
+                end
                 pcall(im.ImageButton, h, { cell, cell });
+                if styled then im.PopStyleColor(3); end
             else
                 kit.litButton(im, '-', false, cell, cell);
             end
