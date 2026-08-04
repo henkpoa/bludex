@@ -227,21 +227,40 @@ function M.canApply()
     return sig.equipex ~= nil and sig.offset ~= nil and M.onBlu();
 end
 
+local function msg(s)
+    print(chat.header('bludex'):append(chat.message(s)));
+end
+
 -- The CAST LOCK: setting or unsetting any spell locks Blue Magic casting
 -- for about a minute (the game's own rule). Every 0x102 we send restamps
 -- the clock, so the countdown runs from the LAST packet of an apply.
 -- castReadyIn() -> whole seconds remaining, 0 when casting is free.
+--
+-- Each stamp also arms a deferred chat line for lock-end -- a task, not a
+-- UI poll, so it fires with the window closed and whatever gates the host's
+-- tick. Only the LATEST stamp's task speaks (generation check); the task
+-- owns clearing the stamp, castReadyIn only reports.
 M.castLock = 60;                 -- seconds; adjust here if CEXI differs
 local lastChangeAt = nil;
+local lockGen = 0;
 
 local function stampSetChange()
     lastChangeAt = os.clock();
+    lockGen = lockGen + 1;
+    local gen = lockGen;
+    pcall(function()
+        ashita.tasks.once(M.castLock, function()
+            if gen ~= lockGen or lastChangeAt == nil then return; end
+            lastChangeAt = nil;
+            msg('Blue Magic is castable again.');
+        end);
+    end);
 end
 
 function M.castReadyIn()
     if lastChangeAt == nil then return 0; end
     local rem = M.castLock - (os.clock() - lastChangeAt);
-    if rem <= 0 then lastChangeAt = nil; return 0; end
+    if rem <= 0 then return 0; end
     return math.ceil(rem);
 end
 
