@@ -227,6 +227,24 @@ function M.canApply()
     return sig.equipex ~= nil and sig.offset ~= nil and M.onBlu();
 end
 
+-- The CAST LOCK: setting or unsetting any spell locks Blue Magic casting
+-- for about a minute (the game's own rule). Every 0x102 we send restamps
+-- the clock, so the countdown runs from the LAST packet of an apply.
+-- castReadyIn() -> whole seconds remaining, 0 when casting is free.
+M.castLock = 60;                 -- seconds; adjust here if CEXI differs
+local lastChangeAt = nil;
+
+local function stampSetChange()
+    lastChangeAt = os.clock();
+end
+
+function M.castReadyIn()
+    if lastChangeAt == nil then return 0; end
+    local rem = M.castLock - (os.clock() - lastChangeAt);
+    if rem <= 0 then lastChangeAt = nil; return 0; end
+    return math.ceil(rem);
+end
+
 -- The per-packet pause. Safe mode is paced by the client's own limiter
 -- anyway, so anything under 1.0 buys nothing there; fast mode honors the
 -- configured delay down to 0.2s.
@@ -265,11 +283,13 @@ function M.setSlot(slot, realId)
         byte = realId - 512;
     end
     if M.mode == 'fast' and pcall(injectSetPacket, slot, byte) then
+        stampSetChange();
         return true;
     end
     local ok = pcall(function()
         sig.equipex(M.isBluMain() and 0 or 1, 0x1000, slot - 1, byte);
     end);
+    if ok then stampSetChange(); end
     return ok;
 end
 
@@ -288,7 +308,7 @@ function M.resetAll()
             local packet = ffi.string(eqex, ffi.sizeof('bludex_equipex_c2s_t')):totable();
             AshitaCore:GetPacketManager():AddOutgoingPacket(0x102, packet);
         end);
-        if okf then return true; end
+        if okf then stampSetChange(); return true; end
     end
     local ok = pcall(function()
         AshitaCore:GetPacketManager():QueuePacket(0x102, 0xA4, 0x00, 0x00, 0x00, function(ptr)
@@ -297,6 +317,7 @@ function M.resetAll()
             ffi.copy(p + 0x08, ffi.cast('uint8_t*', bufferPtr()), 0x9C);
         end);
     end);
+    if ok then stampSetChange(); end
     return ok;
 end
 
@@ -399,7 +420,8 @@ function M.applySet(ids, book, onDone)
             coroutine.sleep(delay);
         end
         M.applying = false;
-        msg(('Set applied (%d spells, lowest level first).'):format(#list));
+        msg(('Set applied (%d spells, lowest level first). Spells castable in ~%ds.'):format(
+            #list, M.castLock));
         if onDone then pcall(onDone); end
     end);
     return true;
@@ -447,8 +469,8 @@ function M.applyDiff(ids, book, onDone)
             coroutine.sleep(delay);
         end
         M.applying = false;
-        msg(('Set updated: %d added (lowest level first), %d removed, %d kept.'):format(
-            #plan.adds, #plan.removes, plan.kept));
+        msg(('Set updated: %d added (lowest level first), %d removed, %d kept. Spells castable in ~%ds.'):format(
+            #plan.adds, #plan.removes, plan.kept, M.castLock));
         if onDone then pcall(onDone); end
     end);
     return true;
@@ -480,10 +502,10 @@ function M.restoreMissing(ids, book, onDone)
         for _, e in ipairs(plan.adds) do if liveNow[e.id] then stuck = stuck + 1; end end
         M.applying = false;
         if #after == 20 and stuck < #plan.adds then
-            msg(('Restored %d of %d - the rest need a higher level (or a free slot).'):format(
-                stuck, #plan.adds));
+            msg(('Restored %d of %d - the rest need a higher level (or a free slot). Spells castable in ~%ds.'):format(
+                stuck, #plan.adds, M.castLock));
         else
-            msg(('Restored %d spell(s).'):format(#plan.adds));
+            msg(('Restored %d spell(s). Spells castable in ~%ds.'):format(#plan.adds, M.castLock));
         end
         if onDone then pcall(onDone); end
     end);

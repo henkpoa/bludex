@@ -236,6 +236,16 @@ local function renderBody(im, st, deps, embedded)
     kit.tip(im, unsaved and 'Discard the unsaved changes - back to the saved set.'
         or 'No unsaved changes to revert.');
 
+    -- the cast lock countdown: changing set spells locks Blue Magic casting
+    -- for about a minute (the game's rule) -- count it down where the eye is
+    local lockRem = deps.blu.castReadyIn();
+    if lockRem > 0 then
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        kit.ctext(im, kit.COL.warn, ('   castable in %ds'):format(lockRem));
+        kit.tip(im, 'Changing set spells locks Blue Magic casting for about a\n'
+            .. 'minute. The countdown runs from the last set change Bludex sent.');
+    end
+
     -- tab row
     local w = kit.measure(im, TABS, 90);
     for _, t in ipairs(TABS) do
