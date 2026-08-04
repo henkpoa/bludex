@@ -17,6 +17,10 @@ local chat     = require('chat');
 local settings = require('settings');
 local imgui    = require('imgui');
 
+-- The dlac bootstrap: append <install>/addons/?.lua so require('bludex\\X')
+-- resolves to addons/bludex/X.lua for every module in this addon's state.
+package.path = package.path .. ';' .. AshitaCore:GetInstallPath() .. 'addons\\?.lua';
+
 local book = require('bludex\\lib\\spellbook');
 local blu  = require('bludex\\lib\\blu');
 local sets = require('bludex\\lib\\setmodel');
