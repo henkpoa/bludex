@@ -594,6 +594,35 @@ def main():
     open(out2, "w", encoding="utf-8", newline="\n").write("\n".join(T) + "\n")
     print("wrote " + os.path.abspath(out2))
 
+    # ------------------------------------------------------------ hints.lua
+    # Learn-location hints from blucheck's data (spellid -> zoneId -> mobs).
+    # Retail-era data; the UI labels it as such.
+    bj = os.path.join(os.path.dirname(HERE), "..", "blucheck", "data", "spells.json")
+    bj = os.path.normpath(os.path.join(HERE, "..", "..", "blucheck", "data", "spells.json"))
+    if os.path.exists(bj):
+        import json
+        hd = json.load(open(bj, encoding="utf-8"))
+        H = []
+        H.append("-- hints.lua -- learn-location hints (GENERATED %s by tools/generate_spells.py -- DO NOT EDIT)" % today)
+        H.append("-- Source: blucheck's data/spells.json (retail-era zones/mobs; CatsEyeXI can differ).")
+        H.append("")
+        H.append("local M = { hints = {} }")
+        H.append("")
+        for sid in sorted(int(k) for k in hd):
+            zones = hd[str(sid)]
+            parts = []
+            for z in sorted(int(k) for k in zones):
+                mobs = ", ".join(lq(m) for m in zones[str(z)])
+                parts.append("[%d] = { %s }" % (z, mobs))
+            H.append("M.hints[%d] = { %s }" % (sid, ", ".join(parts)))
+        H.append("")
+        H.append("return M")
+        out3 = os.path.join(OUTDIR, "hints.lua")
+        open(out3, "w", encoding="utf-8", newline="\n").write("\n".join(H) + "\n")
+        print("wrote %s (%d spells with hints)" % (os.path.abspath(out3), len(hd)))
+    else:
+        warn("blucheck spells.json not found -- hints.lua not generated")
+
     # ------------------------------------------------------------ report
     print("\n=== verification needed (in game) ===")
     for r in rows:
