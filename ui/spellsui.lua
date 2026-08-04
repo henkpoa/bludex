@@ -504,11 +504,14 @@ function M.render(ctx)
     local colW = math.floor((availW - 16) / cols);   -- -16: scrollbar margin
     local nameW = math.max(colW - (showIcon and iconSz or 0) - 28, 80);
 
-    -- Embedded (dlac Job helper Panel) may not open windows -- the authoring
-    -- guide forbids Begin/End from a Panel -- so there the detail renders as
-    -- an in-panel child on the right instead of the floating Spell Info.
+    -- Embedded (dlac Job helper Panel) may not open windows from the Panel.
+    -- When the hosting addon runs our detail through its sanctioned float
+    -- surface (host.renderDetailFloat via dlac's `window` hook), Spell Info
+    -- floats as usual; on a host without that surface the detail renders as
+    -- an in-panel child on the right instead. Standalone keeps its float.
     local DETAIL_W = 372;
-    local paneDetail = ctx.embedded == true and st.detailOpen[1] and st.selectedId ~= nil;
+    local paneDetail = ctx.embedded == true and ctx.floatWindow ~= true
+        and st.detailOpen[1] and st.selectedId ~= nil;
     local listW = 0;
     if paneDetail then
         listW = math.max(availW - DETAIL_W - 12, 240);

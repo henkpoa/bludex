@@ -50,7 +50,7 @@ secret in `henkpoa/bludex`.
 | Guide requirement | How it is met |
 |---|---|
 | `api = 2`, `label`, `jobs`, `panel` | Contract table returned by `init.lua`; `jobs = { 'BLU' }`. |
-| Panels may not open windows | `host.renderEmbedded()` renders body-only; the codex's floating Spell Info window becomes an **in-panel detail pane** (`ctx.embedded`). |
+| Panels may not open windows | `host.renderEmbedded()` renders body-only. Spell Info floats through the **sanctioned `window` hook** (ADR 0028 amendment 2026-08-04): `host.renderDetailFloat()` draws it at dlac's one float site, so it survives the main window closing. On an older dlac that ignores the hook, the codex detects the surface never ran and falls back to an **in-panel detail pane** by itself. |
 | Settings: framework store, scalars only | The adapter's codec encodes saved sets (`name\tid,csv` lines) and the last-applied snapshot (`id` csv) as strings; the library keeps mutating its usual `cfg` table and `save()` re-encodes. Declared keys/defaults on the contract. |
 | Act whether or not the Panel is open | `S.combat.subscribe` beat → `host.tick()` (level-change watch + armed Restore), gated `S.me.acting().active == true` — an unreadable world is not permission. |
 | The host's imgui handle, never your own | `panel(ctx)` assigns `ctx.imgui` into the host deps each render. |

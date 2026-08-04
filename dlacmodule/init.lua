@@ -193,6 +193,18 @@ return {
         L.host.renderEmbedded();
     end,
 
+    -- The Spell Info window, through the framework's float surface (ADR 0028
+    -- amendment 2026-08-04): drawn at dlac's one float draw site, so it
+    -- survives the main window closing. Self-gates -- draws nothing until a
+    -- spell is clicked open in the codex. On an older dlac that ignores this
+    -- hook, the codex falls back to its in-panel detail pane by itself.
+    window = function(ctx)
+        local L = lib;
+        if L == nil then return; end
+        L.host.deps.im = ctx.imgui;
+        L.host.renderDetailFloat();
+    end,
+
     status = function(ctx)
         local L = lib;
         if L == nil then return; end

@@ -77,8 +77,8 @@ check(book.traits.rules.expectedTotalAt75 == 80, 'field: expected total 80');
 
 print('smoke: dlac module adapter');
 local dm = require('bludex\\dlacmodule\\init');
-check(dm.api == 2 and type(dm.panel) == 'function' and type(dm.init) == 'function',
-    'contract shape (api 2, panel, init)');
+check(dm.api == 2 and type(dm.panel) == 'function' and type(dm.init) == 'function'
+    and type(dm.window) == 'function', 'contract shape (api 2, panel, init, window)');
 check(dm.config and dm.config.keys and dm.config.keys.sets == 'string'
     and dm.config.defaults.autoRestore == false, 'config declaration');
 local ids = {}; for i = 1, 20 do ids[i] = 0; end

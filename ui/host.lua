@@ -130,10 +130,24 @@ local function pushWindowTheme(im)
     return 3 + pushBodyTheme(im);
 end
 
+-- the per-frame ctx handed to every tab (and to the detail float)
+local function tabCtx(im, st, deps, embedded)
+    return {
+        im = im, book = deps.book, blu = deps.blu, sets = deps.sets,
+        cfg = deps.cfg, save = deps.save, state = st,
+        embedded = embedded == true,
+        -- true once an embedding host's sanctioned float surface has run:
+        -- the codex then routes Spell Info there instead of its in-panel pane
+        floatWindow = deps.floatWindow == true,
+        budgetMax = function() return budgetMax(deps); end,
+    };
+end
+
 -- header + tab row + the active tab: everything between Begin and End,
 -- shared verbatim by the standalone window and the embedded flavor.
 -- `embedded` reaches the tabs through ctx: a dlac Job helper Panel may not
--- open windows, so the codex swaps its floating Spell Info for a pane.
+-- open windows itself, so the codex either uses the host's float surface
+-- (renderDetailFloat below) or falls back to an in-panel pane.
 local function renderBody(im, st, deps, embedded)
     -- header: logo + budget
     local logo = filetex.ui('logo-64');
@@ -175,13 +189,7 @@ local function renderBody(im, st, deps, embedded)
     if kit.isFn(im, 'NewLine') then im.NewLine(); end
     if kit.isFn(im, 'Separator') then im.Separator(); end
 
-    -- per-frame ctx for the tabs
-    local ctx = {
-        im = im, book = deps.book, blu = deps.blu, sets = deps.sets,
-        cfg = deps.cfg, save = deps.save, state = st,
-        embedded = embedded == true,
-        budgetMax = function() return budgetMax(deps); end,
-    };
+    local ctx = tabCtx(im, st, deps, embedded);
     local tabfn = (st.tab == 'Sets' and setsui.render)
         or (st.tab == 'Traits' and traitsui.render)
         or spellsui.render;
@@ -216,6 +224,25 @@ function M.render()
         renderBody(im, st, deps, false);
     end
     if ok then im.End(); end
+    if pushed > 0 then im.PopStyleColor(pushed); end
+end
+
+-- The Spell Info window ALONE, for an embedding host's sanctioned float
+-- surface (dlac's `window` contract hook, ADR 0028 amendment 2026-08-04):
+-- the codex list stays in the Panel; the detail window draws from the
+-- host's float site, so it survives the host's main window closing. It
+-- self-gates -- spellsui.detailWindow returns unless a spell was clicked
+-- open. Marks the float surface live so the embedded codex stops offering
+-- its in-panel fallback pane.
+function M.renderDetailFloat()
+    local st = M.state;
+    if st == nil then return; end
+    local deps = M.deps;
+    if deps == nil or deps.im == nil then return; end
+    deps.floatWindow = true;
+    local im = deps.im;
+    local pushed = pushWindowTheme(im);      -- a float owns its window chrome
+    pcall(spellsui.detailWindow, tabCtx(im, st, deps, true));
     if pushed > 0 then im.PopStyleColor(pushed); end
 end
 
