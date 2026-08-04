@@ -79,6 +79,29 @@ function M.kv(im, label, value, valueCol)
     M.ctext(im, valueCol or M.COL.accent, tostring(value));
 end
 
+-- Colored, word-wrapped text: TextWrapped wraps at the window edge where
+-- ctext/TextColored just clip. Falls back to ctext without TextWrapped.
+function M.wrapped(im, col, s)
+    if isFn(im, 'TextWrapped') then
+        local pushed = false;
+        if col and isFn(im, 'PushStyleColor') and isFn(im, 'PopStyleColor') then
+            im.PushStyleColor(0, col);                 -- Text
+            pushed = true;
+        end
+        im.TextWrapped(esc(s));
+        if pushed then im.PopStyleColor(1); end
+    else
+        M.ctext(im, col, s);
+    end
+end
+
+-- kv whose value wraps -- for lists that can outgrow the window width.
+function M.kvw(im, label, value, valueCol)
+    M.ctext(im, M.COL.dim, label);
+    if isFn(im, 'SameLine') then im.SameLine(); end
+    M.wrapped(im, valueCol or M.COL.accent, tostring(value));
+end
+
 function M.header(im, s)
     M.ctext(im, M.COL.head, s);
     if isFn(im, 'Separator') then im.Separator(); end

@@ -24,6 +24,21 @@ local function popId(im, pushed)
     if pushed and kit.isFn(im, 'PopID') then pcall(im.PopID); end
 end
 
+-- content-region width, tolerant of binding return shapes; fallback when
+-- unreadable or absurd
+local function availWidth(im, fallback)
+    if kit.isFn(im, 'GetContentRegionAvail') then
+        local ok, w = pcall(function()
+            local v = { im.GetContentRegionAvail() };
+            local first = v[1];
+            if type(first) == 'table' then return first[1] or first.x; end
+            return first;
+        end);
+        if ok and type(w) == 'number' and w > 100 then return w; end
+    end
+    return fallback;
+end
+
 -- One spell cell: ImageButton if the sprite loads, text button otherwise.
 -- Returns true on click. `dimmed` greys the sprite (unlearned).
 function M.spellButton(ctx, id, size, selected, dimmed)
@@ -132,6 +147,12 @@ function M.detail(ctx, id)
 
     local h = filetex.spell(book, s, 'detail');
     if h ~= nil and kit.isFn(im, 'Image') then
+        -- center the sprite in the window
+        local off = (availWidth(im, 352) - 320) / 2;
+        if off > 0 and kit.isFn(im, 'GetCursorPosX') and kit.isFn(im, 'SetCursorPosX') then
+            local okx, cx = pcall(im.GetCursorPosX);
+            if okx and type(cx) == 'number' then pcall(im.SetCursorPosX, cx + off); end
+        end
         pcall(im.Image, h, { 320, 320 });
     end
 
@@ -156,10 +177,10 @@ function M.detail(ctx, id)
             book.traitName(s.trait.category), s.trait.weight));
     end
     if s.skillchain and #s.skillchain > 0 then
-        kit.kv(im, 'Skillchain', table.concat(s.skillchain, ', '));
+        kit.kvw(im, 'Skillchain', table.concat(s.skillchain, ', '));
     end
     if s.bursts and #s.bursts > 0 then
-        kit.kv(im, 'Bursts on', table.concat(s.bursts, ', '));
+        kit.kvw(im, 'Bursts on', table.concat(s.bursts, ', '));
     end
     if s.numhits and s.numhits > 1 then kit.kv(im, 'Hits', tostring(s.numhits)); end
     if s.mods and #s.mods > 0 then
@@ -189,7 +210,7 @@ function M.detail(ctx, id)
                 break;
             end
             kit.ctext(im, kit.COL.accent, hz.zone);
-            kit.ctext(im, kit.COL.dim, '  ' .. table.concat(hz.mobs, ', '));
+            kit.wrapped(im, kit.COL.dim, '  ' .. table.concat(hz.mobs, ', '));
             shown = shown + 1;
         end
         kit.ctext(im, kit.COL.dim, '(retail-era data; CatsEyeXI can differ)');
@@ -335,21 +356,11 @@ function M.render(ctx)
     kit.meter(im, '   Slots:', ctx.sets.count(st.editingSet), 20, '');
 
     -- the list: icon + name rows, 1-3 columns by available width
-    local availW = 800;
-    if kit.isFn(im, 'GetContentRegionAvail') then
-        -- binding-dependent: returns (x, y) or a table {x,y}/{x=..}
-        local ok, w = pcall(function()
-            local v = { im.GetContentRegionAvail() };
-            local first = v[1];
-            if type(first) == 'table' then return first[1] or first.x; end
-            return first;
-        end);
-        if ok and type(w) == 'number' and w > 200 then availW = w; end
-    end
+    local availW = availWidth(im, 800);
     local cols = math.max(1, math.min(3, math.floor(availW / 250)));
     local colW = math.floor((availW - 16) / cols);   -- -16: scrollbar margin
     local iconSz = 24;
-    local nameW = colW - iconSz - 28;
+    local nameW = math.max(colW - iconSz - 28, 80);
 
     local function rows()
         for i, id in ipairs(ids) do
