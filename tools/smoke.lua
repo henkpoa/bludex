@@ -32,6 +32,7 @@ check(book.spells[736].unbridled == true, 'Thunderbolt is unbridled');
 check(book.spells[719].setPoints == 8, 'Searing Tempest field set cost');
 check(book.spells[719].mpCost == 116, 'Searing Tempest field MP');
 check(book.spells[664].castable == false, 'Regeneration flagged uncastable');
+check(book.description(623) == nil, 'description is headless-safe (nil without the client)');
 
 print('smoke: filters');
 check(#book.filter({ category = 'Healing' }) == 6, '6 castable healing spells');

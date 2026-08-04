@@ -115,6 +115,27 @@ function M.learned(id)
     return ok and r or false;
 end
 
+-- The client DAT's own spell description (what the in-game menus show),
+-- nil when unavailable. Cached -- resource lookups are per-frame hover work.
+local descCache = {};
+function M.description(id)
+    local c = descCache[id];
+    if c ~= nil then
+        if c == false then return nil; end
+        return c;
+    end
+    local ok, d = pcall(function()
+        local sp = AshitaCore:GetResourceManager():GetSpellById(id);
+        return sp and sp.Description and sp.Description[1] or nil;
+    end);
+    if ok and d ~= nil and d ~= '' then
+        descCache[id] = d;
+        return d;
+    end
+    descCache[id] = false;
+    return nil;
+end
+
 function M.zoneName(zoneId)
     local ok, r = pcall(function()
         return AshitaCore:GetResourceManager():GetString('zones.names', tonumber(zoneId));

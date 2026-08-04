@@ -100,6 +100,9 @@ function M.tooltip(ctx, id, hovered)
     local function add(txt, col) rows[#rows + 1] = { txt, col }; end
     add(s.name, kit.COL.head);
     add(('%s - Lv.%s - %s'):format(s.category, s.level or '?', s.spellType or '?'), kit.COL.dim);
+    -- the client DAT's own description (it carries its own line breaks)
+    local desc = book.description(id);
+    if desc then add(desc, { 0.90, 0.90, 0.95, 1.00 }); end
     if s.setPoints then add(('Set: %d pts'):format(s.setPoints), kit.COL.accent); end
     if s.mods and #s.mods > 0 then
         local parts = {};
@@ -235,6 +238,13 @@ function M.detail(ctx, id)
             if okx and type(cx) == 'number' then pcall(im.SetCursorPosX, cx + off); end
         end
         pcall(im.Image, h, { 320, 320 });
+    end
+
+    -- the client DAT's own description, ahead of the stat rows
+    local desc = book.description(id);
+    if desc then
+        kit.wrapped(im, { 0.90, 0.90, 0.95, 1.00 }, desc);
+        if kit.isFn(im, 'Separator') then im.Separator(); end
     end
 
     kit.kv(im, 'Type', ('%s%s'):format(s.spellType or '?',
