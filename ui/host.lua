@@ -22,6 +22,8 @@ local function freshState(sets)
         open = { false, },
         tab = 'Codex',
         selectedId = nil,
+        detailOpen = { false, },
+        detailFocus = nil,
         editingSet = sets.new('Set 1'),
         activeSet = nil,
         addNote = nil,

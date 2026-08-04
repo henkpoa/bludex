@@ -1,17 +1,18 @@
 --[[
-    bludex/ui/spellsui.lua -- the Codex tab: filter row, icon grid, and the
-    spell detail panel (the 320 sprite plus everything the data layer knows).
+    bludex/ui/spellsui.lua -- the Codex tab: filter row, a set-budget readout,
+    and an icon+name LIST (1-3 columns by window width). Clicking a row opens
+    the Spell Info window (the 320 sprite plus everything the data layer
+    knows, with Add-to-set at the top).
 
     All imgui calls run through kit's guards; every icon draw has a text
-    fallback so a failed texture never blanks the tab.
+    fallback so a failed texture never blanks the tab. spellButton (the icon
+    cell) stays exported for the Sets tab slot grid.
 ]]--
 
 local kit     = require('bludex\\ui\\kit');
 local filetex = require('bludex\\ui\\filetex');
 
 local M = {};
-
-local DETAIL_W = 352;
 
 -- guarded PushID/PopID: a grid of ImageButtons re-uses texture handles as IDs,
 -- so every button gets an explicit ID pushed around it.
@@ -100,10 +101,6 @@ function M.detail(ctx, id)
         return;
     end
 
-    local h = filetex.spell(book, s, 'detail');
-    if h ~= nil and kit.isFn(im, 'Image') then
-        pcall(im.Image, h, { 320, 320 });
-    end
     kit.ctext(im, kit.COL.head, s.name);
     local lt, ltc = learnedText(ctx, id);
     if lt then
@@ -116,7 +113,27 @@ function M.detail(ctx, id)
     if not s.castable then
         kit.ctext(im, kit.COL.err, 'Learnable but NEVER castable at the 75 cap.');
     end
+
+    -- add-to-set FIRST -- the working button belongs at the top, not under
+    -- a screen of lore
+    if s.castable and not s.unbridled and s.setPoints then
+        local addW = kit.measure(im, { 'Add to current set' }, 150);
+        if kit.litButton(im, 'Add to current set', false, addW, 26) then
+            local max = ctx.budgetMax();
+            local ok, why = ctx.sets.add(ctx.state.editingSet, id, book, max);
+            ctx.state.addNote = ok and ('Added %s.'):format(s.name) or ('Cannot add: %s.'):format(why);
+            if ok and ctx.save then ctx.save(); end
+        end
+        if ctx.state.addNote then
+            kit.ctext(im, kit.COL.dim, ctx.state.addNote);
+        end
+    end
     if kit.isFn(im, 'Separator') then im.Separator(); end
+
+    local h = filetex.spell(book, s, 'detail');
+    if h ~= nil and kit.isFn(im, 'Image') then
+        pcall(im.Image, h, { 320, 320 });
+    end
 
     kit.kv(im, 'Type', ('%s%s'):format(s.spellType or '?',
         s.damageType and (' (' .. s.damageType .. ')') or ''));
@@ -178,24 +195,78 @@ function M.detail(ctx, id)
         kit.ctext(im, kit.COL.dim, '(retail-era data; CatsEyeXI can differ)');
     end
 
-    -- add-to-set
-    if s.castable and not s.unbridled and s.setPoints then
-        if kit.isFn(im, 'Separator') then im.Separator(); end
-        if kit.litButton(im, 'Add to current set', false, 180, 26) then
-            local max = ctx.budgetMax();
-            local ok, why = ctx.sets.add(ctx.state.editingSet, id, book, max);
-            ctx.state.addNote = ok and ('Added %s.'):format(s.name) or ('Cannot add: %s.'):format(why);
-            if ok and ctx.save then ctx.save(); end
-        end
-        if ctx.state.addNote then
-            kit.ctext(im, kit.COL.dim, ctx.state.addNote);
-        end
-    end
-
     -- provenance, quietly
     local prov = 'data: ' .. (s.src or '?');
     if s.verify then prov = prov .. '  unverified: ' .. table.concat(s.verify, ', '); end
     kit.ctext(im, kit.COL.dim, prov);
+end
+
+-- ---------------------------------------------------------------------------
+-- list rows and the Spell Info window
+-- ---------------------------------------------------------------------------
+
+-- One list row: small icon + the spell name as a Selectable. Returns true on
+-- click. Unlearned spells draw dimmed while on BLU.
+function M.listRow(ctx, id, iconSz, nameW, selected)
+    local im, book = ctx.im, ctx.book;
+    local s = book.spells[id];
+    local pushed = pushId(im, 'bdxrow' .. id);
+    local clicked = false;
+    if s == nil then
+        clicked = kit.litButton(im, '#' .. tostring(id), selected, nameW, iconSz);
+        popId(im, pushed);
+        return clicked;
+    end
+    local dim = ctx.blu.onBlu() and not book.learned(id) or false;
+    local h = filetex.spell(book, s, 'grid64');
+    if h ~= nil and kit.isFn(im, 'Image') then
+        local tint = dim and { 0.45, 0.45, 0.50, 0.85 } or { 1, 1, 1, 1 };
+        local okI = pcall(im.Image, h, { iconSz, iconSz }, { 0, 0 }, { 1, 1 }, tint);
+        if not okI then pcall(im.Image, h, { iconSz, iconSz }); end
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    end
+    if kit.isFn(im, 'Selectable') then
+        local pushedCol = false;
+        if dim and kit.isFn(im, 'PushStyleColor') and kit.isFn(im, 'PopStyleColor') then
+            im.PushStyleColor(0, kit.COL.dim);                 -- Text
+            pushedCol = true;
+        end
+        local ok, r = pcall(im.Selectable, kit.esc(s.name), selected, 0, { nameW, iconSz });
+        if not ok then ok, r = pcall(im.Selectable, kit.esc(s.name), selected); end
+        if pushedCol then im.PopStyleColor(1); end
+        clicked = ok and r or false;
+    else
+        clicked = kit.litButton(im, s.name, selected, nameW, iconSz);
+    end
+    popId(im, pushed);
+    return clicked;
+end
+
+-- The Spell Info window: opened by clicking a row, closable via the title
+-- bar. Rendered inside the host's style pushes, so it inherits the theme.
+function M.detailWindow(ctx)
+    local im, st = ctx.im, ctx.state;
+    if not st.detailOpen or not st.detailOpen[1] then return; end
+    if st.selectedId == nil then st.detailOpen[1] = false; return; end
+    if not (kit.isFn(im, 'Begin') and kit.isFn(im, 'End')) then return; end
+    if kit.isFn(im, 'SetNextWindowSizeConstraints') then
+        pcall(im.SetNextWindowSizeConstraints, { 380, 420 }, { 900, 1400 });
+    end
+    if st.detailFocus and kit.isFn(im, 'SetNextWindowFocus') then
+        pcall(im.SetNextWindowFocus);
+    end
+    st.detailFocus = nil;
+    local visible = false;
+    local ok = pcall(function()
+        visible = im.Begin('Spell Info##bdxspellinfo', st.detailOpen);
+    end);
+    if ok and visible then
+        local dok, derr = pcall(M.detail, ctx, st.selectedId);
+        if not dok then
+            kit.ctext(im, kit.COL.err, 'detail error: ' .. tostring(derr));
+        end
+    end
+    if ok then im.End(); end
 end
 
 -- ---------------------------------------------------------------------------
@@ -204,6 +275,7 @@ end
 function M.render(ctx)
     local im, book, st = ctx.im, ctx.book, ctx.state;
     local f = st.filters;
+    st.detailOpen = st.detailOpen or { false };
 
     -- filter row -- combo widths measured over every label they can show
     -- (the kit law: a hardcoded width clips a trailing character; "All eleme").
@@ -254,9 +326,15 @@ function M.render(ctx)
         text = f.text[1], category = f.category.value, element = f.element.value,
         spellType = f.spellType.value, traitCat = traitCat, learned = learned,
     });
-    kit.ctext(im, kit.COL.dim, ('%d spells'):format(#ids));
 
-    -- grid + detail, side by side
+    -- browse header: result count + the editing set's budget, always in view
+    kit.ctext(im, kit.COL.dim, ('%d spells'):format(#ids));
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    kit.meter(im, '    Set:', ctx.sets.usedPoints(st.editingSet, book), ctx.budgetMax(), ' pts');
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    kit.meter(im, '   Slots:', ctx.sets.count(st.editingSet), 20, '');
+
+    -- the list: icon + name rows, 1-3 columns by available width
     local availW = 800;
     if kit.isFn(im, 'GetContentRegionAvail') then
         -- binding-dependent: returns (x, y) or a table {x,y}/{x=..}
@@ -268,31 +346,32 @@ function M.render(ctx)
         end);
         if ok and type(w) == 'number' and w > 200 then availW = w; end
     end
-    local gridW = math.max(availW - DETAIL_W - 12, 240);
+    local cols = math.max(1, math.min(3, math.floor(availW / 250)));
+    local colW = math.floor((availW - 16) / cols);   -- -16: scrollbar margin
+    local iconSz = 24;
+    local nameW = colW - iconSz - 28;
+
+    local function rows()
+        for i, id in ipairs(ids) do
+            local col = (i - 1) % cols;
+            if col ~= 0 and kit.isFn(im, 'SameLine') then im.SameLine(col * colW + 8); end
+            if M.listRow(ctx, id, iconSz, nameW, st.selectedId == id) then
+                st.selectedId = id;
+                st.detailOpen[1] = true;
+                st.detailFocus = true;
+            end
+            M.tooltip(ctx, id);
+        end
+    end
 
     if kit.isFn(im, 'BeginChild') and kit.isFn(im, 'EndChild') then
-        if im.BeginChild('bdxgrid', { gridW, 0 }, false) then
-            local cell = 52;
-            local cols = math.max(math.floor(gridW / (cell + 10)), 3);
-            for i, id in ipairs(ids) do
-                if ((i - 1) % cols) ~= 0 and kit.isFn(im, 'SameLine') then im.SameLine(); end
-                local dim = ctx.blu.onBlu() and not book.learned(id) or false;
-                if M.spellButton(ctx, id, cell, st.selectedId == id, dim) then
-                    st.selectedId = id;
-                end
-                M.tooltip(ctx, id);
-            end
-        end
-        im.EndChild();
-        if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        if im.BeginChild('bdxdetail', { DETAIL_W, 0 }, true) then
-            M.detail(ctx, st.selectedId);
-        end
+        if im.BeginChild('bdxlist', { 0, 0 }, false) then rows(); end
         im.EndChild();
     else
-        -- binding without children: detail only
-        M.detail(ctx, st.selectedId);
+        rows();
     end
+
+    M.detailWindow(ctx);
 end
 
 return M;
