@@ -96,6 +96,7 @@ end
 -- save() re-encodes into the framework store (mutation-only underneath)
 -- ---------------------------------------------------------------------------
 local cfg, Sref = nil, nil;
+local _panelAt = nil;   -- last frame the Panel rendered: the fresh-click detector
 
 local function loadCfg(S)
     cfg = {
@@ -190,19 +191,47 @@ return {
             return;
         end
         L.host.deps.im = ctx.imgui;      -- always the HOST's handle
-        L.host.renderEmbedded();
+        if L.host.deps.floatWindow == true then
+            -- The float surface is live (this dlac has the window hook), so
+            -- Bludex runs as its OWN window and this Panel is the launcher.
+            -- A FRESH row click (no Panel render for a while) pops the
+            -- window; while the Panel stays selected, a window the player
+            -- closed stays closed.
+            local now = os.clock();
+            if _panelAt == nil or (now - _panelAt) > 1.0 then L.host.open(); end
+            _panelAt = now;
+            local ui = ctx.ui;
+            if ui == nil then return; end
+            ui.dim('Bludex runs in its own window -- it stays up even while this one is closed.');
+            ui.space();
+            if L.host.isOpen() then
+                if ui.button('bdxwin_close', 'Close the Bludex window',
+                             'Close it; the row keeps working.', 220, 26) then
+                    L.host.toggle();
+                end
+            else
+                if ui.button('bdxwin_open', 'Open the Bludex window',
+                             'Codex, sets and traits, in a window of its own.', 220, 26) then
+                    L.host.open();
+                end
+            end
+        else
+            -- an older dlac without the hook: the full body renders here
+            L.host.renderEmbedded();
+        end
     end,
 
-    -- The Spell Info window, through the framework's float surface (ADR 0028
+    -- The WHOLE Bludex window through the framework's float surface (ADR 0028
     -- amendment 2026-08-04): drawn at dlac's one float draw site, so it
-    -- survives the main window closing. Self-gates -- draws nothing until a
-    -- spell is clicked open in the codex. On an older dlac that ignores this
-    -- hook, the codex falls back to its in-panel detail pane by itself.
+    -- survives the main window closing. Self-gates on its own open flag --
+    -- the Panel above is the launcher. On an older dlac that ignores this
+    -- hook, deps.floatWindow never sets and the Panel renders the embedded
+    -- body instead.
     window = function(ctx)
         local L = lib;
         if L == nil then return; end
         L.host.deps.im = ctx.imgui;
-        L.host.renderDetailFloat();
+        L.host.renderWindowFloat();
     end,
 
     status = function(ctx)
