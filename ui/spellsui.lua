@@ -111,8 +111,25 @@ function M.tooltip(ctx, id)
         add('Stats: ' .. table.concat(parts, '  '), kit.COL.ok);
     end
     if s.trait then
-        add(('Trait: %s  (weight %d)'):format(
-            book.traitName(s.trait.category), s.trait.weight), kit.COL.accent);
+        local cat = s.trait.category;
+        add(('Trait: %s  (weight %d)'):format(book.traitName(cat), s.trait.weight), kit.COL.accent);
+        -- the editing set's progress on that ladder: weight / next threshold
+        local weight = 0;
+        for _, ev in ipairs(ctx.sets.traitEval(ctx.state.editingSet, book)) do
+            if ev.cat == cat then weight = ev.weight; break; end
+        end
+        local info = book.traits.categories[cat];
+        if info then
+            local nextP, nextRank = nil, nil;
+            for ti, tier in ipairs(info.tiers) do
+                if weight < tier.points then nextP = tier.points; nextRank = ti; break; end
+            end
+            if nextP then
+                add(('   %d / %d - for rank %d'):format(weight, nextP, nextRank), kit.COL.dim);
+            else
+                add(('   %d - max rank reached'):format(weight), kit.COL.ok);
+            end
+        end
     end
     if s.unbridled then add('Unbridled Learning', kit.COL.badge); end
     local lt, ltc = learnedText(ctx, id);
