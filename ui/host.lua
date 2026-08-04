@@ -27,6 +27,9 @@ local function freshState(sets)
         detailFocus = nil,
         learnOpen = { false, },
         learnFocus = nil,
+        scOpen = { false, },
+        scFocus = nil,
+        scWeapon = { value = 'Sword' },
         editingSet = sets.new('Set 1'),
         activeSet = nil,
         addNote = nil,
@@ -266,9 +269,10 @@ local function renderBody(im, st, deps, embedded)
         if not dok then
             kit.ctext(im, kit.COL.err, 'detail error: ' .. tostring(derr));
         end
-        -- the Learn-from window rides along the same way (its open button
-        -- lives inside Spell Info)
+        -- the Learn-from and Skillchain-partners windows ride along the
+        -- same way (their open buttons live inside Spell Info)
         pcall(spellsui.learnWindow, ctx);
+        pcall(spellsui.scWindow, ctx);
     end
 end
 
@@ -348,6 +352,7 @@ function M.renderDetailFloat()
     local ctx = tabCtx(im, st, deps, true);
     pcall(spellsui.detailWindow, ctx);
     pcall(spellsui.learnWindow, ctx);
+    pcall(spellsui.scWindow, ctx);
     if pushed > 0 then im.PopStyleColor(pushed); end
 end
 

@@ -12,6 +12,7 @@
 local ROOT = (...):sub(1, -#('ui\\spellsui') - 1);   -- relocatable require base
 local kit     = require(ROOT .. 'ui\\kit');
 local filetex = require(ROOT .. 'ui\\filetex');
+local scrules = require(ROOT .. 'lib\\skillchain');
 
 local M = {};
 
@@ -258,6 +259,22 @@ function M.detail(ctx, id)
     end
     if s.skillchain and #s.skillchain > 0 then
         kit.kvw(im, 'Skillchain', table.concat(s.skillchain, ', '));
+        -- weaponskill partners live in their OWN window (a lot of rows) --
+        -- here just the door. Hidden in the embedded-Panel fallback: a
+        -- Panel host may not open windows.
+        if not (ctx.embedded == true and ctx.floatWindow ~= true) then
+            local st = ctx.state;
+            st.scOpen = st.scOpen or { false };
+            local w = kit.measure(im, { 'Skillchain partners' }, 150);
+            if kit.litButton(im, 'Skillchain partners', st.scOpen[1], w, 24) then
+                st.scOpen[1] = not st.scOpen[1];
+                st.scFocus = true;
+            end
+            kit.tip(im, 'Which weaponskills chain with this spell, per weapon --\n'
+                .. 'open with the weaponskill and close with the spell, or the\n'
+                .. 'other way around. WSNM, Relic, Mythic, Empyrean and\n'
+                .. 'Merit/Aeonic weaponskills included.');
+        end
     end
     if s.bursts and #s.bursts > 0 then
         kit.kvw(im, 'Bursts on', table.concat(s.bursts, ', '));
@@ -523,6 +540,86 @@ function M.learnWindow(ctx)
             kit.ctext(im, kit.COL.accent, hz.zone);
             kit.wrapped(im, kit.COL.dim, '  ' .. table.concat(hz.mobs, ', '));
         end
+    end
+    if ok then im.End(); end
+end
+
+-- chain level -> row color: the big chains wear the loud colors
+local SC_LEVEL_COL = {
+    [1] = kit.COL.accent, [2] = kit.COL.ok, [3] = kit.COL.warn, [4] = kit.COL.badge,
+};
+
+-- one partner list: 'WS name   -> Chain  [tag]' rows, chain colored by level
+local function scPartnerRows(im, list)
+    if #list == 0 then
+        kit.ctext(im, kit.COL.dim, '  nothing chains');
+        return;
+    end
+    local nameW = 120;
+    if kit.isFn(im, 'CalcTextSize') then
+        for _, e in ipairs(list) do
+            local ok, tw = pcall(im.CalcTextSize, kit.esc(e.ws.name));
+            if ok and type(tw) == 'number' and tw > nameW then nameW = tw; end
+        end
+    end
+    for _, e in ipairs(list) do
+        kit.text(im, e.ws.name);
+        if kit.isFn(im, 'SameLine') then im.SameLine(nameW + 24); end
+        kit.ctext(im, SC_LEVEL_COL[e.level] or kit.COL.accent, '-> ' .. e.chain);
+        kit.tip(im, ('Magic burst: %s'):format(scrules.ELEMENTS[e.chain] or '?'));
+        if e.ws.tag then
+            if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            kit.ctext(im, kit.COL.dim, '  [' .. (scrules.TAGS[e.ws.tag] or e.ws.tag) .. ']');
+        end
+    end
+end
+
+-- The Skillchain-partners window: opened from Spell Info, follows the
+-- selected spell. A weapon chooser (Sword first -- BLU's weapon), then the
+-- two directions the user asked for in this order: open with the
+-- weaponskill / close with the spell, and open with the spell / close with
+-- a weaponskill.
+function M.scWindow(ctx)
+    local im, st, book = ctx.im, ctx.state, ctx.book;
+    if not st.scOpen or not st.scOpen[1] then return; end
+    if st.selectedId == nil then st.scOpen[1] = false; return; end
+    local s = book.spells[st.selectedId];
+    if s == nil or s.skillchain == nil or #s.skillchain == 0 then
+        st.scOpen[1] = false;
+        return;
+    end
+    if not (kit.isFn(im, 'Begin') and kit.isFn(im, 'End')) then return; end
+    if kit.isFn(im, 'SetNextWindowSizeConstraints') then
+        pcall(im.SetNextWindowSizeConstraints, { 380, 320 }, { 800, 1200 });
+    end
+    if st.scFocus and kit.isFn(im, 'SetNextWindowFocus') then
+        pcall(im.SetNextWindowFocus);
+    end
+    st.scFocus = nil;
+    local visible = false;
+    local ok = pcall(function()
+        visible = im.Begin('Skillchain partners##bdxsc', st.scOpen);
+    end);
+    if ok and visible then
+        kit.ctext(im, kit.COL.head, s.name);
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        kit.ctext(im, kit.COL.accent, '  ' .. table.concat(s.skillchain, ', '));
+        st.scWeapon = st.scWeapon or { value = 'Sword' };
+        kit.ctext(im, kit.COL.dim, 'Weapon');
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        local w = kit.measure(im, scrules.weapons, 100) + 24;
+        kit.combo(im, '##bdxscweapon', st.scWeapon, scrules.weapons, nil, w);
+        if kit.isFn(im, 'Separator') then im.Separator(); end
+
+        local weapon = st.scWeapon.value or 'Sword';
+        local wsOpens, spellOpens = scrules.partners(s.skillchain, weapon);
+        kit.ctext(im, kit.COL.head, ('Open with a %s weaponskill, close with %s'):format(weapon, s.name));
+        scPartnerRows(im, wsOpens);
+        if kit.isFn(im, 'Separator') then im.Separator(); end
+        kit.ctext(im, kit.COL.head, ('Open with %s, close with a %s weaponskill'):format(s.name, weapon));
+        scPartnerRows(im, spellOpens);
+        if kit.isFn(im, 'Separator') then im.Separator(); end
+        kit.ctext(im, kit.COL.dim, 'Hover a chain for its magic-burst elements.');
     end
     if ok then im.End(); end
 end

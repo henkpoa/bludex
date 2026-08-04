@@ -99,6 +99,41 @@ check(imp.describe({ found = 2, imported = { 'a' }, skipped = { 'b' }, unknown =
     == 'Imported 1 set; 1 skipped (name exists).', 'describe: summary line');
 check(#imp.scan() == 0, 'scan is headless-safe (no AshitaCore -> empty)');
 
+print('smoke: skillchain rules + weaponskill data');
+local sc = require('bludex\\lib\\skillchain');
+check(#sc.weapons == 14 and sc.weapons[1] == 'Sword', '14 weapons, Sword first');
+check(#sc.ws > 150, 'weaponskill data loaded');
+local function findWs(name)
+    for _, w in ipairs(sc.ws) do if w.name == name then return w; end end
+    return nil;
+end
+check(findWs('Savage Blade').tag == 'quest', 'Savage Blade tagged WSNM quest');
+check(findWs('Knights of Round').tag == 'relic', 'Knights of Round tagged relic');
+check(findWs('Expiacion').tag == 'mythic', 'Expiacion tagged mythic');
+check(findWs('Chant du Cygne').tag == 'empyrean', 'Chant du Cygne tagged empyrean');
+check(findWs('Requiescat').tag == 'merit', 'Requiescat tagged merit (Aeonic)');
+check(findWs('Uriel Blade') == nil and findWs('Spirits Within') == nil,
+    'mob-only and property-less weaponskills excluded');
+check(findWs('Fast Blade').sc[1] == 'Scission', 'Fast Blade carries Scission');
+-- the resonance table, spot-checked against battleutils.cpp
+check(sc.resolve({ 'Liquefaction' }, { 'Impaction' }) == 'Fusion', 'Liq -> Imp = Fusion');
+check(sc.resolve({ 'Gravitation' }, { 'Distortion' }) == 'Darkness', 'Grav -> Dist = Darkness');
+check(sc.resolve({ 'Light' }, { 'Light' }) == 'Light II', 'Light -> Light = Light II');
+check(sc.resolve({ 'Impaction' }, { 'Scission' }) == nil, 'Imp -> Sci does not chain');
+check(sc.resolve({ 'Light', 'Fusion' }, { 'Fragmentation' }) == 'Light',
+    'opener property priority: primary first, then secondary');
+-- partners: Head Butt (Impaction) against swords, both directions
+local wsOpens, spellOpens = sc.partners({ 'Impaction' }, 'Sword');
+check(#wsOpens > 0 and wsOpens[1].level >= spellOpens[1].level,
+    'partner lists sorted big chains first');
+local sawFusion = false;
+for _, e in ipairs(wsOpens) do
+    if e.ws.name == 'Burning Blade' and e.chain == 'Fusion' then sawFusion = true; end
+end
+check(sawFusion, 'Burning Blade -> Head Butt closes Fusion');
+check(sc.LEVEL['Darkness II'] == 4 and sc.ELEMENTS.Fusion == 'Fire/Light',
+    'level + burst-element tables');
+
 print('smoke: dlac module adapter');
 local dm = require('bludex\\dlacmodule\\init');
 check(dm.api == 2 and type(dm.panel) == 'function' and type(dm.init) == 'function'

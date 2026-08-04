@@ -110,7 +110,9 @@ sets, slot for slot. A name that already exists in bludex is skipped, never over
   `.github/workflows/sync-dlac.yml` copies the library + the dlac adapter
   (`dlacmodule/`) into the dlac repository. `tools/vendor_local.py` does the same copy
   locally for field-testing. See [INTEGRATION.md](INTEGRATION.md).
-- `data/*.lua` are **generated** by `tools/generate_spells.py` — never hand-edit.
+- `data/*.lua` are **generated** — never hand-edit: spells/traits/hints by
+  `tools/generate_spells.py`, weaponskills (the Skillchain-partners window's data)
+  by `tools/generate_weaponskills.py`.
 
 ## Data provenance
 
