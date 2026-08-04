@@ -25,6 +25,8 @@ local function freshState(sets)
         selectedId = nil,
         detailOpen = { false, },
         detailFocus = nil,
+        learnOpen = { false, },
+        learnFocus = nil,
         editingSet = sets.new('Set 1'),
         activeSet = nil,
         addNote = nil,
@@ -264,6 +266,9 @@ local function renderBody(im, st, deps, embedded)
         if not dok then
             kit.ctext(im, kit.COL.err, 'detail error: ' .. tostring(derr));
         end
+        -- the Learn-from window rides along the same way (its open button
+        -- lives inside Spell Info)
+        pcall(spellsui.learnWindow, ctx);
     end
 end
 
@@ -340,7 +345,9 @@ function M.renderDetailFloat()
     deps.floatWindow = true;
     local im = deps.im;
     local pushed = pushWindowTheme(im);      -- a float owns its window chrome
-    pcall(spellsui.detailWindow, tabCtx(im, st, deps, true));
+    local ctx = tabCtx(im, st, deps, true);
+    pcall(spellsui.detailWindow, ctx);
+    pcall(spellsui.learnWindow, ctx);
     if pushed > 0 then im.PopStyleColor(pushed); end
 end
 

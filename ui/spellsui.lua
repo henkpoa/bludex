@@ -83,9 +83,14 @@ local function learnedText(ctx, id)
     return nil, nil;
 end
 
-function M.tooltip(ctx, id)
+-- `hovered` (optional): the row-wide state from listRow -- the overlay row
+-- draws art LAST, so IsItemHovered on the last item only covers the name.
+-- true shows, false skips, nil falls back to the last-item check.
+function M.tooltip(ctx, id, hovered)
     local im, book = ctx.im, ctx.book;
-    if not (kit.isFn(im, 'IsItemHovered') and im.IsItemHovered()) then return; end
+    if hovered == false then return; end
+    if hovered ~= true
+        and not (kit.isFn(im, 'IsItemHovered') and im.IsItemHovered()) then return; end
     local s = book.spells[id];
     if s == nil then return; end
 
@@ -273,22 +278,38 @@ function M.detail(ctx, id)
         end
     end
 
-    -- learn-location hints (retail-era data via blucheck)
+    -- learn-location hints (retail-era data via blucheck) live in their OWN
+    -- window (field ask 2026-08-04: the inline zone list made Spell Info a
+    -- wall) -- here just the door. The embedded-Panel fallback keeps the
+    -- inline list: a Panel host may not open windows.
     local hints = book.hintList(id);
     if hints then
         if kit.isFn(im, 'Separator') then im.Separator(); end
-        kit.ctext(im, kit.COL.head, 'Learn from');
-        local shown = 0;
-        for _, hz in ipairs(hints) do
-            if shown >= 6 then
-                kit.ctext(im, kit.COL.dim, ('...and %d more zones'):format(#hints - shown));
-                break;
+        if ctx.embedded == true and ctx.floatWindow ~= true then
+            kit.ctext(im, kit.COL.head, 'Learn from');
+            local shown = 0;
+            for _, hz in ipairs(hints) do
+                if shown >= 6 then
+                    kit.ctext(im, kit.COL.dim, ('...and %d more zones'):format(#hints - shown));
+                    break;
+                end
+                kit.ctext(im, kit.COL.accent, hz.zone);
+                kit.wrapped(im, kit.COL.dim, '  ' .. table.concat(hz.mobs, ', '));
+                shown = shown + 1;
             end
-            kit.ctext(im, kit.COL.accent, hz.zone);
-            kit.wrapped(im, kit.COL.dim, '  ' .. table.concat(hz.mobs, ', '));
-            shown = shown + 1;
+            kit.ctext(im, kit.COL.dim, '(retail-era data; CatsEyeXI can differ)');
+        else
+            local st = ctx.state;
+            st.learnOpen = st.learnOpen or { false };
+            local lbl = ('Learn from - %d zone%s'):format(#hints, #hints == 1 and '' or 's');
+            local w = kit.measure(im, { lbl }, 150);
+            if kit.litButton(im, lbl, st.learnOpen[1], w, 24) then
+                st.learnOpen[1] = not st.learnOpen[1];
+                st.learnFocus = true;
+            end
+            kit.tip(im, 'Where to learn this spell, in its own window.\n'
+                .. '(retail-era data; CatsEyeXI can differ)');
         end
-        kit.ctext(im, kit.COL.dim, '(retail-era data; CatsEyeXI can differ)');
     end
 
     -- provenance, quietly
@@ -301,62 +322,117 @@ end
 -- list rows and the Spell Info window
 -- ---------------------------------------------------------------------------
 
--- One list row: icon (unless showIcon is false) + a Selectable label.
--- Returns (leftClicked, rightClicked). In-set spells draw green; unlearned
--- draw opts.dimColor (default dim) while on BLU; in-set wins. opts.label
--- overrides the row text (the traits tab composes weight/level into it).
+-- One list row: ONE Selectable spans the whole row -- icon AND name (field
+-- ask 2026-08-04: the icon was inert art beside a text-only hit target).
+-- The highlight, both clicks and hover cover everything; the art and the
+-- colored name draw OVER the Selectable afterwards.
+-- Returns (leftClicked, rightClicked, hovered). `hovered` is the row-wide
+-- state for tooltip(); nil on the fallback path (tooltip self-checks then).
+-- In-set spells draw green; unlearned draw opts.dimColor (default dim)
+-- while on BLU; in-set wins. opts.label overrides the row text (the traits
+-- tab composes weight/level into it).
 function M.listRow(ctx, id, iconSz, nameW, selected, showIcon, opts)
     local im, book = ctx.im, ctx.book;
     local s = book.spells[id];
     local pushed = pushId(im, 'bdxrow' .. id);
-    local clicked, rclicked = false, false;
+    local clicked, rclicked, hovered = false, false, nil;
     if s == nil then
         clicked = kit.litButton(im, '#' .. tostring(id), selected, nameW, iconSz);
         popId(im, pushed);
-        return clicked, false;
+        return clicked, false, nil;
     end
     local label = (opts and opts.label) or s.name;
     local dimColor = (opts and opts.dimColor) or kit.COL.dim;
     local dim = ctx.blu.onBlu() and not book.learned(id) or false;
     local inSet = ctx.sets.contains(ctx.state.editingSet, id) ~= nil;
-    local selH = iconSz;
-    if showIcon ~= false then
-        local h = filetex.spell(book, s, 'grid64');
-        if h ~= nil and kit.isFn(im, 'Image') then
-            local tint = dim and { 0.45, 0.45, 0.50, 0.85 } or { 1, 1, 1, 1 };
-            local okI = pcall(im.Image, h, { iconSz, iconSz }, { 0, 0 }, { 1, 1 }, tint);
-            if not okI then pcall(im.Image, h, { iconSz, iconSz }); end
-            if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        end
-        -- keep the name a text-height item, vertically centered on the icon
-        selH = math.min(iconSz, 20);
-        if iconSz > selH and kit.isFn(im, 'GetCursorPosY') and kit.isFn(im, 'SetCursorPosY') then
-            local oky, cy = pcall(im.GetCursorPosY);
-            if oky and type(cy) == 'number' then
-                pcall(im.SetCursorPosY, cy + (iconSz - selH) / 2);
-            end
-        end
-    end
     local textCol = inSet and kit.COL.ok or (dim and dimColor or nil);
-    if kit.isFn(im, 'Selectable') then
-        local pushedCol = false;
-        if textCol and kit.isFn(im, 'PushStyleColor') and kit.isFn(im, 'PopStyleColor') then
-            im.PushStyleColor(0, textCol);                     -- Text
-            pushedCol = true;
-        end
-        local ok, r = pcall(im.Selectable, kit.esc(label), selected, 0, { nameW, selH });
-        if not ok then ok, r = pcall(im.Selectable, kit.esc(label), selected); end
-        if pushedCol then im.PopStyleColor(1); end
-        clicked = ok and r or false;
-    else
-        clicked = kit.litButton(im, label, selected, nameW, selH);
+    local drawIcon = showIcon ~= false;
+    local rowH = drawIcon and iconSz or math.min(iconSz, 20);
+    local pad = 8;                                     -- icon-to-name gap
+    local rowW = (drawIcon and (iconSz + pad) or 0) + nameW;
+
+    local x0, y0 = nil, nil;
+    if kit.isFn(im, 'GetCursorPosX') and kit.isFn(im, 'GetCursorPosY') then
+        local okx, cx = pcall(im.GetCursorPosX);
+        local oky, cy = pcall(im.GetCursorPosY);
+        if okx and type(cx) == 'number' then x0 = cx; end
+        if oky and type(cy) == 'number' then y0 = cy; end
     end
-    if kit.isFn(im, 'IsItemClicked') then
-        local okc, rc = pcall(im.IsItemClicked, 1);            -- right button
-        rclicked = okc and rc or false;
+    local overlayOk = false;
+    if x0 ~= nil and y0 ~= nil and kit.isFn(im, 'Selectable')
+        and kit.isFn(im, 'SetCursorPosX') and kit.isFn(im, 'SetCursorPosY') then
+        local okS, r = pcall(im.Selectable, '##bdxhit', selected, 0, { rowW, rowH });
+        if okS then
+            overlayOk = true;
+            clicked = r or false;
+            if kit.isFn(im, 'IsItemHovered') then
+                local okh, hv = pcall(im.IsItemHovered);
+                hovered = okh and (hv or false) or false;
+            end
+            if kit.isFn(im, 'IsItemClicked') then
+                local okc, rc = pcall(im.IsItemClicked, 1);    -- right button
+                rclicked = okc and rc or false;
+            end
+            -- where the NEXT row starts -- the Selectable owns the row's
+            -- real item spacing; restored after the art overlays
+            local yAfter = nil;
+            local oky2, cy2 = pcall(im.GetCursorPosY);
+            if oky2 and type(cy2) == 'number' then yAfter = cy2; end
+            if drawIcon then
+                local h = filetex.spell(book, s, 'grid64');
+                if h ~= nil and kit.isFn(im, 'Image') then
+                    pcall(im.SetCursorPosX, x0);
+                    pcall(im.SetCursorPosY, y0);
+                    local tint = dim and { 0.45, 0.45, 0.50, 0.85 } or { 1, 1, 1, 1 };
+                    local okI = pcall(im.Image, h, { iconSz, iconSz }, { 0, 0 }, { 1, 1 }, tint);
+                    if not okI then pcall(im.Image, h, { iconSz, iconSz }); end
+                end
+            end
+            local textH = 17;
+            if kit.isFn(im, 'GetTextLineHeight') then
+                local okt, th = pcall(im.GetTextLineHeight);
+                if okt and type(th) == 'number' and th > 0 then textH = th; end
+            end
+            pcall(im.SetCursorPosX, x0 + (drawIcon and (iconSz + pad) or 0));
+            pcall(im.SetCursorPosY, y0 + math.max(0, (rowH - textH) / 2));
+            if textCol then kit.ctext(im, textCol, label);
+            else kit.text(im, label); end
+            if yAfter ~= nil then pcall(im.SetCursorPosY, yAfter); end
+        end
+    end
+    if not overlayOk then
+        -- fallback (binding without the cursor calls): icon + text target
+        local selH = iconSz;
+        if drawIcon then
+            local h = filetex.spell(book, s, 'grid64');
+            if h ~= nil and kit.isFn(im, 'Image') then
+                local tint = dim and { 0.45, 0.45, 0.50, 0.85 } or { 1, 1, 1, 1 };
+                local okI = pcall(im.Image, h, { iconSz, iconSz }, { 0, 0 }, { 1, 1 }, tint);
+                if not okI then pcall(im.Image, h, { iconSz, iconSz }); end
+                if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            end
+            selH = math.min(iconSz, 20);
+        end
+        if kit.isFn(im, 'Selectable') then
+            local pushedCol = false;
+            if textCol and kit.isFn(im, 'PushStyleColor') and kit.isFn(im, 'PopStyleColor') then
+                im.PushStyleColor(0, textCol);                 -- Text
+                pushedCol = true;
+            end
+            local ok, r = pcall(im.Selectable, kit.esc(label), selected, 0, { nameW, selH });
+            if not ok then ok, r = pcall(im.Selectable, kit.esc(label), selected); end
+            if pushedCol then im.PopStyleColor(1); end
+            clicked = ok and r or false;
+        else
+            clicked = kit.litButton(im, label, selected, nameW, selH);
+        end
+        if kit.isFn(im, 'IsItemClicked') then
+            local okc, rc = pcall(im.IsItemClicked, 1);        -- right button
+            rclicked = okc and rc or false;
+        end
     end
     popId(im, pushed);
-    return clicked, rclicked;
+    return clicked, rclicked, hovered;
 end
 
 -- The View density combo, shared by the codex and traits tabs: reads and
@@ -412,6 +488,40 @@ function M.detailWindow(ctx)
         local dok, derr = pcall(M.detail, ctx, st.selectedId);
         if not dok then
             kit.ctext(im, kit.COL.err, 'detail error: ' .. tostring(derr));
+        end
+    end
+    if ok then im.End(); end
+end
+
+-- The Learn-from window: opened by the Spell Info button, follows the
+-- selected spell, closable via the title bar. Lists EVERY zone -- the
+-- inline section it replaced truncated at six.
+function M.learnWindow(ctx)
+    local im, st, book = ctx.im, ctx.state, ctx.book;
+    if not st.learnOpen or not st.learnOpen[1] then return; end
+    if st.selectedId == nil then st.learnOpen[1] = false; return; end
+    local s = book.spells[st.selectedId];
+    local hints = s ~= nil and book.hintList(st.selectedId) or nil;
+    if hints == nil then st.learnOpen[1] = false; return; end
+    if not (kit.isFn(im, 'Begin') and kit.isFn(im, 'End')) then return; end
+    if kit.isFn(im, 'SetNextWindowSizeConstraints') then
+        pcall(im.SetNextWindowSizeConstraints, { 320, 240 }, { 700, 900 });
+    end
+    if st.learnFocus and kit.isFn(im, 'SetNextWindowFocus') then
+        pcall(im.SetNextWindowFocus);
+    end
+    st.learnFocus = nil;
+    local visible = false;
+    local ok = pcall(function()
+        visible = im.Begin('Learn from##bdxlearn', st.learnOpen);
+    end);
+    if ok and visible then
+        kit.ctext(im, kit.COL.head, s.name);
+        kit.ctext(im, kit.COL.dim, '(retail-era data; CatsEyeXI can differ)');
+        if kit.isFn(im, 'Separator') then im.Separator(); end
+        for _, hz in ipairs(hints) do
+            kit.ctext(im, kit.COL.accent, hz.zone);
+            kit.wrapped(im, kit.COL.dim, '  ' .. table.concat(hz.mobs, ', '));
         end
     end
     if ok then im.End(); end
@@ -564,7 +674,7 @@ function M.render(ctx)
                     pcall(im.SetCursorPosY, rowTop);
                 end
             end
-            local lclick, rclick = M.listRow(ctx, id, iconSz, nameW, st.selectedId == id, showIcon);
+            local lclick, rclick, hov = M.listRow(ctx, id, iconSz, nameW, st.selectedId == id, showIcon);
             if lclick then
                 st.selectedId = id;
                 st.detailOpen[1] = true;
@@ -586,7 +696,7 @@ function M.render(ctx)
                     end
                 end
             end
-            M.tooltip(ctx, id);
+            M.tooltip(ctx, id, hov);
         end
     end
 
