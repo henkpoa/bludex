@@ -521,9 +521,25 @@ function M.render(ctx)
     end
 
     local function rows()
+        local rowTop = nil;
         for i, id in ipairs(ids) do
             local col = (i - 1) % cols;
-            if col ~= 0 and kit.isFn(im, 'SameLine') then im.SameLine(col * colW + 8); end
+            if col == 0 then
+                rowTop = nil;
+                if kit.isFn(im, 'GetCursorPosY') then
+                    local oky, cy = pcall(im.GetCursorPosY);
+                    if oky and type(cy) == 'number' then rowTop = cy; end
+                end
+            elseif kit.isFn(im, 'SameLine') then
+                im.SameLine(col * colW + 8);
+                -- anchor every column to the ROW top: the previous item was
+                -- the vertically-centered NAME (cursor moved down half the
+                -- icon height), and SameLine anchors to ITS line -- which
+                -- staggered the columns by 22px in the Big view (field).
+                if rowTop ~= nil and kit.isFn(im, 'SetCursorPosY') then
+                    pcall(im.SetCursorPosY, rowTop);
+                end
+            end
             local lclick, rclick = M.listRow(ctx, id, iconSz, nameW, st.selectedId == id, showIcon);
             if lclick then
                 st.selectedId = id;
