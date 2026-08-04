@@ -1,103 +1,113 @@
 # Bludex — Session Handover
 
-**Date:** 2026-08-04 (night build)
-**Repo:** https://github.com/henkpoa/bludex — public, `main` + `dev` (all work on `dev`, dev→main only on Henrik's go, the dlac branch law)
-**State:** v0.1.0 skeleton **live in game and rendering**. Codex confirmed working; Sets/Traits tabs built but not yet field-tested.
+**Date:** 2026-08-04 (end of the full-day session; supersedes the night-build handover)
+**Repo:** https://github.com/henkpoa/bludex — public, `main` + `dev` (all work on `dev`,
+dev→main only on Henrik's explicit go; same law in dlac). Released at `4c91e41`+docs.
+**State:** everything below is **FIELD-CONFIRMED on CatsEyeXI** unless marked otherwise.
+`addon.version` is still **0.1.0** — a bump is pending Henrik's call.
 
 ---
 
-## 1. What exists and what is proven
+## 1. What exists (all field-proven today unless noted)
 
 | Piece | State |
 |---|---|
-| Codex tab, 135 spells, filters row, tab row | **FIELD-CONFIRMED** as an icon grid (03:26 screenshot) — **REDESIGNED to Henrik's spec 2026-08-04 (untested)**: icon+name list rows in 3 columns (1-3 by width, but the 920 min window always yields 3), side detail panel REMOVED — clicking a row opens a closable "Spell Info" window (own `Begin`, inherits theme pushes, add-to-set button moved to the TOP above the 320 sprite), and a browse header line: `N spells   Set: <pts> / <max> pts   Slots: n / 20` (kit.meter colors, editing set). `spellButton` kept — the Sets slot grid still uses it. |
-| Live set-point budget in the header | **FIELD-CONFIRMED, regression RESOLVED** — stuck on "reading..." early morning (survived zoning/job changes), then came back (`44 / 79` in the 09:xx screenshot) consistent with the blusets-documented quirk: private servers leave job structs stale until the native equip/Set Spells menus touch them. **Self-healing FIELD-CONFIRMED** ("works :)"): the C2S 0x061 player-info request (the same ask the native menus fire; LSB answers with the job-extra battery) wakes the structs. Auto-nudge while "reading..." (≤3 tries, 10s apart, re-armed by a good read), plus (untested) one refresh on every window open and on any main/sub job or level change while open (`blu.watchJobState`, polled per frame). Manual: `/bludex refresh`. `/bludex debug` prints sig status + ungated raw reads. |
-| Red frames behind icons | **FIXED** `cf661f1` — ImageButton frames drew the default theme's red Button color; now transparent with soft blue hover. **Not yet re-checked in game** (fix landed as Henrik logged off) |
-| Detail panel (click a spell → 320px sprite + all data) | **UNKNOWN** — grid ran to the window edge in the screenshot; possibly cropped, possibly not rendering. **First thing to check next session.** |
-| Sets tab (saved sets, 20 slots, meters, Apply/Read/Clear, quick-add) | Built, compiles, logic smoke-tested — **never opened in game** |
-| Traits tab (ladders, feeders, add-for-next-tier) | **FIELD-CONFIRMED for adding** ("we can easily add spells, really good") — remove was missing; in-set spells now show a lit `-` button (removeId). Remove itself untested. |
-| Apply-in-game (0x102 packets, skips unlearned) | **FIELD-PROVEN 2026-08-04**, twice over: full reset+apply worked, then **diff apply worked and "speeds it up by a huge amount" (Henrik)**. Full unset behind `/bludex reset`. **Fast mode field verdict: "doesn't feel like it works well" on CEXI — safe mode is the one we want.** One spell per packet is a protocol limit. **REWORKED for the level law (untested):** the game strips set spells a level-down cannot hold, so the diff is now position-independent (matched by spell id — same spells in any layout = 0 packets) and every add goes lowest-BLU-level-first into the lowest open slots (castable spells land before the synced-down server starts rejecting, and sit where a strip spares them). `applySet`/`applyDiff` take `book` for the level sort. |
-| Auto-restore after level changes | **NEW (untested).** Setting on the Sets tab ("Level change: Auto-restore / Manual", default Manual, persisted `cfg.autoRestore`). On any job/level change (watched every frame, window open or not) the 0x061 refresh fires, then at +2s and +8s `blu.restoreMissing(cfg.lastApplied.ids)` re-adds anything stripped — ADDS ONLY, never unsets, quiet when nothing is missing, ends by re-reading the live set and reporting how many stuck. `cfg.lastApplied` snapshots on every UI/command apply. |
-| `/bludex` `/bdx` toggle, `list`, `apply <name>` | Toggle confirmed; list/apply untested |
-| Headless smoke (`tools/smoke.lua`, 23 checks) | Green. Run from `Ashita/addons/`: `lua bludex/tools/smoke.lua` |
+| Codex: icon+name list rows, 1-3 columns by width, filters + Sort (Name/Level/Type) + View densities (Big 64 / Medium 32 / Normal 24 / Compact no-icons), green = in set, dim = unlearned | Proven. Density + sort persisted (`codexDensity`; sort is session-state). |
+| The row grammar (everywhere: codex, traits, sets-list): LEFT-click = Spell Info window, RIGHT-click = toggle in/out of set, hover = rich tooltip (centered 64 sprite, stats, trait + `set / next - for rank N` ladder progress) | Proven. Right-click uses `IsItemClicked(1)`. |
+| Spell Info window: add/remove button at top (flips by membership), centered 320 sprite, wrapped long lines, learn-from hints | Proven. Draws from `host.renderBody` so traits/sets rows open it too. |
+| Sets tab: saved sets (active set remembered by NAME across loads), slot area as **Grid** (5x4 centered cells, empty = ring PNG) or **List** (codex rows + `(not active yet)` tags) — persisted `setsLayout`; live-state dimming; meters; quick add | Proven. |
+| Header (all tabs): editing-set meters (`Set: x / max pts`, `Slots: n / 20`), **Save / Apply / Revert** (green when they have work; slot-wise sorted-layout dirty compare), cast-lock countdown | Proven. |
+| Apply engine (`lib/blu.lua`): **level-sorted slot layout** (slot 1 = lowest level; slot-wise diff, unsets first, adds ascend), skip-unlearned, full reset fallback, `/bludex reset` | Proven incl. the one-click re-sort of a patchwork set. Low-slot insertions shift the tail — inherent cost, documented in the commit. |
+| Auto-restore on level change ("Level change: Restore / Manual", default Manual): adds-only via identity `planDiff` (NO reshuffle mid-sync), honest stuck-count report | Built + suite-proven; **field pass still thin** (mechanism proven via the job watcher, a real level-sync round-trip not yet observed). |
+| Cast lock: every 0x102 restamps a 60s clock; header countdown + deferred-task chat line "Blue Magic is castable again." (fires window-closed too, generation-checked) | Countdown + announcement field-confirmed. **60s is retail-assumed — calibrate against CEXI once** (`M.castLock`, one number). |
+| Points/live-set reads: blusets signatures; 0x061 self-heal (auto-nudge ≤3x10s + on window open + on job/level change; `/bludex refresh`) | Proven, including the original stale-struct regression and recovery. |
+| Fast mode (`/bludex mode fast`, injected 0x102, delay to 0.2s) | Field verdict: **not worth it on CEXI — safe stays default.** Kept for experiments. |
+| Learned gate: unlearned spells cannot be ADDED anywhere (`canAdd`); removal never gated | Proven. |
+| Commands: `/bludex` `/bdx`, `list`, `apply <name>`, `reset`, `refresh`, `delay <0.2-5>`, `mode safe|fast`, `debug` | Proven (debug was the regression workhorse). |
 
-## 2. Bugs found and fixed tonight (the lessons)
+## 2. The two flavors + the pipeline (all field-proven end to end)
 
-1. **`package.path` bootstrap** — `require('bludex\\lib\\X')` needs
-   `package.path = package.path .. ';' .. AshitaCore:GetInstallPath() .. 'addons\\?.lua'`
-   in the entry file (dlac.lua:52 has the same line). Without it: module-not-found at load. `4428d09`.
-2. **ImageButton frames are style-colored** — the red squares. Push transparent Button + blue Hovered/Active around every sprite ImageButton. `cf661f1`.
-3. Carried dlac laws that prevented worse: printf-escape on ALL drawn text, presence-guard every widget, **no BeginTabBar** (not field-proven in this install — tabs are lit/unlit buttons), keep texture OBJECTS referenced or D3D frees them and imgui draws a dangling pointer.
+- **Standalone addon** = this repo at `addons/bludex/`.
+- **dlac Job helper** = the library VENDORED at `dlac/jobhelpers/blu/bludex/` (api=2
+  module; `dlacmodule/init.lua` + `README.md` here are the adapter + approval doc).
+  The Panel is a **launcher**; the whole window rides dlac's `window` float hook
+  (survives dlac's main box closing); `open` hook serves the quick-menu cascade.
+  Settings live in dlac's scalar store via the adapter's codec (sets are encoded
+  strings). **Do not run both flavors at once** (one BLU brain per client).
+- **Pipeline:** commit dev → Henrik blesses bludex dev→main → `.github/workflows/
+  sync-dlac.yml` (secret `DLAC_SYNC_TOKEN`, in place) copies lib/ui/data/icons +
+  adapter into dlac dev → Henrik blesses dlac dev→main. Ran green all day (11-20s).
+- **Dev loop:** `python bludex/tools/vendor_local.py` + `/addon reload dlac`. After a
+  release, if dlac `git pull` refuses over the vendor: `git checkout -- jobhelpers/blu/bludex`
+  then pull.
+- dlac gained today (its own repo): the module `window`/`open` contract hooks + float
+  draw site, the Job-helpers quick-menu cascade with the per-helper **Sub job** switch,
+  and `liveJobs()` (memory-manager job reads — gData is absent in the addon state and
+  degraded invisibly everywhere until the cascade exposed it).
 
-## 2b. Morning pass (2026-08-04, code-side, pre-field)
+## 3. Laws learned today (beyond the night build's)
 
-- **Width math reviewed, no bug found.** Install-wide evidence (dlac, trove,
-  fancychat, partyfinder) says this binding returns plain numbers from
-  `GetContentRegionAvail` — bludex's handler covers that shape. Min window
-  width (now 920) guarantees grid + detail both fit, so the screenshot was
-  most likely cropped. The in-game click check remains, but expect it to pass.
-- **Sets tab can no longer be bricked by Read current.** Unknown ids from the
-  live buffer draw as clickable `#id` cells (spellButton nil-guard), slot
-  tooltips guard the deref, and the read note counts unknown ids. The
-  setmodel layer was already nil-tolerant (verified).
-- **Apply explains itself when blocked** (not on BLU vs. signatures failed)
-  instead of being a silently dead button.
-- **Filter combos now measure their widths** (kit.measure + arrow) — the
-  "All eleme▼" clipping is gone; open item 5 is done.
-- **Sets tab field polish (after the 09:xx screenshot):** slot icons dim when
-  the spell is not in the LIVE client set and light up one by one as an apply
-  lands them (per-frame `currentSet()` compare, no event plumbing). Slot-cell
-  alignment fixed — image cells are size+4 (2px frame padding per side), so
-  the text fallbacks ('-', '#id', name) now draw at size+4 too. Apply/Read
-  current/New/Save/Delete buttons measure their widths ("Apply in gam" was
-  clipped in the field). Selectable highlight (Header 24-26) pushed blue —
-  the selected saved-set row was default-theme RED.
+1. **`gData` does not exist in dlac's addon state** — permissive-unknown guards hid it.
+   Job reads go through AshitaCore's memory manager (`JOB_ABBR`, BLU=16).
+2. **`SameLine` anchors to the PREVIOUS item's line** — a cursor-Y-offset name staggered
+   multi-column lists 22px; columns must re-anchor to a captured row-top Y.
+3. **`x and nil or false` stores false** — the and/or trap; explicit branches for
+   clear-vs-set (caught by the JH19 roundtrip test before the field).
+4. **The apply layout IS the deliverable** — identity diff left the game's list a
+   patchwork; the sorted slot-wise diff costs shifts but the list reads right, and
+   Apply-dirty must compare the same thing Apply sends.
+5. **Deferred chat via `ashita.tasks.once` + generation counter** — UI-poll-driven
+   announcements miss when the window is closed or the host tick is gated.
+6. **Panels may not open windows** (dlac): containment is scoped to the Panel; floats
+   need the one draw site — hence the `window` hook (ADR 0028 amendment, the why is in
+   the authoring guide §2.5).
 
-## 3. Open items, in order
+## 4. Open items
 
-1. **Verify the detail panel renders** (click a spell). Code-side review found
-   no bug (see §2b); if it still fails in game the suspect list is empty — get
-   a screenshot + any `tab error` text.
-2. **Confirm the red-frame fix** looks right.
-3. **Field-test the Sets tab end to end**: build a small set → Save → relog-persistence → Read current → **Apply in game** (carefully, see §1) → verify in the game's own blue magic menu.
-4. **Traits tab field pass.**
-5. ~~Cosmetic: filter combos clip their labels~~ — done in the morning pass.
-6. **UI chrome icons** — Henrik generates from `ICONS_WANTED.md` (all optional, everything has fallbacks; drop into `icons/ui/`, no code change).
-7. Later: settings UI (applyDelay, budgetOverride), filter persistence, README screenshots, dev→main + version bump when Henrik approves.
-
-## 4. Data state (unchanged tonight except MP)
-
-- 136 spells (135 castable), coverage: 123 full public-SQL rows, Glutinous Dart commented-row + field, 8 SoA `field` (set cost 8 + MP 116 each, **"retail values" per Henrik** — raises confidence for seeding the rest from retail), 4 stubs (Thunderbolt + Unbridled trio; trio zeros are correct semantics).
-- **Field facts banked:** Assimilation = +2/merit (CEXI custom); budget GROWS with spells learned, Henrik at 79 expecting 80; Thunderbolt = Unbridled + **Lengua Regia** food gate (full note on the row).
-- **Remaining verify tail (thin, nothing blocks UI):** castTime for the 8 SoA spells + Carcharian Verve mpCost; which trait the 8 SoA spells feed; spellType eyeball-confirmation on the 24 scriptless rows (element law: None ⇒ Physical, else Magical — held for all 111 scripted spells).
-- Regeneration is in the data as `castable=false` — whether the UI ever shows it is a filter decision, still Henrik's.
+1. **Calibrate `castLock`** against CEXI (apply, wait out the timer, cast — adjust the
+   one number in `lib/blu.lua` if 60s is wrong).
+2. **Field-test the level-change Restore** with a real level sync (arm it on the Sets tab).
+3. **Version bump + release notes** when Henrik calls it (still 0.1.0).
+4. Data verify tail (unchanged from the night build): castTime for the 8 SoA spells,
+   Carcharian Verve mpCost, which trait the SoA spells feed, spellType eyeball on the
+   24 scriptless rows. Nothing blocks UI.
+5. Optional chrome icons (`ICONS_WANTED.md`) — everything has fallbacks; the empty-slot
+   ring is now generated (`tools/make_slot_icon.py`).
+6. Ideas parked: filter persistence, a settings panel (delay/override/castLock),
+   README screenshots.
 
 ## 5. Architecture map
 
 ```
-bludex.lua          entry: package.path bootstrap FIRST, settings lib, events, commands
-lib/blu.lua         blusets port (GPL-3, credited): live budget, live set, 0x102 apply
-lib/spellbook.lua   data service: indexes, learned(), filter engine, hints
-lib/setmodel.lua    pure set logic: totals, stats, trait ladder (mirrors CalculateTraits)
-ui/kit.lua          guarded widgets, printf-escape, blue palette, lit-button tabs
-ui/filetex.lua      D3DX texture loader (KEEP the object or crash)
-ui/host.lua         window shell, theme, header budget, tab dispatch (pcall per tab)
-ui/spellsui.lua     Codex: filters + grid + detail (detail reused by Sets ctx)
-ui/setsui.lua       Sets: saved list / slot grid + meters + game actions / stats+traits
-ui/traitsui.lua     Traits: ladders + feeders + quick add
-data/*.lua          GENERATED — never hand-edit; tools/generate_spells.py regenerates
-                    (field values live in FIELD_* dicts INSIDE the generator)
-icons/<Cat>/<Name>-320|-128-halo|-64-halo.png   408 files, complete
+bludex.lua            standalone entry: package.path bootstrap, settings, events, commands
+lib/config.lua        the settings shape, shared by both flavors (T{} headless-safe)
+lib/blu.lua           game layer: signatures, 0x102 send (safe/fast), 0x061 nudge,
+                      cast lock, applySet/applyDiff (SORTED slot-wise) /
+                      restoreMissing (identity, adds-only), watchJobState
+lib/spellbook.lua     data service; lib/setmodel.lua pure set logic + sortedLayout
+ui/kit.lua            guarded widgets, esc, palettes (PAL.go/off), measure, availWidth
+ui/filetex.lua        D3DX textures (KEEP the object); icon paths follow ROOT
+ui/host.lua           tick (watch+restore), theme split, renderBody (header meters +
+                      Save/Apply/Revert + countdown + tabs + Spell Info window),
+                      render (standalone) / renderWindowFloat / renderEmbedded / open
+ui/spellsui.lua       codex + listRow/tooltip/densityCombo/densityParams + detail window
+ui/setsui.lua         sets + the shared verbs (save/apply/revert/unsaved) + slotList
+ui/traitsui.lua       ladders + codex-grammar rows
+dlacmodule/           the dlac adapter (init.lua contract + README approval doc)
+.github/workflows/    sync-dlac.yml (vendors on push to main)
+tools/                smoke.lua (headless suite), generate_spells.py,
+                      make_slot_icon.py, vendor_local.py
+ALL modules derive ROOT from their own module name -- relocatable (the vendoring law).
 ```
 
-## 6. How to verify from scratch
+## 6. Verify from scratch
 
 ```
-/addon load bludex     (or /addon reload bludex)
-/bdx                   → window; header should read "Blue Magic Points: <spent> / 79" on BLU
-lua bludex/tools/smoke.lua   (from Ashita/addons/, headless: 23 checks)
-python bludex/tools/generate_spells.py [--deploy-icons]   (regenerate data)
+/addon load bludex          (standalone)   |   /addon reload dlac   (module flavor)
+lua bludex/tools/smoke.lua                 (from Ashita/addons/)
+lua tests/run_tests.lua && lua tests/smoke_ui.lua   (from dlac/, for dlac changes)
+python bludex/tools/vendor_local.py        (refresh the live dlac module)
+python bludex/tools/generate_spells.py     (regenerate data)
 ```
 
-Asset masters + the icon-audit handover (authority map, the submodule trap, learn-vs-cast
-gates) live in `C:\Users\Henrik Johansson\OneDrive\Bilder\BLU\HANDOVER.md`.
+Asset masters + icon-audit handover: `C:\Users\Henrik Johansson\OneDrive\Bilder\BLU\HANDOVER.md`.
