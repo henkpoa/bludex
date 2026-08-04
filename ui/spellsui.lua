@@ -65,6 +65,7 @@ function M.spellButton(ctx, id, size, selected, dimmed)
             im.PushStyleColor(21, { 0, 0, 0, 0 });                 -- Button
             im.PushStyleColor(22, { 0.20, 0.42, 0.74, 0.45 });     -- Hovered
             im.PushStyleColor(23, { 0.20, 0.42, 0.74, 0.70 });     -- Active
+            im.PushStyleColor(5,  { 0, 0, 0, 0 });                 -- Border: no square outline
             styled = true;
         end
         local bg = selected and { 0.20, 0.42, 0.74, 0.85 } or { 0, 0, 0, 0 };
@@ -73,7 +74,7 @@ function M.spellButton(ctx, id, size, selected, dimmed)
         if not ok then
             ok, r = pcall(im.ImageButton, h, { size, size });
         end
-        if styled then im.PopStyleColor(3); end
+        if styled then im.PopStyleColor(4); end
         clicked = ok and r or false;
     else
         -- +4 to match the image cells' frame padding (see above)

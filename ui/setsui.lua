@@ -136,6 +136,7 @@ local function slotGrid(ctx)
                     im.PushStyleColor(21, { 0, 0, 0, 0 });
                     im.PushStyleColor(22, { 0.20, 0.42, 0.74, 0.30 });
                     im.PushStyleColor(23, { 0.20, 0.42, 0.74, 0.50 });
+                    im.PushStyleColor(5,  { 0, 0, 0, 0 });   -- Border: no square outline
                     styled = true;
                 end
                 -- same call shape as spellButton (frame padding 2) so image
@@ -143,7 +144,7 @@ local function slotGrid(ctx)
                 local okB = pcall(im.ImageButton, h, { cell, cell }, { 0, 0 }, { 1, 1 }, 2,
                     { 0, 0, 0, 0 }, { 1, 1, 1, 0.9 });
                 if not okB then pcall(im.ImageButton, h, { cell, cell }); end
-                if styled then im.PopStyleColor(3); end
+                if styled then im.PopStyleColor(4); end
             else
                 -- +4: match the image cells' 2px frame padding per side.
                 -- '##e' = a blank cell (the '-' read as content in the field)
