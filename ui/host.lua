@@ -40,7 +40,7 @@ local function freshState(sets)
         filters = {
             text = { '' },
             category = {}, element = {}, spellType = {}, trait = {}, learned = {},
-            sort = {},
+            sort = {}, stat = {},
         },
     };
 end

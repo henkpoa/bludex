@@ -55,6 +55,10 @@ FIELD_MP = {
     725: 116, 726: 116, 727: 116, 728: 116,   #   cost 116 MP (retail values)
 }
 FIELD_UNBRIDLED = {736}                  # Thunderbolt: Unbridled + food gate
+FIELD_MODS = {
+    720: [("MP", 30), ("INT", 8)],       # Spectral Floe (base LSB has no mod
+                                         #   rows for the cexi75 SoA spells)
+}
 FIELD_NOTES = {
     736: "Requires Unbridled Learning AND the food Lengua Regia (cooked from "
          "behemoth tongue). Casting deactivates Unbridled Learning. "
@@ -441,6 +445,13 @@ def main():
             # patch note settles the gating question and the spell's nature
             verify = [v for v in verify
                       if v not in ("setPoints", "trait", "unbridled", "spellType")]
+        if sid in FIELD_MODS:
+            mods = list(FIELD_MODS[sid])
+            src = "field"
+        elif klass.startswith("CEXI-75") and not mods and not unbridled:
+            # base LSB carries no blue_spell_mods rows for the CatsEyeXI
+            # custom spells; Spectral Floe proved they DO have stats in game
+            verify.append("mods")
         if unbridled:
             setpts = None
         if bl is None and stype == "Magical":

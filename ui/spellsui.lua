@@ -631,6 +631,7 @@ function M.render(ctx)
     local im, book, st = ctx.im, ctx.book, ctx.state;
     local f = st.filters;
     f.sort = f.sort or {};
+    f.stat = f.stat or {};
     st.detailOpen = st.detailOpen or { false };
 
     -- filter row -- combo widths measured over every label they can show
@@ -666,7 +667,7 @@ function M.render(ctx)
     if kit.litButton(im, 'Reset', false, 60, 22) then
         f.text[1] = ''; f.category.value = nil; f.element.value = nil;
         f.spellType.value = nil; f.trait.value = nil; f.learned.value = nil;
-        f.sort.value = nil;
+        f.sort.value = nil; f.stat.value = nil;
     end
 
     -- resolve filter spec
@@ -682,6 +683,7 @@ function M.render(ctx)
     local ids = book.filter({
         text = f.text[1], category = f.category.value, element = f.element.value,
         spellType = f.spellType.value, traitCat = traitCat, learned = learned,
+        stat = f.stat.value,
     });
 
     -- sort (in place -- book.filter returns a fresh array each call)
@@ -713,6 +715,12 @@ function M.render(ctx)
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     kit.combo(im, '##bdxsort', f.sort, { 'Name', 'Level', 'Type' }, 'default',
         comboW({ 'Name', 'Level', 'Type' }, 'default'));
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    kit.ctext(im, kit.COL.dim, '  Stat:');
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    kit.combo(im, '##bdxstatf', f.stat, book.statChoices, 'All stats',
+        comboW(book.statChoices, 'All stats'));
+    kit.tip(im, 'Only spells whose set bonus grants this stat.');
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     kit.ctext(im, kit.COL.dim, '  View:');
     if kit.isFn(im, 'SameLine') then im.SameLine(); end

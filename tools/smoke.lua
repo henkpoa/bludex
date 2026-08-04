@@ -36,6 +36,19 @@ check(book.spells[664].castable == false, 'Regeneration flagged uncastable');
 print('smoke: filters');
 check(#book.filter({ category = 'Healing' }) == 6, '6 castable healing spells');
 check(#book.filter({ text = 'head' }) >= 1, 'text filter finds Head Butt');
+check(#book.statChoices == 9 and book.statChoices[1] == 'HP',
+    '9 stat choices, canonical order');
+local function has(t, id)
+    for _, v in ipairs(t) do if v == id then return true; end end
+    return false;
+end
+check(has(book.filter({ stat = 'DEX' }), 623), 'stat filter: DEX finds Head Butt');
+check(has(book.filter({ stat = 'INT' }), 720), 'stat filter: INT finds Spectral Floe');
+check(not has(book.filter({ stat = 'STR' }), 720), 'stat filter excludes non-grantors');
+check(book.spells[720].mods[1].stat == 'MP' and book.spells[720].mods[1].value == 30
+    and book.spells[720].mods[2].stat == 'INT' and book.spells[720].mods[2].value == 8,
+    'field: Spectral Floe MP+30 INT+8');
+check(book.spells[719].mods == nil, 'Searing Tempest stats still unknown (verify: mods)');
 local dw = nil;
 for _, t in ipairs(book.traitChoices) do
     if t.name == 'Dual Wield' then dw = t.cat; end

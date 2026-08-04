@@ -80,6 +80,31 @@ function M.traitName(cat)
     return (info and info.name) or ('Trait ' .. cat);
 end
 
+-- stat filter choices: every stat some spell's mods grant, in the game's
+-- canonical attribute order (HP MP STR DEX VIT AGI INT MND CHR, rest alpha)
+M.statChoices = {};
+do
+    local seen = {};
+    for _, id in ipairs(M.order) do
+        local s = M.spells[id];
+        if s.mods then
+            for _, m in ipairs(s.mods) do
+                if not seen[m.stat] then
+                    seen[m.stat] = true;
+                    M.statChoices[#M.statChoices + 1] = m.stat;
+                end
+            end
+        end
+    end
+    local rank = { HP = 1, MP = 2, STR = 3, DEX = 4, VIT = 5,
+                   AGI = 6, INT = 7, MND = 8, CHR = 9 };
+    table.sort(M.statChoices, function(a, b)
+        local ra, rb = rank[a] or 99, rank[b] or 99;
+        if ra ~= rb then return ra < rb; end
+        return a < b;
+    end);
+end
+
 -- ---------------------------------------------------------------------------
 -- runtime lookups (guarded; safe headless)
 -- ---------------------------------------------------------------------------
@@ -120,6 +145,7 @@ end
 --   element    'Fire'|...|'None'
 --   spellType  'Physical'|'Magical'|'Breath'
 --   traitCat   number -- only spells feeding that trait category
+--   stat       'STR'|'HP'|... -- only spells whose mods grant that stat
 --   learned    true (only learned) | false (only missing) | nil (all)
 --   includeUncastable  default false (Regeneration stays hidden)
 function M.filter(spec)
@@ -134,6 +160,15 @@ function M.filter(spec)
         if keep and spec.element and s.element ~= spec.element then keep = false; end
         if keep and spec.spellType and s.spellType ~= spec.spellType then keep = false; end
         if keep and spec.traitCat and not (s.trait and s.trait.category == spec.traitCat) then keep = false; end
+        if keep and spec.stat then
+            local has = false;
+            if s.mods then
+                for _, m in ipairs(s.mods) do
+                    if m.stat == spec.stat then has = true; break; end
+                end
+            end
+            if not has then keep = false; end
+        end
         if keep and text and not norm(s.name):find(text, 1, true) then keep = false; end
         if keep and spec.learned ~= nil and M.learned(id) ~= spec.learned then keep = false; end
         if keep then out[#out + 1] = id; end
