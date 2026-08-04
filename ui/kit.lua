@@ -151,6 +151,21 @@ function M.meter(im, label, used, max, unit)
     M.ctext(im, col, string.format('%d / %s%s', used, maxs, unit or ''));
 end
 
+-- Content-region width, tolerant of binding return shapes ((x,y) numbers or
+-- a table); fallback when unreadable or absurd.
+function M.availWidth(im, fallback)
+    if isFn(im, 'GetContentRegionAvail') then
+        local ok, w = pcall(function()
+            local v = { im.GetContentRegionAvail() };
+            local first = v[1];
+            if type(first) == 'table' then return first[1] or first.x; end
+            return first;
+        end);
+        if ok and type(w) == 'number' and w > 100 then return w; end
+    end
+    return fallback;
+end
+
 -- Measured button width for a set of labels (never hardcode; a hardcoded
 -- width has clipped a trailing character in the field more than once).
 function M.measure(im, labels, minW)

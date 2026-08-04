@@ -104,9 +104,17 @@ local function slotGrid(ctx)
         for i = 1, 20 do if live[i] ~= 0 then liveIds[live[i]] = true; end end
     end
 
+    -- center the 5-cell rows in the column: equal space both sides
     local cell = 48;
+    local gridW = (cell + 4) * 5 + 8 * 4;      -- cell+frame padding, 8px gaps
+    local pad = math.max(0, math.floor((kit.availWidth(im, MID_W) - gridW) / 2));
     for i = 1, 20 do
         if ((i - 1) % 5) ~= 0 and kit.isFn(im, 'SameLine') then im.SameLine(); end
+        if ((i - 1) % 5) == 0 and pad > 0
+            and kit.isFn(im, 'GetCursorPosX') and kit.isFn(im, 'SetCursorPosX') then
+            local okx, cx = pcall(im.GetCursorPosX);
+            if okx and type(cx) == 'number' then pcall(im.SetCursorPosX, cx + pad); end
+        end
         local id = set.ids[i] or 0;
         if id ~= 0 then
             local inGame = liveIds == nil or liveIds[id] == true;

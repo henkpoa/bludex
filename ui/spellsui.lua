@@ -24,19 +24,9 @@ local function popId(im, pushed)
     if pushed and kit.isFn(im, 'PopID') then pcall(im.PopID); end
 end
 
--- content-region width, tolerant of binding return shapes; fallback when
--- unreadable or absurd
+-- content-region width (now shared via the kit)
 local function availWidth(im, fallback)
-    if kit.isFn(im, 'GetContentRegionAvail') then
-        local ok, w = pcall(function()
-            local v = { im.GetContentRegionAvail() };
-            local first = v[1];
-            if type(first) == 'table' then return first[1] or first.x; end
-            return first;
-        end);
-        if ok and type(w) == 'number' and w > 100 then return w; end
-    end
-    return fallback;
+    return kit.availWidth(im, fallback);
 end
 
 -- One spell cell: ImageButton if the sprite loads, text button otherwise.
