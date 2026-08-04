@@ -96,19 +96,66 @@ function M.tooltip(ctx, id)
     if not (kit.isFn(im, 'IsItemHovered') and im.IsItemHovered()) then return; end
     local s = book.spells[id];
     if s == nil then return; end
-    local lines = { s.name };
-    lines[#lines + 1] = ('%s - Lv.%s - %s'):format(s.category, s.level or '?', s.spellType or '?');
-    if s.setPoints then lines[#lines + 1] = ('Set: %d pts'):format(s.setPoints); end
-    if s.unbridled then lines[#lines + 1] = 'Unbridled Learning'; end
-    local lt = learnedText(ctx, id);
-    if lt then lines[#lines + 1] = lt; end
+
+    -- the info rows, each { text, color } -- shared by both tooltip flavors
+    local rows = {};
+    local function add(txt, col) rows[#rows + 1] = { txt, col }; end
+    add(s.name, kit.COL.head);
+    add(('%s - Lv.%s - %s'):format(s.category, s.level or '?', s.spellType or '?'), kit.COL.dim);
+    if s.setPoints then add(('Set: %d pts'):format(s.setPoints), kit.COL.accent); end
+    if s.mods and #s.mods > 0 then
+        local parts = {};
+        for _, m in ipairs(s.mods) do
+            parts[#parts + 1] = ('%s%+d'):format(ctx.sets.prettyStat(m.stat), m.value);
+        end
+        add('Stats: ' .. table.concat(parts, '  '), kit.COL.ok);
+    end
+    if s.trait then
+        add(('Trait: %s  (weight %d)'):format(
+            book.traitName(s.trait.category), s.trait.weight), kit.COL.accent);
+    end
+    if s.unbridled then add('Unbridled Learning', kit.COL.badge); end
+    local lt, ltc = learnedText(ctx, id);
+    if lt then add(lt, ltc); end
     if s.castable and not s.unbridled and s.setPoints then
         if ctx.sets.contains(ctx.state.editingSet, id) then
-            lines[#lines + 1] = 'right-click: remove from set';
+            add('right-click: remove from set', kit.COL.dim);
         elseif book.learned(id) then
-            lines[#lines + 1] = 'right-click: add to set';
+            add('right-click: add to set', kit.COL.dim);
         end
     end
+
+    -- rich flavor: the 64 sprite centered over the text, lines colored.
+    -- BeginTooltip is not field-proven here, so everything inside is
+    -- guarded and the plain SetTooltip text is the fallback.
+    local h = filetex.spell(book, s, 'grid64');
+    if h ~= nil and kit.isFn(im, 'BeginTooltip') and kit.isFn(im, 'EndTooltip')
+        and kit.isFn(im, 'Image') then
+        local ok = pcall(im.BeginTooltip);
+        if ok then
+            local wMax = 64;
+            if kit.isFn(im, 'CalcTextSize') then
+                for _, r in ipairs(rows) do
+                    local okc, tw = pcall(im.CalcTextSize, kit.esc(r[1]));
+                    if okc and type(tw) == 'number' and tw > wMax then wMax = tw; end
+                end
+            end
+            local off = (wMax - 64) / 2;
+            if off > 0 and kit.isFn(im, 'GetCursorPosX') and kit.isFn(im, 'SetCursorPosX') then
+                local okx, cx = pcall(im.GetCursorPosX);
+                if okx and type(cx) == 'number' then pcall(im.SetCursorPosX, cx + off); end
+            end
+            pcall(im.Image, h, { 64, 64 });
+            for _, r in ipairs(rows) do
+                kit.ctext(im, r[2], r[1]);
+            end
+            pcall(im.EndTooltip);
+            return;
+        end
+    end
+
+    local lines = {};
+    for _, r in ipairs(rows) do lines[#lines + 1] = r[1]; end
     kit.tip(im, table.concat(lines, '\n'));
 end
 
