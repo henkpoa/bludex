@@ -234,6 +234,14 @@ return {
         L.host.renderWindowFloat();
     end,
 
+    -- The quick menu's verb (guide 2.9): choosing Bludex in the Job helpers
+    -- cascade pops the window (with the usual open-refresh of the BLU structs).
+    open = function(S)
+        local L = lib;
+        if L == nil then return; end
+        L.host.open();
+    end,
+
     status = function(ctx)
         local L = lib;
         if L == nil then return; end
