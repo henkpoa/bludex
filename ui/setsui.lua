@@ -310,17 +310,13 @@ local function slotGrid(ctx)
     local clearW = kit.measure(im, { 'Clear' }, 50);
     local dirty = nil;                     -- nil = unknown (live unreadable)
     if liveIds ~= nil then
+        -- slot-wise against the SORTED layout (what Apply would send): the
+        -- right spells in the wrong order count as pending too
         dirty = false;
-        local wantN, liveN = 0, 0;
+        local T = ctx.sets.sortedLayout(set.ids, ctx.book);
         for i = 1, 20 do
-            local id = set.ids[i] or 0;
-            if id ~= 0 then
-                wantN = wantN + 1;
-                if not liveIds[id] then dirty = true; end
-            end
+            if (live[i] or 0) ~= T[i] then dirty = true; break; end
         end
-        for _ in pairs(liveIds) do liveN = liveN + 1; end
-        if liveN ~= wantN then dirty = true; end
     end
     local pal = nil;
     if not ctx.blu.applying then

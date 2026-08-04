@@ -75,6 +75,16 @@ check(sets.prettyStat('DUAL_WIELD') == 'Dual Wield', 'prettyStat');
 check(book.traits.rules.assimilationPerMerit == 2, 'field: +2 per Assimilation merit');
 check(book.traits.rules.expectedTotalAt75 == 80, 'field: expected total 80');
 
+print('smoke: sorted apply layout');
+local slIds = { 623, 513, 0, 719 };   -- Head Butt, Pollen, empty, Searing Tempest
+local sl = sets.sortedLayout(slIds, book);
+check(sl[1] ~= 0 and sl[2] ~= 0 and sl[3] ~= 0 and sl[4] == 0 and sl[20] == 0,
+    'sortedLayout packs into slots 1..n with a zero tail');
+check(book.spells[sl[1]].level <= book.spells[sl[2]].level
+    and book.spells[sl[2]].level <= book.spells[sl[3]].level,
+    'sortedLayout is level-ascending');
+check(sets.sortedLayout({}, book)[1] == 0, 'sortedLayout of an empty set is all zeros');
+
 print('smoke: dlac module adapter');
 local dm = require('bludex\\dlacmodule\\init');
 check(dm.api == 2 and type(dm.panel) == 'function' and type(dm.init) == 'function'
