@@ -98,8 +98,12 @@ local function slotGrid(ctx)
                 st.applyNote = nil;
             end
             local s = book.spells[id];
-            kit.tip(im, ('%s\n%d pts%s\nclick to remove'):format(
-                s.name, s.setPoints or 0, s.mpCost and ('  ' .. s.mpCost .. ' MP') or ''));
+            if s ~= nil then
+                kit.tip(im, ('%s\n%d pts%s\nclick to remove'):format(
+                    s.name, s.setPoints or 0, s.mpCost and ('  ' .. s.mpCost .. ' MP') or ''));
+            else
+                kit.tip(im, ('slot %d: spell id %d is not in the data\nclick to remove'):format(i, id));
+            end
         else
             local pushed = false;
             if kit.isFn(im, 'PushID') then pcall(im.PushID, 'bdxslot' .. i); pushed = true; end
@@ -135,17 +139,30 @@ local function slotGrid(ctx)
     -- game actions
     if kit.isFn(im, 'Separator') then im.Separator(); end
     local canApply = ctx.blu.canApply() and not ctx.blu.applying;
-    if kit.litButton(im, ctx.blu.applying and 'Applying...' or 'Apply in game', false, 110, 26)
-        and canApply then
-        ctx.blu.applySet(st.editingSet.ids);
-        st.applyNote = 'Applying - watch the chat log.';
+    if kit.litButton(im, ctx.blu.applying and 'Applying...' or 'Apply in game', false, 110, 26) then
+        if canApply then
+            ctx.blu.applySet(st.editingSet.ids);
+            st.applyNote = 'Applying - watch the chat log.';
+        elseif not ctx.blu.applying then
+            -- a dead button with no reason is a field mystery -- say why
+            st.applyNote = ctx.blu.onBlu()
+                and 'Cannot apply: the client memory signatures did not resolve.'
+                or 'Cannot apply: BLU is not your main or sub job.';
+        end
     end
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     if kit.litButton(im, 'Read current', false, 100, 26) then
         local live = ctx.blu.currentSet();
         if #live == 20 then
-            for i = 1, 20 do st.editingSet.ids[i] = live[i]; end
-            st.applyNote = 'Read the live set.';
+            local unknown = 0;
+            for i = 1, 20 do
+                st.editingSet.ids[i] = live[i];
+                if live[i] ~= 0 and book.spells[live[i]] == nil then unknown = unknown + 1; end
+            end
+            -- unknown ids are kept (honest mirror of the client) -- the grid
+            -- draws them as '#id' cells and the totals simply skip them.
+            st.applyNote = unknown == 0 and 'Read the live set.'
+                or ('Read the live set; %d slot(s) hold ids the data does not know.'):format(unknown);
         else
             st.applyNote = 'Could not read the live set.';
         end

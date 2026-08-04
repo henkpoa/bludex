@@ -30,6 +30,13 @@ function M.spellButton(ctx, id, size, selected, dimmed)
     local s = book.spells[id];
     local clicked = false;
     local pushed = pushId(im, 'bdxsp' .. id);
+    if s == nil then
+        -- an id the data does not know (a live-read slot can carry one):
+        -- an inert-looking but still clickable cell, never an error.
+        clicked = kit.litButton(im, '#' .. tostring(id), selected, size, size);
+        popId(im, pushed);
+        return clicked;
+    end
     local h = filetex.spell(book, s, size >= 96 and 'grid128' or 'grid64');
     if h ~= nil and kit.isFn(im, 'ImageButton') then
         -- ImageButton's frame draws in the style Button color (red in the
@@ -69,6 +76,7 @@ function M.tooltip(ctx, id)
     local im, book = ctx.im, ctx.book;
     if not (kit.isFn(im, 'IsItemHovered') and im.IsItemHovered()) then return; end
     local s = book.spells[id];
+    if s == nil then return; end
     local lines = { s.name };
     lines[#lines + 1] = ('%s - Lv.%s - %s'):format(s.category, s.level or '?', s.spellType or '?');
     if s.setPoints then lines[#lines + 1] = ('Set: %d pts'):format(s.setPoints); end
@@ -194,24 +202,35 @@ function M.render(ctx)
     local im, book, st = ctx.im, ctx.book, ctx.state;
     local f = st.filters;
 
-    -- filter row
+    -- filter row -- combo widths measured over every label they can show
+    -- (the kit law: a hardcoded width clips a trailing character; "All eleme").
+    local function comboW(choices, allLabel)
+        local labels = { allLabel };
+        for _, c in ipairs(choices) do labels[#labels + 1] = c; end
+        return kit.measure(im, labels, 96) + 24;    -- +24 for the arrow box
+    end
+    local traitNames = {};
+    for _, t in ipairs(book.traitChoices) do traitNames[#traitNames + 1] = t.name; end
     if kit.isFn(im, 'SetNextItemWidth') then im.SetNextItemWidth(160); end
     if kit.isFn(im, 'InputText') then
         pcall(im.InputText, '##bdxsearch', f.text, 64);
         kit.tip(im, 'Filter by name');
     end
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    kit.combo(im, '##bdxcat', f.category, book.categories, 'All types', 110);
+    kit.combo(im, '##bdxcat', f.category, book.categories, 'All types',
+        comboW(book.categories, 'All types'));
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    kit.combo(im, '##bdxele', f.element, book.elements, 'All elements', 110);
+    kit.combo(im, '##bdxele', f.element, book.elements, 'All elements',
+        comboW(book.elements, 'All elements'));
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    kit.combo(im, '##bdxsty', f.spellType, book.types, 'All kinds', 100);
+    kit.combo(im, '##bdxsty', f.spellType, book.types, 'All kinds',
+        comboW(book.types, 'All kinds'));
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    local traitNames = {};
-    for _, t in ipairs(book.traitChoices) do traitNames[#traitNames + 1] = t.name; end
-    kit.combo(im, '##bdxtrait', f.trait, traitNames, 'All traits', 150);
+    kit.combo(im, '##bdxtrait', f.trait, traitNames, 'All traits',
+        comboW(traitNames, 'All traits'));
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    kit.combo(im, '##bdxlearn', f.learned, { 'Learned', 'Missing' }, 'All spells', 110);
+    kit.combo(im, '##bdxlearn', f.learned, { 'Learned', 'Missing' }, 'All spells',
+        comboW({ 'Learned', 'Missing' }, 'All spells'));
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     if kit.litButton(im, 'Reset', false, 60, 22) then
         f.text[1] = ''; f.category.value = nil; f.element.value = nil;

@@ -28,13 +28,31 @@
 2. **ImageButton frames are style-colored** — the red squares. Push transparent Button + blue Hovered/Active around every sprite ImageButton. `cf661f1`.
 3. Carried dlac laws that prevented worse: printf-escape on ALL drawn text, presence-guard every widget, **no BeginTabBar** (not field-proven in this install — tabs are lit/unlit buttons), keep texture OBJECTS referenced or D3D frees them and imgui draws a dangling pointer.
 
+## 2b. Morning pass (2026-08-04, code-side, pre-field)
+
+- **Width math reviewed, no bug found.** Install-wide evidence (dlac, trove,
+  fancychat, partyfinder) says this binding returns plain numbers from
+  `GetContentRegionAvail` — bludex's handler covers that shape. Min window
+  width (now 920) guarantees grid + detail both fit, so the screenshot was
+  most likely cropped. The in-game click check remains, but expect it to pass.
+- **Sets tab can no longer be bricked by Read current.** Unknown ids from the
+  live buffer draw as clickable `#id` cells (spellButton nil-guard), slot
+  tooltips guard the deref, and the read note counts unknown ids. The
+  setmodel layer was already nil-tolerant (verified).
+- **Apply explains itself when blocked** (not on BLU vs. signatures failed)
+  instead of being a silently dead button.
+- **Filter combos now measure their widths** (kit.measure + arrow) — the
+  "All eleme▼" clipping is gone; open item 5 is done.
+
 ## 3. Open items, in order
 
-1. **Verify the detail panel renders** (click a spell). If missing: suspect the `BeginChild('bdxgrid', {gridW,0})` width math (`ui/spellsui.lua` `render`, `GetContentRegionAvail` handling).
+1. **Verify the detail panel renders** (click a spell). Code-side review found
+   no bug (see §2b); if it still fails in game the suspect list is empty — get
+   a screenshot + any `tab error` text.
 2. **Confirm the red-frame fix** looks right.
 3. **Field-test the Sets tab end to end**: build a small set → Save → relog-persistence → Read current → **Apply in game** (carefully, see §1) → verify in the game's own blue magic menu.
 4. **Traits tab field pass.**
-5. Cosmetic: filter combos clip their labels ("All eleme▼") — widen (`ui/spellsui.lua` combo widths 100-150 → ~130-170).
+5. ~~Cosmetic: filter combos clip their labels~~ — done in the morning pass.
 6. **UI chrome icons** — Henrik generates from `ICONS_WANTED.md` (all optional, everything has fallbacks; drop into `icons/ui/`, no code change).
 7. Later: settings UI (applyDelay, budgetOverride), filter persistence, README screenshots, dev→main + version bump when Henrik approves.
 

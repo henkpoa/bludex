@@ -77,7 +77,8 @@ function M.render()
         pushed = 4;
     end
     if kit.isFn(im, 'SetNextWindowSizeConstraints') then
-        pcall(im.SetNextWindowSizeConstraints, { 860, 520 }, { 4096, 4096 });
+        -- 920 wide fits the measured filter row; below that the Reset button clips
+        pcall(im.SetNextWindowSizeConstraints, { 920, 520 }, { 4096, 4096 });
     end
 
     local visible = false;

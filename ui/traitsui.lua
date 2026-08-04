@@ -30,7 +30,6 @@ function M.render(ctx)
             local ev = evalByCat[cat];
             local weight = ev and ev.weight or 0;
 
-            local head = ('%s##bdxtr%d'):format(choice.name, cat);
             local open = st.openCat[cat] or false;
             if kit.isFn(im, 'Selectable') then
                 local ok, clicked = pcall(im.Selectable, kit.esc((open and '[-] ' or '[+] ') .. choice.name), false);
