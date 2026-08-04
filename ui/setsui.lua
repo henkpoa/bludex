@@ -168,8 +168,14 @@ local function slotGrid(ctx)
     local canApply = ctx.blu.canApply() and not ctx.blu.applying;
     if kit.litButton(im, ctx.blu.applying and 'Applying...' or 'Apply in game', false, applyW, 26) then
         if canApply then
-            ctx.blu.applyDiff(st.editingSet.ids);
-            st.applyNote = 'Applying the changed slots - watch the chat log.';
+            if ctx.blu.applyDiff(st.editingSet.ids, ctx.book) then
+                -- snapshot the intent: the auto-restore target after level changes
+                local snap = {};
+                for k = 1, 20 do snap[k] = st.editingSet.ids[k] or 0; end
+                ctx.cfg.lastApplied = { ids = snap };
+                if ctx.save then ctx.save(); end
+            end
+            st.applyNote = 'Applying the changes, lowest level first - watch the chat log.';
         elseif not ctx.blu.applying then
             -- a dead button with no reason is a field mystery -- say why
             st.applyNote = ctx.blu.onBlu()
@@ -203,6 +209,26 @@ local function slotGrid(ctx)
         kit.ctext(im, kit.COL.warn, 'BLU is not your main or sub job.');
     end
     if st.applyNote then kit.ctext(im, kit.COL.dim, st.applyNote); end
+
+    -- level-change behavior: restore the last-applied set automatically, or
+    -- leave everything to the Apply button
+    kit.ctext(im, kit.COL.dim, 'Level change:');
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    local lvW = kit.measure(im, { 'Auto-restore', 'Manual' }, 64);
+    local auto = ctx.cfg.autoRestore == true;
+    if kit.litButton(im, 'Auto-restore', auto, lvW, 20) and not auto then
+        ctx.cfg.autoRestore = true;
+        if ctx.save then ctx.save(); end
+    end
+    kit.tip(im, 'After a level or job change, any spells stripped from the\n'
+        .. 'LAST APPLIED set are re-set automatically - lowest level first,\n'
+        .. 'into the lowest open slots. Adds only; never removes.');
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    if kit.litButton(im, 'Manual', not auto, lvW, 20) and auto then
+        ctx.cfg.autoRestore = false;
+        if ctx.save then ctx.save(); end
+    end
+    kit.tip(im, 'Nothing is applied automatically - you click Apply.');
 
     -- quick add
     if kit.isFn(im, 'Separator') then im.Separator(); end

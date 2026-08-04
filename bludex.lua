@@ -31,6 +31,8 @@ local defaults = T{
     budgetOverride = 0,       -- shown when the live budget is unavailable
     applyDelay = 1.1,         -- seconds between set-spell packets
     applyMode = 'safe',       -- 'safe' (client-paced) | 'fast' (injected)
+    autoRestore = false,      -- re-add spells stripped by level changes
+    lastApplied = T{ },       -- { ids = {20} } -- the auto-restore target
 };
 
 local cfg = settings.load(defaults);
@@ -182,7 +184,12 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
             msg('No saved set by that name. /bludex list shows them.');
             return;
         end
-        blu.applyDiff(entry.ids);
+        if blu.applyDiff(entry.ids, book) then
+            local snap = {};
+            for i = 1, 20 do snap[i] = entry.ids[i] or 0; end
+            cfg.lastApplied = { ids = snap };
+            saveSettings();
+        end
         return;
     end
 

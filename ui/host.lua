@@ -67,13 +67,36 @@ local TABS = { 'Codex', 'Sets', 'Traits' };
 
 function M.render()
     local st = M.state;
-    if st == nil or not st.open[1] then return; end
+    if st == nil then return; end
     local deps = M.deps;
+    if deps == nil then return; end
+
+    -- The job/level watch and auto-restore run every frame, window open or
+    -- not: a level change invalidates the BLU structs like a fresh login
+    -- (refresh fires inside the watch), and -- if the setting is on -- any
+    -- spells the change stripped from the last-applied set get re-added.
+    -- Two delayed checks so the 0x061 answer has landed before we compare.
+    if deps.blu.watchJobState() then
+        local now = os.clock();
+        M.restoreChecks = { now + 2.0, now + 8.0 };
+    end
+    if M.restoreChecks ~= nil then
+        local due = M.restoreChecks[1];
+        if due ~= nil and os.clock() >= due then
+            table.remove(M.restoreChecks, 1);
+            if #M.restoreChecks == 0 then M.restoreChecks = nil; end
+            if deps.cfg.autoRestore == true then
+                local last = deps.cfg.lastApplied;
+                if last ~= nil and last.ids ~= nil then
+                    deps.blu.restoreMissing(last.ids, deps.book);
+                end
+            end
+        end
+    end
+
+    if not st.open[1] then return; end
     local im = deps.im;
     if not kit.isFn(im, 'Begin') or not kit.isFn(im, 'End') then return; end
-
-    -- level / job changes invalidate the BLU structs like a fresh login does
-    deps.blu.watchJobState();
 
     -- theme: dark navy window, blue title
     local pushed = 0;

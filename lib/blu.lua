@@ -213,12 +213,14 @@ function M.watchJobState()
         return ('%d.%d/%d.%d'):format(p:GetMainJob(), p:GetMainJobLevel(),
             p:GetSubJob(), p:GetSubJobLevel());
     end);
-    if not ok or cur == nil then return; end
-    if watched == nil then watched = cur; return; end
+    if not ok or cur == nil then return false; end
+    if watched == nil then watched = cur; return false; end
     if cur ~= watched then
         watched = cur;
         if M.onBlu() then M.requestJobData(); end
+        return true;
     end
+    return false;
 end
 
 function M.canApply()
@@ -302,11 +304,67 @@ local function msg(s)
     print(chat.header('bludex'):append(chat.message(s)));
 end
 
+-- Sort spell ids ascending by BLU spell level (unknown levels last). THE
+-- LEVEL LAW: a level-down strips set spells the lowered level cannot hold,
+-- and a synced-down apply gets its tail rejected -- so castable spells must
+-- be SENT first and SIT in the lowest slots, where they survive.
+local function byLevel(ids, book)
+    local out = {};
+    for _, id in ipairs(ids) do out[#out + 1] = id; end
+    if book and book.spells then
+        table.sort(out, function(a, b)
+            local la = (book.spells[a] and book.spells[a].level) or 999;
+            local lb = (book.spells[b] and book.spells[b].level) or 999;
+            if la ~= lb then return la < lb; end
+            return a < b;
+        end);
+    end
+    return out;
+end
+
+-- Position-independent plan against the live set: targets are matched by
+-- spell IDENTITY, not slot -- the same spells in any layout cost zero
+-- packets. Missing spells are paired lowest-level-first with the lowest
+-- open slots. removeExtras=false never unsets anything (the restore path).
+-- Returns nil when the live set is unreadable.
+local function planDiff(ids, book, removeExtras)
+    local live = M.currentSet();
+    if #live ~= 20 then return nil; end
+    local want = {};
+    for slot = 1, 20 do
+        local id = ids[slot] or 0;
+        if id ~= 0 and M.hasSpell(id) then want[id] = true; end
+    end
+    local liveIds, removes, empties = {}, {}, {};
+    for slot = 1, 20 do
+        local id = live[slot] or 0;
+        if id == 0 then
+            empties[#empties + 1] = slot;
+        elseif want[id] or not removeExtras then
+            liveIds[id] = true;
+        else
+            removes[#removes + 1] = slot;
+            empties[#empties + 1] = slot;   -- open once the unset lands
+        end
+    end
+    local missing, kept = {}, 0;
+    for id in pairs(want) do
+        if liveIds[id] then kept = kept + 1; else missing[#missing + 1] = id; end
+    end
+    missing = byLevel(missing, book);
+    local adds, noSlot = {}, 0;
+    for i, id in ipairs(missing) do
+        if empties[i] then adds[#adds + 1] = { slot = empties[i], id = id };
+        else noSlot = noSlot + 1; end
+    end
+    return { removes = removes, adds = adds, kept = kept, noSlot = noSlot };
+end
+
 -- Apply a whole set (array of 20 real ids / 0s): reset, then set each spell
--- with a delay between packets. Skips spells the character has not learned.
+-- lowest level first with a delay between packets. Skips unlearned spells.
 -- Runs as a background task; onDone() fires from that task when finished.
 M.applying = false;
-function M.applySet(ids, onDone)
+function M.applySet(ids, book, onDone)
     if not M.canApply() then
         msg('Cannot apply: BLU is not your main or sub job (or memory signatures failed).');
         return false;
@@ -316,17 +374,21 @@ function M.applySet(ids, onDone)
         return false;
     end
     local delay = stepDelay();
-    local list = {};
+    local pick = {};
     for slot = 1, 20 do
         local id = ids[slot] or 0;
         if id ~= 0 then
             if M.hasSpell(id) then
-                list[#list + 1] = { slot = slot, id = id };
+                pick[#pick + 1] = id;
             else
                 local sp = AshitaCore:GetResourceManager():GetSpellById(id);
                 msg(('Skipping %s: not learned.'):format(sp and sp.Name[1] or tostring(id)));
             end
         end
+    end
+    local list = {};
+    for i, id in ipairs(byLevel(pick, book)) do
+        list[#list + 1] = { slot = i, id = id };
     end
     M.applying = true;
     ashita.tasks.once(1, function()
@@ -337,18 +399,17 @@ function M.applySet(ids, onDone)
             coroutine.sleep(delay);
         end
         M.applying = false;
-        msg(('Set applied (%d spells).'):format(#list));
+        msg(('Set applied (%d spells, lowest level first).'):format(#list));
         if onDone then pcall(onDone); end
     end);
     return true;
 end
 
--- Apply only the DIFFERENCE between the live set and the target: slots that
--- already match are left alone, so adding one spell costs one packet, not a
--- full reset. Removals go first (frees the slot, the points, and any spell
--- that is moving to another slot -- the client refuses a spell set twice).
--- Falls back to the full applySet when the live set cannot be read.
-function M.applyDiff(ids, onDone)
+-- Apply only the DIFFERENCE between the live set and the target. Removals
+-- go first (frees slots, points, and any spell moving between slots -- the
+-- client refuses a spell set twice), then adds, lowest level first into the
+-- lowest slots. Falls back to applySet when the live set cannot be read.
+function M.applyDiff(ids, book, onDone)
     if not M.canApply() then
         msg('Cannot apply: BLU is not your main or sub job (or memory signatures failed).');
         return false;
@@ -357,28 +418,19 @@ function M.applyDiff(ids, onDone)
         msg('Already applying a set; wait for it to finish.');
         return false;
     end
-    local live = M.currentSet();
-    if #live ~= 20 then
-        msg('Could not read the live set - doing a full reset + apply instead.');
-        return M.applySet(ids, onDone);
-    end
-    local removes, adds, kept = {}, {}, 0;
     for slot = 1, 20 do
-        local want = ids[slot] or 0;
-        local have = live[slot] or 0;
-        if want ~= 0 and not M.hasSpell(want) then
-            local sp = AshitaCore:GetResourceManager():GetSpellById(want);
-            msg(('Skipping %s: not learned.'):format(sp and sp.Name[1] or tostring(want)));
-            want = 0;   -- converge to the same end state as a full apply
-        end
-        if have ~= want then
-            if have ~= 0 then removes[#removes + 1] = slot; end
-            if want ~= 0 then adds[#adds + 1] = { slot = slot, id = want }; end
-        elseif have ~= 0 then
-            kept = kept + 1;
+        local id = ids[slot] or 0;
+        if id ~= 0 and not M.hasSpell(id) then
+            local sp = AshitaCore:GetResourceManager():GetSpellById(id);
+            msg(('Skipping %s: not learned.'):format(sp and sp.Name[1] or tostring(id)));
         end
     end
-    if #removes == 0 and #adds == 0 then
+    local plan = planDiff(ids, book, true);
+    if plan == nil then
+        msg('Could not read the live set - doing a full reset + apply instead.');
+        return M.applySet(ids, book, onDone);
+    end
+    if #plan.removes == 0 and #plan.adds == 0 then
         msg('The live set already matches - nothing to send.');
         if onDone then pcall(onDone); end
         return true;
@@ -386,16 +438,53 @@ function M.applyDiff(ids, onDone)
     local delay = stepDelay();
     M.applying = true;
     ashita.tasks.once(1, function()
-        for _, slot in ipairs(removes) do
+        for _, slot in ipairs(plan.removes) do
             M.setSlot(slot, 0);
             coroutine.sleep(delay);
         end
-        for _, e in ipairs(adds) do
+        for _, e in ipairs(plan.adds) do
             M.setSlot(e.slot, e.id);
             coroutine.sleep(delay);
         end
         M.applying = false;
-        msg(('Set updated: %d added, %d removed, %d kept.'):format(#adds, #removes, kept));
+        msg(('Set updated: %d added (lowest level first), %d removed, %d kept.'):format(
+            #plan.adds, #plan.removes, plan.kept));
+        if onDone then pcall(onDone); end
+    end);
+    return true;
+end
+
+-- The auto-restore path: put back whatever a level change stripped from the
+-- last-applied set. ADDS ONLY -- never unsets, so anything set by hand in
+-- the native menu survives. Quiet when nothing is missing (this fires after
+-- every level change). Ends by re-reading the live set and reporting how
+-- many actually stuck -- a still-synced level rejects the tail server-side.
+function M.restoreMissing(ids, book, onDone)
+    if not M.canApply() or M.applying then return false; end
+    local plan = planDiff(ids, book, false);
+    if plan == nil or #plan.adds == 0 then return false; end
+    local delay = stepDelay();
+    M.applying = true;
+    msg(('Level change: restoring %d spell(s), lowest level first.'):format(#plan.adds));
+    ashita.tasks.once(1, function()
+        for _, e in ipairs(plan.adds) do
+            M.setSlot(e.slot, e.id);
+            coroutine.sleep(delay);
+        end
+        coroutine.sleep(0.5);
+        local liveNow, after = {}, M.currentSet();
+        if #after == 20 then
+            for i = 1, 20 do if after[i] ~= 0 then liveNow[after[i]] = true; end end
+        end
+        local stuck = 0;
+        for _, e in ipairs(plan.adds) do if liveNow[e.id] then stuck = stuck + 1; end end
+        M.applying = false;
+        if #after == 20 and stuck < #plan.adds then
+            msg(('Restored %d of %d - the rest need a higher level (or a free slot).'):format(
+                stuck, #plan.adds));
+        else
+            msg(('Restored %d spell(s).'):format(#plan.adds));
+        end
         if onDone then pcall(onDone); end
     end);
     return true;
