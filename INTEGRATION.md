@@ -45,6 +45,13 @@ repos), plus a `VENDORED.md` marker. One-time setup: a fine-grained PAT with
 *Contents: read/write* on `henkpoa/dlac`, stored as the **`DLAC_SYNC_TOKEN`**
 secret in `henkpoa/bludex`.
 
+**The developer loop** (field-testing the dlac flavor before anything is
+pushed): `python bludex/tools/vendor_local.py` performs the identical copy
+into the live dlac working tree, then `/addon reload dlac`. The result is
+untracked in the dlac repo until a CI sync commits the same content; if a
+`git pull` in dlac ever refuses over the untracked folder, delete
+`dlac/jobhelpers/blu/bludex` and pull again — the sync owns that path.
+
 ## The adapter (`dlacmodule/init.lua`) — how the contract is satisfied
 
 | Guide requirement | How it is met |
