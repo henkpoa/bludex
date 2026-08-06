@@ -207,6 +207,20 @@ blu.resetCapWatch();
 blu.learnedBonus, blu.meritPts, blu.wireTotal = nil, nil, nil;
 blu.meritCount, blu.meritValue, blu.meritValueProven = nil, 2, false;
 
+-- the undocumented /bludex forget: everything learned goes, and the believed
+-- rate comes back so a relearn starts from the same footing as a fresh char
+blu.learnedBonus, blu.meritPts, blu.wireTotal = 24, 10, 34;
+blu.meritCount, blu.meritValue, blu.meritValueProven = 5, 3, true;
+blu.watchCap(79, 75);
+local had = blu.forgetBudget();
+check(had.bonus == 24 and had.merits == 10 and had.count == 5 and had.rate == 3,
+    'forgetBudget reports what it discarded');
+check(blu.learnedBonus == nil and blu.meritPts == nil and blu.meritCount == nil
+    and blu.wireTotal == nil, 'forgetBudget clears every learned figure');
+check(blu.meritValue == 2 and not blu.meritValueProven, 'and the rate returns to believed');
+check(blu.capValue() == nil and blu.expectedCap(75) == nil,
+    'the cap watch forgets too -- nothing is guessed from the old state');
+
 -- THE CAP WATCH, driven directly (three field bugs have lived in here).
 -- The rule: the client's cap is trustworthy only while our level still
 -- matches the level it was computed at.

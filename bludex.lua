@@ -211,6 +211,23 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
         return;
     end
 
+    -- UNDOCUMENTED, deliberately absent from /bludex help: wipe everything
+    -- Bludex has worked out about this character's point budget so it
+    -- re-derives from scratch. For when a character's numbers are wrong and
+    -- you would rather watch them be relearned than reason about them.
+    if args[2]:any('forget') then
+        local had = blu.forgetBudget();
+        cfg.capLearnedBonus, cfg.capMeritPoints = -1, -1;
+        saveSettings();
+        msg(('Forgot the point budget. Was: learned bonus=%s, Assimilation=%s (%s merit(s) at %s each%s), server total=%s.'):format(
+            tostring(had.bonus or 'unknown'), tostring(had.merits or 'unknown'),
+            tostring(had.count or '?'), tostring(had.rate),
+            had.proven and ', measured' or ', assumed',
+            tostring(had.wire or 'none seen')));
+        msg('Zone once: that re-reads your merits and the server total. The learned bonus settles on the next level sync, or on your next Magic -> Blue Magic -> Set.');
+        return;
+    end
+
     msg('Unknown command - /bludex help.');
 end);
 

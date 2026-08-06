@@ -507,6 +507,24 @@ function M.watchCap(mxIn, lvlIn)
     capWatch.suspect = (lvl ~= capWatch.lvl);
 end
 
+-- Forget everything learned about this character's point budget: both
+-- figures, the merit allocations behind them, the measured per-merit rate,
+-- and the watch's idea of what the client last reported. Returns what was
+-- discarded so the caller can show it. Everything re-derives itself -- the
+-- merits and the server total from one zone, the learned bonus from the next
+-- level sync or Set Spells visit.
+function M.forgetBudget()
+    local had = {
+        bonus  = M.learnedBonus, merits = M.meritPts, count = M.meritCount,
+        wire   = M.wireTotal,    rate   = M.meritValue,
+        proven = M.meritValueProven,
+    };
+    M.learnedBonus, M.meritPts, M.meritCount, M.wireTotal = nil, nil, nil, nil;
+    M.meritValue, M.meritValueProven = 2, false;
+    M.resetCapWatch();
+    return had;
+end
+
 -- test seam: forget everything the watch has observed
 function M.resetCapWatch()
     capWatch = { max = nil, lvl = nil, suspect = false };
