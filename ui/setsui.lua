@@ -329,12 +329,14 @@ local function levelsSection(ctx)
     local im, st, cfg = ctx.im, ctx.state, ctx.cfg;
     local entry = st.activeSet and cfg.sets[st.activeSet] or nil;
     if kit.isFn(im, 'Separator') then im.Separator(); end
-    kit.helpLabel(im, 'Levels', 'One build per level band, for the set above.\n\n'
-        .. 'The game hands out different set points and different slots at\n'
-        .. 'each of these, so a set that works at 75 cannot be the set that\n'
-        .. 'works at 41 -- it is a different build, not a different name.\n\n'
-        .. 'A set with no levels here is a plain flat set, and the flat set\n'
-        .. 'is what gets used at every level you have not built one for.');
+    kit.helpLabel(im, 'Levels',
+        'Here you can add subsets for your set.\n'
+        .. 'These subsets have designated level ranges, e.g., 31-40.\n'
+        .. 'It will automatically equip that subset if it falls under\n'
+        .. 'that level range.\n'
+        .. 'This allows you to adapt your set perfectly as you level.\n\n'
+        .. 'If no level range has matched, it will follow the base set\n'
+        .. 'with the restore behaviour.');
     if entry == nil then
         kit.ctext(im, kit.COL.dim, 'select a set first');
         return;
@@ -891,13 +893,15 @@ local function statsPanel(ctx)
         -- what the SET earns is not always what you GET: a job trait of the
         -- same name discards the blue one (Traits tab has the full story)
         local v = ctx.verdict and ctx.verdict(ev.cat, ev.weight) or nil;
-        if v ~= nil and v.deadWeight then
+        if v ~= nil and v.deadWeight and v.blocker ~= nil then
             kit.ctext(im, kit.COL.err, ('%s: blocked by %s'):format(
-                ev.name, v.suppressed[1].job.code or 'your job'));
-            kit.tip(im, ('%s already grants %s. The server keeps the job trait and\n'
-                .. 'throws the blue one away whatever its tier, so the %d weight this\n'
-                .. 'set feeds the ladder buys nothing. See the Traits tab.'):format(
-                v.suppressed[1].job.name or 'Your job', ev.name, ev.weight));
+                ev.name, v.blocker.code or 'your job'));
+            kit.tip(im, ('%s already grants %s (tier %d). The server keeps the JOB\n'
+                .. 'trait and throws the blue one away whatever its tier, so the %d\n'
+                .. 'weight this set feeds the ladder buys nothing.\n\n'
+                .. 'Only the tier compares between them -- the job trait and the blue\n'
+                .. 'rungs grant different modifiers. See the Traits tab.'):format(
+                v.blocker.name or 'Your job', ev.name, v.blocker.rank, ev.weight));
         elseif ev.tier then
             kit.ctext(im, kit.COL.ok, ('%s: %s'):format(ev.name, ev.tierText));
         else
