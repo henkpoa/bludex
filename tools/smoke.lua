@@ -114,6 +114,22 @@ check((79 - sets.baseCapAtLevel(75)) - (49 - sets.baseCapAtLevel(40))
     == 5 * book.traits.rules.assimilationPerMerit,
     'the gap difference equals 5 Assimilation merits at +2 each');
 
+-- the 0x063 merit read (pure parser; 0x063_miscdata_merits.h layout:
+-- 0x04 type, 0x0A uint16 bitfield meritPoints:7 then bluBonus:6)
+local blu = require('bludex\\lib\\blu');
+local function miscdata(typ, meritPoints, bluBonus)
+    local w = (meritPoints % 128) + (bluBonus % 64) * 128;
+    local b = { 0x63, 0x50, 0, 0, typ, 0, 0, 0, 0, 0, w % 256, math.floor(w / 256) };
+    local s = '';
+    for _, v in ipairs(b) do s = s .. string.char(v); end
+    return s;
+end
+check(blu.parseMeritBonus(miscdata(0x02, 31, 10)) == 10, '0x063: reads bluBonus 10 past meritPoints');
+check(blu.parseMeritBonus(miscdata(0x02, 127, 63)) == 63, '0x063: bluBonus max 63 with meritPoints max');
+check(blu.parseMeritBonus(miscdata(0x02, 0, 0)) == 0, '0x063: zero is a real reading, not nil');
+check(blu.parseMeritBonus(miscdata(0x05, 31, 10)) == nil, '0x063: other MISCDATA types ignored');
+check(blu.parseMeritBonus('short') == nil, '0x063: short packet cannot over-read');
+
 -- budget rules sanity
 check(book.traits.rules.assimilationPerMerit == 2, 'field: +2 per Assimilation merit');
 check(book.traits.rules.expectedTotalAt75 == 80, 'field: expected total 80');

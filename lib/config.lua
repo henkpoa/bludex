@@ -36,6 +36,9 @@ function M.defaults()
         -- measured yet -- one look at the native Set Spells menu teaches it.
         capExtra75 = 0,
         capExtraSub = 0,
+        capMerits = 0,            -- Assimilation POINTS last read off 0x063
+        capMeritsManual = -1,     -- Settings override; -1 = use the packet
+        capBonusManual = -1,      -- Settings override; -1 = use the measurement
     };
 end
 

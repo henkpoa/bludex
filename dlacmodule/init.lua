@@ -151,6 +151,12 @@ return {
             applyMode = 'string',
             applyDelay = 'number', budgetOverride = 'number',
             autoRestore = 'boolean',
+            -- the point-budget model (see ui/settingsui.lua). This flavor
+            -- has no packet hook, so capMerits never fills itself here --
+            -- the Settings tab's manual field is the route in.
+            capExtra75 = 'number', capExtraSub = 'number',
+            capMerits = 'number', capMeritsManual = 'number',
+            capBonusManual = 'number',
         },
         defaults = {
             sets = '', lastApplied = '', activeSetName = '',
@@ -158,6 +164,8 @@ return {
             applyMode = 'safe',
             applyDelay = 1.1, budgetOverride = 0,
             autoRestore = false,
+            capExtra75 = 0, capExtraSub = 0,
+            capMerits = 0, capMeritsManual = -1, capBonusManual = -1,
         },
     },
 

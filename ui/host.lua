@@ -13,6 +13,7 @@ local filetex  = require(ROOT .. 'ui\\filetex');
 local spellsui = require(ROOT .. 'ui\\spellsui');
 local setsui   = require(ROOT .. 'ui\\setsui');
 local traitsui = require(ROOT .. 'ui\\traitsui');
+local settingsui = require(ROOT .. 'ui\\settingsui');
 
 local M = {};
 
@@ -60,6 +61,14 @@ function M.init(deps)
         deps.cfg.capExtraSub = deps.blu.capExtra.sub or 0;
         if deps.save then deps.save(); end
     end;
+    -- the merit half: last value seen on the wire, then any Settings override
+    if (deps.cfg.capMerits or 0) > 0 then deps.blu.meritPts = deps.cfg.capMerits; end
+    if (deps.cfg.capMeritsManual or -1) >= 0 then
+        deps.blu.meritPts = deps.cfg.capMeritsManual;
+    end
+    if (deps.cfg.capBonusManual or -1) >= 0 then
+        deps.blu.capExtra.sub = deps.cfg.capBonusManual;
+    end
     -- restore the last active saved set (matched by name -- indices shift
     -- when sets are deleted), exactly as if it had been clicked
     local want = deps.cfg.activeSetName;
@@ -100,7 +109,7 @@ local function budgetMax(deps)
     return nil;
 end
 
-local TABS = { 'Codex', 'Sets', 'Traits' };
+local TABS = { 'Codex', 'Sets', 'Traits', 'Settings' };
 
 -- The job/level watch and auto-restore, run once per frame whether or not
 -- anything renders: a level change invalidates the BLU structs like a fresh
@@ -336,6 +345,7 @@ local function renderBody(im, st, deps, embedded)
 
     local tabfn = (st.tab == 'Sets' and setsui.render)
         or (st.tab == 'Traits' and traitsui.render)
+        or (st.tab == 'Settings' and settingsui.render)
         or spellsui.render;
     local tok, terr = pcall(tabfn, ctx);
     if not tok then

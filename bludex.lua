@@ -214,6 +214,24 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
     msg('Unknown command - /bludex help.');
 end);
 
+-- The merit half of the point budget, read live off the wire. 0x063 MISCDATA
+-- type 0x02 carries the server's own Assimilation total (already multiplied),
+-- and it arrives by itself -- at login, on zoning, and whenever merits change.
+-- Nothing is ever sent to ask for it. Standalone only: dlac's module contract
+-- has no packet hook, and the library falls back to measuring without it.
+ashita.events.register('packet_in', 'bdx_packet_cb', function(e)
+    if e.id ~= 0x063 then return; end
+    local n = blu.parseMeritBonus(e.data);
+    if n == nil then return; end
+    -- always remember what the server said, but a Settings override wins
+    local manual = (cfg.capMeritsManual or -1) >= 0;
+    local applied = (not manual) and blu.setMeritPoints(n) or false;
+    if applied or cfg.capMerits ~= n then
+        cfg.capMerits = n;
+        saveSettings();
+    end
+end);
+
 ashita.events.register('d3d_present', 'bdx_present_cb', function()
     host.render();
 end);
