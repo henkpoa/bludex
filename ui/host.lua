@@ -55,28 +55,19 @@ function M.init(deps)
     -- measurements taken under an older model meant something else: drop
     -- them rather than compute confidently from them (2026-08-06: a sub-75
     -- gap learned from a stale reading produced 133 points against a true 79)
-    if (deps.cfg.capModelVer or 0) < 2 then
-        deps.cfg.capModelVer = 2;
-        deps.cfg.capExtra75, deps.cfg.capExtraSub = 0, 0;
+    if (deps.cfg.capModelVer or 0) < 3 then
+        deps.cfg.capModelVer = 3;
+        deps.cfg.capLearnedBonus, deps.cfg.capMeritPoints = -1, -1;
         if deps.save then deps.save(); end
     end
-    deps.blu.capExtra = {
-        at75 = (deps.cfg.capExtra75 or 0) > 0 and deps.cfg.capExtra75 or nil,
-        sub  = (deps.cfg.capExtraSub or 0) > 0 and deps.cfg.capExtraSub or nil,
-    };
+    local function known(v) if v ~= nil and v >= 0 then return v; end return nil; end
+    deps.blu.learnedBonus = known(deps.cfg.capLearnedBonus);
+    deps.blu.meritPts     = known(deps.cfg.capMeritPoints);
     deps.blu.onCapLearn = function()
-        deps.cfg.capExtra75  = deps.blu.capExtra.at75 or 0;
-        deps.cfg.capExtraSub = deps.blu.capExtra.sub or 0;
+        deps.cfg.capLearnedBonus = deps.blu.learnedBonus or -1;
+        deps.cfg.capMeritPoints  = deps.blu.meritPts or -1;
         if deps.save then deps.save(); end
     end;
-    -- the merit half: last value seen on the wire, then any Settings override
-    if (deps.cfg.capMerits or 0) > 0 then deps.blu.meritPts = deps.cfg.capMerits; end
-    if (deps.cfg.capMeritsManual or -1) >= 0 then
-        deps.blu.meritPts = deps.cfg.capMeritsManual;
-    end
-    if (deps.cfg.capBonusManual or -1) >= 0 then
-        deps.blu.capExtra.sub = deps.cfg.capBonusManual;
-    end
     -- restore the last active saved set (matched by name -- indices shift
     -- when sets are deleted), exactly as if it had been clicked
     local want = deps.cfg.activeSetName;
@@ -267,12 +258,12 @@ local function renderBody(im, st, deps, embedded)
             kit.ctext(im, kit.COL.dim, '   (computed)');
             kit.tip(im, ('The game client has not recomputed its point total since\n'
                 .. 'your level changed -- it still holds the Lv.%s figure. The\n'
-                .. 'total shown above is Bludex\'s own: the server\'s base rule\n'
-                .. 'for Lv.%s plus the %d-point bonus measured on this character.\n\n'
-                .. 'Open the native Set Spells menu to see the game agree.'):format(
+                .. 'total above is Bludex\'s own, from the parts on the Settings\n'
+                .. 'tab: the base rule for Lv.%s plus your learned bonus, plus\n'
+                .. 'Assimilation merits when you are at 75.\n\n'
+                .. 'Open the native Blue Magic set menu to see the game agree.'):format(
                 tostring(deps.blu.capLevel()),
-                tostring(deps.blu.effectiveLevel()),
-                deps.blu.capExtra[(( deps.blu.effectiveLevel() or 0) >= 75) and 'at75' or 'sub'] or 0));
+                tostring(deps.blu.effectiveLevel())));
         else
             kit.ctext(im, kit.COL.warn, '   cap stale');
             kit.tip(im, ('The point total above was computed by the game at Lv.%s\n'

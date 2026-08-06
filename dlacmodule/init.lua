@@ -152,11 +152,10 @@ return {
             applyDelay = 'number', budgetOverride = 'number',
             autoRestore = 'boolean',
             -- the point-budget model (see ui/settingsui.lua). This flavor
-            -- has no packet hook, so capMerits never fills itself here --
-            -- the Settings tab's manual field is the route in.
-            capExtra75 = 'number', capExtraSub = 'number',
-            capMerits = 'number', capMeritsManual = 'number',
-            capBonusManual = 'number',
+            -- has no packet hook, so the 0x063 cross-check never arrives
+            -- here -- both figures come from readings or the Settings tab.
+            capModelVer = 'number',
+            capLearnedBonus = 'number', capMeritPoints = 'number',
         },
         defaults = {
             sets = '', lastApplied = '', activeSetName = '',
@@ -164,8 +163,7 @@ return {
             applyMode = 'safe',
             applyDelay = 1.1, budgetOverride = 0,
             autoRestore = false,
-            capExtra75 = 0, capExtraSub = 0,
-            capMerits = 0, capMeritsManual = -1, capBonusManual = -1,
+            capModelVer = 3, capLearnedBonus = -1, capMeritPoints = -1,
         },
     },
 

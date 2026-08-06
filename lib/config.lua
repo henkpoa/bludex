@@ -30,19 +30,12 @@ function M.defaults()
         codexDensity = 'normal',  -- codex list size: 'big'|'medium'|'normal'|'compact'
         traitsDensity = 'normal', -- traits spell-row size, same four choices
         setsLayout = 'grid',      -- Sets slots as 'grid' (5x4 cells) | 'list' (named rows)
-        -- the MEASURED set-point gap above the server's base rule, so the
-        -- budget survives a reload and a level sync (blu.capExtra): merits
-        -- ride only at 75+, the learning bonus rides everywhere. 0 = not
-        -- measured yet -- one look at the native Set Spells menu teaches it.
-        capExtra75 = 0,
-        capExtraSub = 0,
-        -- bumped when the budget model changes meaning: measurements taken
-        -- under the old rules are discarded rather than silently reused.
-        -- 2 = 0x063 carries the whole Lv75 gap, and only sub-75 is measured.
-        capModelVer = 2,
-        capMerits = 0,            -- the Lv75 gap as sent on 0x063 (NOT merits)
-        capMeritsManual = -1,     -- Settings override; -1 = use the packet
-        capBonusManual = -1,      -- Settings override; -1 = use the measurement
+        -- The point budget: cap = base(level) + learnedBonus + merits, with
+        -- merits counting only at level 75. Bumped when the meaning changes,
+        -- so readings taken under older rules are discarded, not reused.
+        capModelVer = 3,
+        capLearnedBonus = -1,     -- points from spells learned (Boruko); -1 = unknown
+        capMeritPoints = -1,      -- Assimilation points; -1 = unknown
     };
 end
 

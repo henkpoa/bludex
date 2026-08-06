@@ -1,26 +1,24 @@
 --[[
     bludex/ui/settingsui.lua -- the Settings tab.
 
-    Mostly this is the POINT BUDGET, because that number is the one thing
-    Bludex cannot simply read. The whole story, so the panel can be honest
-    about which half is known and which is still being waited on:
+    The set-point budget, in the three parts it is actually made of:
 
-      total = base(level)  +  Assimilation merits  +  learning bonus
+        cap(level) = base(level) + learned bonus + Assimilation merits
+                                                   (merits only at Lv75)
 
-    base           the server's rule, exact, known for every level
-                   (setmodel.baseCapAtLevel, from blueutils.cpp)
-      + merits     arrives BY ITSELF on packet 0x063 at login / zoning /
-                   any merit change -- already multiplied, and the server
-                   applies it only at level 75+
-      + bonus      CatsEyeXI's custom award for spells learned. Nothing
-                   reports it. It is MEASURED, the one moment the game
-                   client recomputes its own total -- which happens when
-                   the native Set Spells menu is opened, and at no other
-                   time. Below 75 the measurement needs nothing else;
-                   at 75 it needs the merit figure first, to subtract.
+    base            the server's rule, exact at every level (blueutils.cpp)
+    learned bonus   CatsEyeXI's award for spells learned, from Boruko in
+                    Aht Urghan Whitegate. Counts at EVERY level, sync
+                    included -- so a reading below 75 gives it outright.
+    merits          Assimilation, job group 2. 2 points each, 5 max = 10.
+                    Counts only at level 75.
 
-    Either number can be typed in here when the automatic route is not
-    available (the dlac flavor cannot read packets) or looks wrong.
+    Both unknowns fall out of two readings of the client's own cap:
+        below 75:  bonus  = cap - base
+        at 75:     merits = cap - base - bonus
+
+    Panel text follows dlac's standard (uistyle.helpLabel): the label is
+    UNDERLINED and its explanation lives in the hover, never on the panel.
 ]]--
 
 local M = {};
@@ -29,138 +27,98 @@ local ROOT = (...):sub(1, -#('ui\\settingsui') - 1);
 local kit  = require(ROOT .. 'ui\\kit');
 local sets = require(ROOT .. 'lib\\setmodel');
 
-local AUTO = -1;   -- the "no manual override" sentinel in config
-
-local function row(im, label)
-    kit.ctext(im, kit.COL.head, label);
+-- a value on the same line as its underlined label
+local function field(im, label, tip, value, col)
+    kit.helpLabel(im, label .. ':', tip);
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    kit.ctext(im, col or kit.COL.accent, value);
 end
 
--- an int field with an Auto button; returns the new value or nil for auto
-local function intField(im, id, value, isAuto, width)
-    local buf = { tostring(isAuto and '' or (value or '')) };
-    local out, cleared = nil, false;
-    if kit.isFn(im, 'PushItemWidth') then im.PushItemWidth(width or 70); end
+-- an inline editor: blank clears back to automatic
+local function edit(im, id, current, isKnown, onSet, onClear)
+    local buf = { isKnown and tostring(current) or '' };
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    if kit.isFn(im, 'PushItemWidth') then im.PushItemWidth(56); end
     if kit.isFn(im, 'InputText') then
-        local ok = pcall(im.InputText, id, buf, 8);
-        if ok and buf[1] ~= nil then
-            local n = tonumber(buf[1]);
-            if buf[1] == '' then cleared = true; else out = n; end
+        pcall(im.InputText, id, buf, 8);
+        local n = tonumber(buf[1]);
+        if buf[1] == '' then
+            if isKnown then onClear(); end
+        elseif n ~= nil and n >= 0 and n ~= current then
+            onSet(math.floor(n));
         end
     end
     if kit.isFn(im, 'PopItemWidth') then im.PopItemWidth(); end
-    return out, cleared;
 end
 
 function M.render(ctx)
     local im, cfg, blu = ctx.im, ctx.cfg, ctx.blu;
-    local lvl  = blu.effectiveLevel();
-    local base = sets.baseCapAtLevel(lvl or 0);
-    local total, src = blu.budget();
+    local lvl   = blu.effectiveLevel();
+    local base  = sets.baseCapAtLevel(lvl or 0);
+    local total = blu.budget();
 
-    row(im, 'Set-point budget');
-    kit.ctext(im, kit.COL.dim,
-        'The game client works your point total out for itself and only ever\n'
-        .. 'recomputes it when you open the native Set Spells menu -- so after a\n'
-        .. 'level sync its number describes the level you left. Bludex works the\n'
-        .. 'total out too, from the three parts below, and shows its own answer\n'
-        .. 'whenever the client\'s has gone out of date.');
+    local function save()
+        cfg.capLearnedBonus = blu.learnedBonus or -1;
+        cfg.capMeritPoints  = blu.meritPts or -1;
+        if ctx.save then ctx.save(); end
+    end
+
+    kit.helpLabel(im, 'Set-point budget',
+        'Your point total is worked out by the game client, not sent by the\n'
+        .. 'server, and the client only recalculates it when you open the\n'
+        .. 'native Blue Magic set menu. Bludex works it out too, from the\n'
+        .. 'three parts below, so the total stays right after a level sync.');
     if kit.isFn(im, 'Separator') then im.Separator(); end
 
-    -- what we are showing right now, and where it came from
-    kit.ctext(im, kit.COL.head, ('Now: %s points at Lv.%s'):format(
-        total and tostring(total) or '--', tostring(lvl or '?')));
-    if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    if src == 'live' then
-        kit.ctext(im, kit.COL.ok, '   (from the game client)');
-    elseif src == 'model' then
-        kit.ctext(im, kit.COL.warn, '   (computed by Bludex -- the client\'s number is out of date)');
-    else
-        kit.ctext(im, kit.COL.err, '   (not known yet)');
-    end
+    field(im, 'Current last measured cap',
+        'The last total the game client itself worked out.\n\n'
+        .. 'It updates when you open the native Blue Magic set menu, and at no\n'
+        .. 'other time -- so after a level change it still describes the level\n'
+        .. 'you left until you open that menu once.',
+        ('%s   (base for Lv.%s is %d)'):format(
+            total and tostring(total) or '--', tostring(lvl or '?'), base));
 
-    -- 1. base
-    kit.ctext(im, kit.COL.dim, ('base for Lv.%s: %d   -- the server\'s rule, always known'):format(
-        tostring(lvl or '?'), base));
+    local mKnown = blu.meritPts ~= nil;
+    field(im, 'Assimilation Points',
+        'From Assimilation, in the job group 2 merits.\n\n'
+        .. '2 points per merit, 5 merits maximum -- so 10 points at most.\n'
+        .. 'They count only at level 75: a level sync removes them.\n\n'
+        .. 'Worked out as cap - base level points - learned bonus, once the\n'
+        .. 'cap has been updated at level 75. Type a value to set it yourself.',
+        mKnown and tostring(blu.meritPts) or 'not known yet',
+        mKnown and kit.COL.ok or kit.COL.warn);
+    edit(im, '##bdxmerits', blu.meritPts or 0, mKnown,
+        function(n) blu.meritPts = n; save(); end,
+        function() blu.meritPts = nil; save(); end);
 
-    -- 2. merits
-    local meritAuto  = (cfg.capMerits or 0);
-    local meritManual = (cfg.capMeritsManual or AUTO);
-    local meritUsed  = blu.meritPts;
-    kit.ctext(im, kit.COL.head, 'Level 75 bonus (merits + spells learned)');
-    kit.ctext(im, kit.COL.dim,
-        'Read automatically -- the server sends it on packet 0x063 at login, on\n'
-        .. 'every zone, and whenever you change a merit. Nothing is requested; it\n'
-        .. 'simply arrives. On CatsEyeXI this one number carries EVERYTHING above\n'
-        .. 'the base rule -- your Assimilation merits and the spells-learned bonus,\n'
-        .. 'already added together -- so at level 75 no menu visit is needed at all.\n'
-        .. 'The server applies it only at 75 and above: under a sync it does not\n'
-        .. 'count, which is why the figure below is measured separately.');
-    if meritUsed ~= nil then
-        kit.ctext(im, kit.COL.ok, ('   read from the server: %d points%s'):format(
-            meritUsed, (meritManual ~= AUTO) and ' (overridden below)' or ''));
-    else
-        kit.ctext(im, kit.COL.warn,
-            '   not seen yet -- zone once, or type it in below.\n'
-            .. '   (the dlac flavor cannot read packets: type it there)');
-    end
-    local mv, mCleared = intField(im, '##bdxmerits', meritManual ~= AUTO and meritManual or meritAuto,
-        meritManual == AUTO, 70);
-    if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    kit.ctext(im, kit.COL.dim, 'points (blank = automatic)');
-    if mCleared and meritManual ~= AUTO then
-        cfg.capMeritsManual = AUTO;
-        if ctx.save then ctx.save(); end
-    elseif mv ~= nil and mv >= 0 and mv ~= meritManual then
-        cfg.capMeritsManual = mv;
-        blu.meritPts = mv;
-        blu.capExtra.at75 = mv;    -- this figure IS the Lv75 gap
-        if ctx.save then ctx.save(); end
-    end
-
-    -- 3. the learning bonus
-    kit.ctext(im, kit.COL.head, 'Under-sync bonus (spells learned only)');
-    kit.ctext(im, kit.COL.dim,
-        'Merits stop counting under a level sync, so the figure above does not\n'
-        .. 'apply there -- only the spells-learned part survives, and nothing\n'
-        .. 'reports it. Bludex MEASURES it: while synced BELOW 75, open the native\n'
-        .. 'Set Spells menu once. The client recomputes its total for that level,\n'
-        .. 'Bludex catches the change and subtracts the base rule. It re-measures\n'
-        .. 'on every later visit, so learning new spells keeps it current.\n'
-        .. 'The two figures are never added together -- each is the whole bonus\n'
-        .. 'for its own side of level 75.');
-    local bonus = blu.capExtra.sub;
-    if bonus ~= nil then
-        kit.ctext(im, kit.COL.ok, ('   measured: %d points'):format(bonus));
-    elseif blu.capExtra.at75 ~= nil then
-        kit.ctext(im, kit.COL.warn, ('   only a Lv.75 total is known (%d over base).\n'
-            .. '   Supply the merits above, or open the menu once while synced,\n'
-            .. '   and Bludex can split it.'):format(blu.capExtra.at75));
-    else
-        kit.ctext(im, kit.COL.warn, '   not measured yet -- open the native Set Spells menu once.');
-    end
-    local bonusManual = (cfg.capBonusManual or AUTO);
-    local bv, bCleared = intField(im, '##bdxbonus', bonusManual ~= AUTO and bonusManual or (bonus or 0),
-        bonusManual == AUTO, 70);
-    if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    kit.ctext(im, kit.COL.dim, 'points (blank = measured automatically)');
-    if bCleared and bonusManual ~= AUTO then
-        cfg.capBonusManual = AUTO;
-        if ctx.save then ctx.save(); end
-    elseif bv ~= nil and bv >= 0 and bv ~= bonusManual then
-        cfg.capBonusManual = bv;
-        blu.capExtra.sub = bv;
-        if ctx.save then ctx.save(); end
-    end
+    local bKnown = blu.learnedBonus ~= nil;
+    field(im, 'Learned Bonus Points',
+        'CatsEyeXI awards set points for blue magic you have learned.\n'
+        .. 'Collect them from Boruko in Aht Urghan Whitegate (J-10, near\n'
+        .. 'Waoud), up to 25 points in total.\n\n'
+        .. 'These count at EVERY level, level sync included -- so below 75,\n'
+        .. 'where merits do not count, they are simply cap - base level\n'
+        .. 'points. Open the native Blue Magic set menu once while synced and\n'
+        .. 'Bludex reads them off. Type a value to set it yourself.',
+        bKnown and tostring(blu.learnedBonus) or 'not known yet',
+        bKnown and kit.COL.ok or kit.COL.warn);
+    edit(im, '##bdxbonus', blu.learnedBonus or 0, bKnown,
+        function(n) blu.learnedBonus = n; save(); end,
+        function() blu.learnedBonus = nil; save(); end);
 
     if kit.isFn(im, 'Separator') then im.Separator(); end
-    local usingGap = ((lvl or 0) >= 75) and blu.capExtra.at75 or blu.capExtra.sub;
-    kit.ctext(im, kit.COL.dim, ('check: %d base + %s bonus for Lv.%s = %s'):format(
-        base, tostring(usingGap or '?'), tostring(lvl or '?'),
+    kit.ctext(im, kit.COL.dim, ('Lv.%s: %d base + %s learned%s = %s'):format(
+        tostring(lvl or '?'), base,
+        tostring(blu.learnedBonus or '?'),
+        ((lvl or 0) >= 75) and (' + ' .. tostring(blu.meritPts or '?') .. ' merits') or '',
         tostring(blu.expectedCap(lvl) or '?')));
-    local mb = blu.meritBonus();
-    if mb ~= nil then
-        kit.ctext(im, kit.COL.dim, ('your Assimilation merits work out at %d points '
-            .. '(the difference between the two figures)'):format(mb));
+    if blu.wireTotal ~= nil then
+        kit.helpLabel(im, ('server cross-check: %d'):format(blu.wireTotal),
+            'The server sends this on packet 0x063 at login, on zoning, and on\n'
+            .. 'any merit change. On CatsEyeXI it carries the learned bonus and\n'
+            .. 'the merits added together, so it should equal the two figures\n'
+            .. 'above summed. It cannot separate them, which is why each is\n'
+            .. 'tracked on its own.', kit.COL.dim);
     end
 end
 

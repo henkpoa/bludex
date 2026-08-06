@@ -105,14 +105,12 @@ for _, b in ipairs(BASE_BRACKETS) do
     if sets.baseCapAtLevel(b[1]) ~= b[2] then baseOk = false; end
 end
 check(baseOk, 'baseCapAtLevel matches the server bracket table (10..45, +5 per 10)');
--- the two field measurements this whole model rests on: at Lv75 the client
--- read 79 (base 45, gap 34); synced to Lv40 it read 49 (base 25, gap 24).
--- The 10-point difference IS the Assimilation merits, which apply only 75+.
-check(79 - sets.baseCapAtLevel(75) == 34 and 49 - sets.baseCapAtLevel(40) == 24,
-    'field 2026-08-06: measured gaps are 34 at Lv75 and 24 synced to Lv40');
-check((79 - sets.baseCapAtLevel(75)) - (49 - sets.baseCapAtLevel(40))
-    == 5 * book.traits.rules.assimilationPerMerit,
-    'the gap difference equals 5 Assimilation merits at +2 each');
+-- the two equations the budget rests on (Henrik's field readings 2026-08-06:
+-- 49 at Lv40, 79 at Lv75). Below 75 merits do not count, so the remainder is
+-- the learned bonus; at 75 the merits are whatever is left after it.
+check(49 - sets.baseCapAtLevel(40) == 24, 'Lv40: 49 - 25 base = 24 learned bonus');
+check(79 - sets.baseCapAtLevel(75) - 24 == 5 * book.traits.rules.assimilationPerMerit,
+    'Lv75: 79 - 45 base - 24 learned = 10 = five merits at +2');
 
 -- the 0x063 merit read (pure parser; 0x063_miscdata_merits.h layout:
 -- 0x04 type, 0x0A uint16 bitfield meritPoints:7 then bluBonus:6)
@@ -130,22 +128,30 @@ check(blu.parseMeritBonus(miscdata(0x02, 0, 0)) == 0, '0x063: zero is a real rea
 check(blu.parseMeritBonus(miscdata(0x05, 31, 10)) == nil, '0x063: other MISCDATA types ignored');
 check(blu.parseMeritBonus('short') == nil, '0x063: short packet cannot over-read');
 
--- THE 133 BUG (2026-08-06): the two gaps are per-side-of-75 totals and must
--- NEVER be summed. Henrik's field state: 0x063 sent 34 (the whole Lv75 gap),
--- the sub-75 gap measured 24 -- his true totals are 79 at Lv75 and 49 at
--- Lv40. Adding them gave 45+34+24 = 103, and with a poisoned sub of 54, 133.
-blu.capExtra = { at75 = 34, sub = 24 };
-check(blu.expectedCap(75) == 79, 'Lv75 uses the at75 gap alone (45 + 34 = 79)');
-check(blu.expectedCap(40) == 49, 'Lv40 uses the sub gap alone (25 + 24 = 49)');
-check(blu.expectedCap(60) == 59, 'a synced Lv60 uses the sub gap too (35 + 24)');
-check(blu.meritBonus() == 10, 'merits derive as the difference of the two gaps');
--- and 34 could never have been merits alone: assimilation caps at 5 upgrades
+-- THE BUDGET MODEL: cap = base + learnedBonus + merits, merits only at 75.
+-- Henrik's field numbers 2026-08-06: Lv40 read 49 (base 25 -> bonus 24) and
+-- Lv75 read 79 (base 45 -> merits = 79 - 45 - 24 = 10, his five merits).
+blu.learnedBonus, blu.meritPts = 24, 10;
+check(blu.expectedCap(40) == 49, 'Lv40 = 25 base + 24 learned (no merits under sync)');
+check(blu.expectedCap(60) == 59, 'Lv60 = 35 base + 24 learned');
+check(blu.expectedCap(75) == 79, 'Lv75 = 45 base + 24 learned + 10 merits');
+-- 74 and 75 share a base bracket (45), so the whole step from one to the
+-- other IS the merits switching on
+check(sets.baseCapAtLevel(74) == sets.baseCapAtLevel(75), '74 and 75 share a base');
+check(blu.expectedCap(75) - blu.expectedCap(74) == 10,
+    'merits switch on at 75 and account for the entire step');
+-- unknowns must answer nil, never a confident wrong number
+blu.learnedBonus, blu.meritPts = 24, nil;
+check(blu.expectedCap(40) == 49, 'bonus alone still answers below 75');
+check(blu.expectedCap(75) == nil, 'no merits known -> no guess at Lv75');
+blu.learnedBonus, blu.meritPts = nil, 10;
+check(blu.expectedCap(40) == nil and blu.expectedCap(75) == nil,
+    'no learned bonus -> no guess at any level');
+-- 0x063 carries the two summed, so it can complete a known half
+blu.learnedBonus, blu.meritPts, blu.wireTotal = 24, nil, nil;
 check(34 > 5 * book.traits.rules.assimilationPerMerit,
-    '0x063 bluBonus exceeds any possible merit total -- it carries the bonus too');
-blu.capExtra = { at75 = nil, sub = 24 };
-check(blu.expectedCap(75) == nil, 'no Lv75 gap yet -> no guess at Lv75');
-check(blu.expectedCap(40) == 49, '...but the sub gap still answers below 75');
-blu.capExtra = { at75 = nil, sub = nil };
+    '0x063 bluBonus (34) exceeds any possible merit total -- it holds both');
+blu.learnedBonus, blu.meritPts = nil, nil;
 
 -- budget rules sanity
 check(book.traits.rules.assimilationPerMerit == 2, 'field: +2 per Assimilation merit');

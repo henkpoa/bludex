@@ -226,49 +226,38 @@ end
 -- ---------------------------------------------------------------------------
 local capWatch = { max = nil, lvl = nil, suspect = false };
 
--- THE MEASURED GAP. The server's base rule is known exactly (setmodel
--- .baseCapAtLevel, from blueutils.cpp), but everything above it is
--- character-specific and cannot be derived from anything the client tells
--- us. So we MEASURE it, at the one moment the client's number is known
--- good: right after it recomputes.
+-- THE BUDGET, in three named parts. Only the base is derivable; the other
+-- two are read or measured, and they are NEVER lumped together (doing that
+-- produced a 133-point budget against a true 79 on 2026-08-06).
 --
--- Two constants, because the pieces have different level rules
--- (blueutils.cpp GetTotalBlueMagicPoints + CatsEyeXI's custom addition):
---   sub  = the learning bonus alone -- CEXI grants points for spells
---          learned, and it applies at EVERY level
---   at75 = that same bonus PLUS Assimilation merits, which the server adds
---          only when level >= 75 (a sync below 75 drops them)
+--     cap(level) = base(level) + learnedBonus + merits, merits only at 75+
 --
--- Henrik 2026-08-06, both measured in one session: at 75 the client read 79
--- against a base of 45 (at75 = 34); synced to 40 it read 49 against a base
--- of 25 (sub = 24). The 10-point difference is his 5 Assimilation merits at
--- CEXI's 2 points each -- which is why meritBonus() below is derivable
--- without ever reading a merit.
+--   learnedBonus  CatsEyeXI's award for spells learned, from Boruko in Aht
+--                 Urghan Whitegate. Up to 25. Applies at EVERY level, level
+--                 sync included -- so below 75 it is the ONLY thing above
+--                 the base rule, and one reading there gives it outright.
+--   merits        Assimilation (job group 2), 2 points each, 5 max = 10.
+--                 Server-side these apply ONLY at level 75.
 --
--- Seeded from settings by host.init and re-measured whenever the client
--- recomputes, so learning new spells corrects it by itself.
-M.capExtra   = { at75 = nil, sub = nil };
-M.onCapLearn = nil;    -- host sets this to persist a newly measured gap
+-- Henrik 2026-08-06: at Lv40 the client read 49, base 25 -> bonus 24. At
+-- Lv75 it read 79, base 45 -> merits = 79 - 45 - 24 = 10, his five merits.
+M.learnedBonus = nil;  -- points from spells learned (nil = not known yet)
+M.meritPts     = nil;  -- Assimilation points (nil = not known yet)
+M.onCapLearn   = nil;  -- host sets this to persist a new reading
 
--- THE MERIT HALF, STRAIGHT FROM THE SERVER (Henrik's hunch, 2026-08-06, and
--- it was in the public repo after all). Packet 0x063 MISCDATA type 0x02
--- carries a `bluBonus` field that the server fills with
--- GetMeritValue(MERIT_ASSIMILATION) at level 75+ (plus job points at 99+).
--- It is ALREADY MULTIPLIED, so CatsEyeXI's +2-per-merit never has to be
--- guessed -- 5 merits arrive as 10.
+-- Packet 0x063 MISCDATA type 0x02 carries a `bluBonus` field, which arrives
+-- by itself at login, on every zone, and on any merit change -- nothing is
+-- ever sent to ask for it.
 --
 --   0x063_miscdata_merits.h, after the 4-byte packet header:
 --     0x04 type (0x02 = merits)   0x08 limitPoints
 --     0x0A uint16 bitfield: meritPoints:7, bluBonus:6, then three flags
 --
--- Gated server-side on level >= 75, so it reads 0 under a sync -- we only
--- ever ACCEPT it at 75+ and keep the last good value across syncs.
--- Only the standalone addon can feed this (dlac's api=2 module contract has
--- no packet hook); without it the two-gap measurement below still works.
-M.meritPts = nil;      -- Assimilation POINTS (already x2), nil = unknown
-
--- Pure parser: 0x063 wire data (header included) -> the BLU merit point
--- bonus, or nil when this is a different MISCDATA type or a short packet.
+-- CAUTION: on CatsEyeXI this field is NOT the merit points. Stock LSB fills
+-- it from GetMeritValue(MERIT_ASSIMILATION) alone, but Henrik's client sent
+-- 34 where his merits are worth 10 -- CEXI folds the learned bonus in too.
+-- So it equals learnedBonus + merits, and is only useful for CROSS-CHECKING
+-- the two numbers we track separately. Never treat it as either one.
 function M.parseMeritBonus(data)
     if type(data) ~= 'string' or #data < 0x0C then return nil; end
     if data:byte(0x04 + 1) ~= 0x02 then return nil; end   -- not the merits variant
@@ -288,65 +277,36 @@ function M.capLevel()
     return capWatch.lvl;
 end
 
--- Feed the server's 0x063 answer in (standalone addon only).
---
--- WHAT THIS NUMBER ACTUALLY IS (field-corrected 2026-08-06, second pass):
--- NOT the merit points. Stock LSB fills bluBonus with the Assimilation
--- merits alone, but merits.sql caps Assimilation at 5 upgrades -- so the
--- merit half can never exceed about 10, and Henrik's client sent 34 while
--- his true Lv75 total was 79 over a base of 45. CatsEyeXI has overridden
--- the field to carry EVERYTHING above the base rule: merits AND the custom
--- learning bonus, already summed.
---
--- So this IS the level-75 gap, handed over for free -- no menu visit needed
--- at 75 at all. It cannot be split into its two halves on its own; only a
--- measurement below 75 (where merits do not apply) separates them.
---
--- Believed only at level 75+, because the server gates the field on level --
--- a sync must never overwrite what full level told us.
-function M.setMeritPoints(n)
+-- The 0x063 reading (standalone only): learnedBonus + merits, summed.
+-- Kept purely as a CROSS-CHECK -- it can confirm the pair we track but can
+-- never be either of them. Believed only at 75+, where the server sends it.
+M.wireTotal = nil;
+
+function M.setWireTotal(n)
     if n == nil then return false; end
     local lvl = M.effectiveLevel();
     if lvl == nil or lvl < 75 then return false; end
-    if M.meritPts == n then return false; end
-    M.meritPts = n;
-    M.capExtra.at75 = n;          -- this is the Lv75 gap, straight from the server
+    if M.wireTotal == n then return false; end
+    M.wireTotal = n;
+    -- with one of the pair known, the other follows immediately
+    if M.learnedBonus ~= nil and M.meritPts == nil and (n - M.learnedBonus) >= 0 then
+        M.meritPts = n - M.learnedBonus;
+    elseif M.meritPts ~= nil and M.learnedBonus == nil and (n - M.meritPts) >= 0 then
+        M.learnedBonus = n - M.meritPts;
+    end
     return true;
 end
 
--- The Assimilation merit points, DERIVED and display-only: the 75 gap
--- carries merits plus the learning bonus, the sub-75 gap carries the
--- learning bonus alone, so the difference is the merits. nil until both
--- are known.
-function M.meritBonus()
-    local a, s = M.capExtra.at75, M.capExtra.sub;
-    if a == nil or s == nil or a < s then return nil; end
-    return a - s;
-end
-
--- The modelled cap for a level: the server's base rule, plus this
--- character's learning bonus, plus merits where they apply.
---
--- The learning bonus is the ONE thing nothing reports, so it is measured --
--- and measuring it below 75 needs no merit knowledge at all, because merits
--- do not apply there. At 75 it needs the merit figure to separate the two.
--- The raw at75 gap remains as a fallback for the flavor that cannot read
--- packets: it is a correct total at 75 even when it cannot be decomposed.
--- ONE gap per side of 75, never summed together. at75 covers merits plus the
--- learning bonus (the server hands it over on 0x063); sub covers the learning
--- bonus alone and can only come from a measurement below 75, where merits do
--- not apply. Adding them would double-count the learning bonus -- which is
--- exactly the 133-instead-of-79 bug of 2026-08-06.
+-- cap(level) = base(level) + learnedBonus + merits (merits only at 75+).
+-- nil while a term that applies at this level is still unknown.
 function M.expectedCap(level)
     level = level or M.effectiveLevel();
     if level == nil or level < 1 then return nil; end
-    -- explicit branches, NOT `cond and a or b`: when the wanted gap is nil
-    -- that idiom silently falls through to the other side of 75 (the and/or
-    -- trap, HANDOVER law 3) and would answer Lv75 with the under-sync figure
-    local gap;
-    if level >= 75 then gap = M.capExtra.at75; else gap = M.capExtra.sub; end
-    if gap == nil then return nil; end
-    return setmodel.baseCapAtLevel(level) + gap;
+    if M.learnedBonus == nil then return nil; end
+    local total = setmodel.baseCapAtLevel(level) + M.learnedBonus;
+    if level < 75 then return total; end
+    if M.meritPts == nil then return nil; end
+    return total + M.meritPts;
 end
 
 -- The budget to SHOW. The client's own number while it is trustworthy;
@@ -379,16 +339,20 @@ function M.watchCap()
         local firstLook = (capWatch.max == nil);
         capWatch.max, capWatch.lvl, capWatch.suspect = mx, lvl, false;
         if not firstLook and mx ~= nil and lvl ~= nil and lvl >= 1 then
-            -- Only the sub-75 side is ever measured. At 75 the server tells
-            -- us the gap outright on 0x063, and a measurement there could not
-            -- be split into merits and bonus anyway.
+            local rest, moved = mx - setmodel.baseCapAtLevel(lvl), false;
             if lvl < 75 then
-                local gap = mx - setmodel.baseCapAtLevel(lvl);
-                if gap >= 0 and M.capExtra.sub ~= gap then
-                    M.capExtra.sub = gap;
-                    if M.onCapLearn ~= nil then pcall(M.onCapLearn); end
+                -- merits do not apply here, so what is left above the base IS
+                -- the learned bonus: 49 - 25 = 24
+                if rest >= 0 and M.learnedBonus ~= rest then
+                    M.learnedBonus = rest; moved = true;
                 end
+            elseif M.learnedBonus ~= nil then
+                -- at 75 everything applies, so the merits are what remains
+                -- once the learned bonus is taken out: 79 - 45 - 24 = 10
+                local m = rest - M.learnedBonus;
+                if m >= 0 and M.meritPts ~= m then M.meritPts = m; moved = true; end
             end
+            if moved and M.onCapLearn ~= nil then pcall(M.onCapLearn); end
         end
         return;
     end

@@ -103,10 +103,10 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
         local bmax, bsrc = blu.budget();
         msg(('budget: %s from %s (client value computed at Lv.%s)'):format(
             tostring(bmax), tostring(bsrc), tostring(blu.capLevel())));
-        msg(('measured gap: at75=%s sub75=%s%s'):format(
-            tostring(blu.capExtra.at75 or 'not measured'),
-            tostring(blu.capExtra.sub or 'not measured'),
-            blu.meritBonus() and (('  -> %d Assimilation merit points'):format(blu.meritBonus())) or ''));
+        msg(('budget parts: learned bonus=%s  Assimilation=%s  (server cross-check=%s)'):format(
+            tostring(blu.learnedBonus or 'not known'),
+            tostring(blu.meritPts or 'not known'),
+            tostring(blu.wireTotal or 'none seen')));
         local live = blu.currentSet();
         if #live == 20 then
             local n = 0;
@@ -222,12 +222,9 @@ end);
 ashita.events.register('packet_in', 'bdx_packet_cb', function(e)
     if e.id ~= 0x063 then return; end
     local n = blu.parseMeritBonus(e.data);
-    if n == nil then return; end
-    -- always remember what the server said, but a Settings override wins
-    local manual = (cfg.capMeritsManual or -1) >= 0;
-    local applied = (not manual) and blu.setMeritPoints(n) or false;
-    if applied or cfg.capMerits ~= n then
-        cfg.capMerits = n;
+    if n ~= nil and blu.setWireTotal(n) then
+        cfg.capLearnedBonus = blu.learnedBonus or -1;
+        cfg.capMeritPoints  = blu.meritPts or -1;
         saveSettings();
     end
 end);

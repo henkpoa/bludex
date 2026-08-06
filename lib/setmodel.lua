@@ -138,7 +138,7 @@ end
 -- cannot be derived: Assimilation merits (server-side, level >= 75 ONLY --
 -- merits do not apply under a sync) and, on CatsEyeXI, a custom bonus for
 -- spells learned that applies at EVERY level. Those are measured live --
--- see blu.capExtra / blu.expectedCap.
+-- see blu.learnedBonus / blu.meritPts / blu.expectedCap.
 function M.baseCapAtLevel(level)
     if level == nil or level < 1 then return 0; end
     local n = math.floor((level - 1) / 10) * 5 + 10;
