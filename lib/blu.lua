@@ -224,7 +224,9 @@ end
 -- suspicion by itself -- the untouched cap is correct there again, which is
 -- exactly the sync-down-and-back case.
 -- ---------------------------------------------------------------------------
-local capWatch = { max = nil, lvl = nil, suspect = false };
+-- verified: we WATCHED the client recompute this value. A value merely
+-- found sitting there at load looks identical but may be hours stale.
+local capWatch = { max = nil, lvl = nil, suspect = false, verified = false };
 
 -- THE BUDGET, in three named parts. Only the base is derivable; the other
 -- two are read or measured, and they are NEVER lumped together (doing that
@@ -275,6 +277,11 @@ end
 -- the level the current cap was computed for (nil until first seen)
 function M.capLevel()
     return capWatch.lvl;
+end
+
+-- the client's own cap as the watch last observed it (nil until first seen)
+function M.capValue()
+    return capWatch.max;
 end
 
 -- THE MERITS, READ ON ZONING (packet 0x08C, the approach dlac's meritwatch
@@ -373,11 +380,18 @@ end
 -- ours, then OUR MODEL IS WRONG. Defer to the client and let the UI say so,
 -- rather than quietly overriding the game with arithmetic.
 function M.budget(levelIn)
-    local mx  = M.points();
+    -- capWatch.max is the client's value AS OBSERVED by the watch (which runs
+    -- every frame from host.tick) -- the same number points() returns, but the
+    -- one the freshness flags actually describe.
+    local mx  = capWatch.max;
     local est = M.expectedCap(levelIn);
     local fresh = (mx ~= nil) and not capWatch.suspect;
     if est ~= nil then
-        if fresh and mx ~= est then return mx, 'live'; end
+        -- the client only outranks us when we actually WATCHED it recompute
+        -- at this level. A value merely found at load proves nothing -- it is
+        -- most likely the level sync's leftover (field 2026-08-06: 49 sitting
+        -- there at Lv75 after a reload, while ours correctly said 79).
+        if fresh and capWatch.verified and mx ~= est then return mx, 'live'; end
         return est, 'model';
     end
     if fresh then return mx, 'live'; end
@@ -385,12 +399,14 @@ function M.budget(levelIn)
     return nil, nil;
 end
 
--- true when the client just recomputed and still disagrees with our model:
--- a real signal that one of the three parts is wrong, not a staleness.
+-- true when the client's number and ours differ. verified says whether the
+-- client's was WATCHED being recomputed at this level: if it was, our model
+-- is wrong; if it was not, the client is simply out of date and one visit to
+-- the set menu settles it.
 function M.capDisagrees(levelIn)
-    local mx, est = M.points(), M.expectedCap(levelIn);
-    if mx == nil or est == nil or capWatch.suspect then return false; end
-    return mx ~= est;
+    local mx, est = capWatch.max, M.expectedCap(levelIn);
+    if mx == nil or est == nil or capWatch.suspect then return false, false; end
+    return mx ~= est, capWatch.verified;
 end
 
 -- Call once per frame (host.tick does). Cheap: two reads and a compare.
@@ -419,6 +435,7 @@ function M.watchCap(mxIn, lvlIn)
     -- learned bonus, and a 133-point budget with it).
     if capWatch.max == nil then
         capWatch.max, capWatch.lvl, capWatch.suspect = mx, lvl, false;
+        capWatch.verified = false;      -- found sitting there, not witnessed
         return;
     end
 
@@ -427,6 +444,7 @@ function M.watchCap(mxIn, lvlIn)
         -- the level we are standing at. The one instant its number is known
         -- to describe our level -- so measure while it is true.
         capWatch.max, capWatch.lvl, capWatch.suspect = mx, lvl, false;
+        capWatch.verified = true;       -- we watched this one happen
         if lvl ~= nil and lvl >= 1 then
             local rest, moved = mx - setmodel.baseCapAtLevel(lvl), false;
             if lvl < 75 then

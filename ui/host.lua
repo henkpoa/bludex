@@ -249,17 +249,32 @@ local function renderBody(im, st, deps, embedded)
     -- only recomputes it when the native Set Spells menu opens). Say so
     -- rather than showing a confident wrong number -- and name the one action
     -- that actually fixes it, because nothing Bludex can send does.
-    if deps.blu.capDisagrees() then
-        -- the client just recomputed for THIS level and still disagrees:
-        -- one of our three parts is wrong, and that is worth saying loudly
+    local differs, watched = deps.blu.capDisagrees();
+    if differs and not watched then
+        -- The client's number was never seen to recompute -- Bludex has only
+        -- found it sitting there. Almost always the level sync's leftover.
+        -- Tell the player the two clicks that refresh it for good.
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        kit.ctext(im, kit.COL.warn, '   refresh points');
+        kit.tip(im, ('The game client still reports %s points; Bludex works your\n'
+            .. 'total out as %s and is showing that.\n\n'
+            .. 'To refresh the game\'s own number, open:\n'
+            .. '    Magic  ->  Blue Magic  ->  Set\n'
+            .. 'That is the only thing that makes the client recalculate it.\n\n'
+            .. 'Also zone once after loading Bludex: your merits arrive with the\n'
+            .. 'zone, and Bludex needs them to work the total out.'):format(
+            tostring(deps.blu.capValue()), tostring(deps.blu.expectedCap())));
+    elseif differs then
+        -- we WATCHED it recompute at this level and it still disagrees:
+        -- our own parts are wrong, and the game is the authority
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
         kit.ctext(im, kit.COL.err, '   check Settings');
-        kit.tip(im, ('The game client recomputed its total for your current level\n'
-            .. 'and got %s, but Bludex works it out as %s.\n\n'
-            .. 'The game is right -- it is showing the game\'s number. One of the\n'
-            .. 'parts on the Settings tab is wrong (most likely the learned\n'
-            .. 'bonus, if you have collected more from Boruko since).'):format(
-            tostring(deps.blu.points()), tostring(deps.blu.expectedCap())));
+        kit.tip(im, ('The game client recalculated its total for your current\n'
+            .. 'level and got %s, but Bludex works it out as %s.\n\n'
+            .. 'The game is right, and it is the number being shown. One of the\n'
+            .. 'parts on the Settings tab is wrong -- most likely the learned\n'
+            .. 'bonus, if you have collected more from Boruko since.'):format(
+            tostring(deps.blu.capValue()), tostring(deps.blu.expectedCap())));
     elseif deps.blu.capStale() then
         local _, src = deps.blu.budget();
         if kit.isFn(im, 'SameLine') then im.SameLine(); end

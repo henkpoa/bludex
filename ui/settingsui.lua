@@ -72,9 +72,12 @@ function M.render(ctx)
 
     field(im, 'Current last measured cap',
         'The last total the game client itself worked out.\n\n'
-        .. 'It updates when you open the native Blue Magic set menu, and at no\n'
-        .. 'other time -- so after a level change it still describes the level\n'
-        .. 'you left until you open that menu once.',
+        .. 'It refreshes ONLY when you open:\n'
+        .. '    Magic  ->  Blue Magic  ->  Set\n'
+        .. 'and at no other time -- so after a level change it still describes\n'
+        .. 'the level you left until you open that menu once.\n\n'
+        .. 'Also zone once after loading Bludex: your merits arrive with the\n'
+        .. 'zone, and both are needed before the total can be worked out.',
         ('%s   (base for Lv.%s is %d)'):format(
             total and tostring(total) or '--', tostring(lvl or '?'), base));
 

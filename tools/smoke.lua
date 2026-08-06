@@ -182,6 +182,18 @@ check(not blu.capStale() and blu.budget(75) == 79, 'client recomputes to 79 and 
 blu.watchCap(79, 40);
 check(blu.capStale() and blu.budget(40) == 49, 'stale client -> our Lv40 answer, 49');
 check(not blu.capDisagrees(40), 'a stale client is not a disagreement');
+-- AFTER A RELOAD the client's value is merely FOUND, never witnessed: it may
+-- be the sync's leftover, so ours outranks it (field 2026-08-06: 49 sitting
+-- at Lv75 after reloading out of a sync, while ours correctly said 79).
+blu.resetCapWatch();
+blu.watchCap(49, 75);                          -- first look: found, not watched
+local differs, watched = blu.capDisagrees(75);
+check(differs and not watched, 'found-not-watched disagreement is flagged as unverified');
+check(blu.budget(75) == 79, 'an unwitnessed client value does not outrank ours');
+blu.watchCap(60, 75);                          -- now we WATCH it recompute
+differs, watched = blu.capDisagrees(75);
+check(differs and watched, 'a watched recompute that still differs is verified');
+check(blu.budget(75) == 60, 'a witnessed recompute outranks our model');
 blu.resetCapWatch(); blu.learnedBonus, blu.meritPts = nil, nil;
 
 -- THE BUDGET MODEL: cap = base + learnedBonus + merits, merits only at 75.
