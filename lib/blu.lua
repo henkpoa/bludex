@@ -174,12 +174,33 @@ end
 -- ---------------------------------------------------------------------------
 local nudge = { last = 0, tries = 0 };
 
+-- The 0x102 QUERY: SpellId 0 with NO slots named changes nothing server-side
+-- (the unset loop finds nothing) but the handler still answers with the
+-- extended-job packet (0x044) -- the refresh opening the native Set Spells
+-- menu triggers, and the ONLY thing that recomputes the point cap after a
+-- level sync starts or ends (field 2026-08-06: 0x061 does not touch it).
+local function requestBluRefresh()
+    if not M.onBlu() then return false; end
+    if ffi == nil then return false; end
+    local ok = pcall(function()
+        local eqex = ffi.new('bludex_equipex_c2s_t', {
+            IdSize = 0x5302, JobId = 0x10, IsSubJob = M.isBluSub() and 1 or 0,
+        });
+        local packet = ffi.string(eqex, ffi.sizeof('bludex_equipex_c2s_t')):totable();
+        AshitaCore:GetPacketManager():AddOutgoingPacket(0x102, packet);
+    end);
+    return ok;
+end
+
 function M.requestJobData()
     local ok = pcall(function()
         -- full packet bytes incl. header: id 0x61, size 0x08 (byte1 = size/2)
         AshitaCore:GetPacketManager():AddOutgoingPacket(0x061,
             { 0x61, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 });
     end);
+    -- the 0x102 query rides along on BLU: 0x061 fills the general job data
+    -- but only the extended-job answer refreshes the BLU point cap
+    requestBluRefresh();
     return ok;
 end
 

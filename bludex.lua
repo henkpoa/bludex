@@ -143,7 +143,7 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
 
     if args[2]:any('refresh') then
         if blu.requestJobData() then
-            msg('Requested a job-data refresh from the server (packet 0x061) - the points header should fill within a second.');
+            msg('Requested a job-data refresh from the server (0x061 + the 0x102 extended-job query) - the points header should fill within a second.');
         else
             msg('Could not send the refresh request.');
         end
