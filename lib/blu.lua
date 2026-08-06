@@ -491,11 +491,17 @@ function M.watchCap(mxIn, lvlIn)
                     M.learnedBonus = rest; moved = true;
                 end
                 if reconcile() then moved = true; end
-            elseif M.learnedBonus ~= nil then
-                -- at 75 everything applies, so the merits are what remains
-                -- once the learned bonus is taken out: 79 - 45 - 24 = 10
-                local m = rest - M.learnedBonus;
-                if m >= 0 and M.meritPts ~= m then M.meritPts = m; moved = true; end
+            else
+                -- At 75 every term applies, so what sits above the base IS
+                -- bonus + merits -- the very number 0x063 carries. Take it
+                -- from the client's own cap instead of waiting for the
+                -- packet: 79 - 45 = 34. This is what lets the dlac flavor,
+                -- which has no packet hook at all, reach the same answer
+                -- from two menu visits (one at 75, one under a sync).
+                if rest >= 0 and M.wireTotal ~= rest then
+                    M.wireTotal = rest; moved = true;
+                end
+                if reconcile() then moved = true; end
             end
             if moved and M.onCapLearn ~= nil then pcall(M.onCapLearn); end
         end

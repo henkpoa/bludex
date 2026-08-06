@@ -221,6 +221,25 @@ check(blu.meritValue == 2 and not blu.meritValueProven, 'and the rate returns to
 check(blu.capValue() == nil and blu.expectedCap(75) == nil,
     'the cap watch forgets too -- nothing is guessed from the old state');
 
+-- NO PACKETS AT ALL (the dlac flavor): the client's own cap carries the same
+-- information the packets do. A verified Lv75 recompute gives bonus+merits
+-- (79 - 45 = 34, exactly 0x063's number); a sub-75 one gives the bonus alone.
+-- Two menu visits and the split is complete without reading a single packet.
+blu.resetCapWatch();
+blu.learnedBonus, blu.meritPts, blu.wireTotal = nil, nil, nil;
+blu.meritCount, blu.meritValue, blu.meritValueProven = nil, 2, false;
+blu.watchCap(49, 40);                     -- baseline
+blu.watchCap(79, 75);                     -- recompute at 75
+check(blu.wireTotal == 34, 'a Lv75 recompute yields bonus+merits from the cap alone');
+blu.watchCap(49, 40);                     -- recompute under a sync
+check(blu.learnedBonus == 24, 'a sub-75 recompute yields the learned bonus');
+check(blu.meritPts == 10, 'and the merits follow: 34 - 24');
+check(blu.expectedCap(75) == 79 and blu.expectedCap(40) == 49,
+    'both levels answer correctly with no packet ever read');
+blu.resetCapWatch();
+blu.learnedBonus, blu.meritPts, blu.wireTotal = nil, nil, nil;
+blu.meritCount, blu.meritValue, blu.meritValueProven = nil, 2, false;
+
 -- THE CAP WATCH, driven directly (three field bugs have lived in here).
 -- The rule: the client's cap is trustworthy only while our level still
 -- matches the level it was computed at.
@@ -254,10 +273,19 @@ blu.watchCap(49, 75);                          -- first look: found, not watched
 local differs, watched = blu.capDisagrees(75);
 check(differs and not watched, 'found-not-watched disagreement is flagged as unverified');
 check(blu.budget(75) == 79, 'an unwitnessed client value does not outrank ours');
-blu.watchCap(60, 75);                          -- now we WATCH it recompute
+-- A WITNESSED recompute is not a disagreement -- it is a lesson. At 75 it
+-- gives bonus+merits outright, so the model adopts it and the two agree by
+-- construction.
+blu.watchCap(60, 75);
 differs, watched = blu.capDisagrees(75);
-check(differs and watched, 'a watched recompute that still differs is verified');
-check(blu.budget(75) == 60, 'a witnessed recompute outranks our model');
+check(not differs and blu.budget(75) == 60, 'a witnessed recompute is absorbed, not argued with');
+check(blu.wireTotal == 15, 'and it teaches: 60 - 45 base = 15 above base');
+-- which leaves ONE way to reach a verified disagreement: a hand-typed
+-- Settings figure that contradicts what the game just recalculated.
+blu.learnedBonus = 30;                         -- as if typed in by hand
+differs, watched = blu.capDisagrees(75);
+check(differs and watched, 'a hand-set figure against a witnessed recompute IS a disagreement');
+check(blu.budget(75) == 60, 'and the game wins: the witnessed number is shown');
 blu.resetCapWatch(); blu.learnedBonus, blu.meritPts = nil, nil;
 
 -- THE BUDGET MODEL: cap = base + learnedBonus + merits, merits only at 75.
