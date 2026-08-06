@@ -68,6 +68,32 @@ Bludex re-adds them automatically. The amber **`castable in 58s`** in the header
 the game's own post-change cast lock, counted down for you (a chat line announces when
 it ends).
 
+### One set, a build per level
+
+A set that works at 75 cannot be the set that works at 41 — the game hands out
+different points and different slots, so the spells you can afford are different too.
+Select a set and eight level bands appear under its name, each showing what it costs
+against what that level allows:
+
+```
+Solo (19)
+  Lv    points     slots
+   1    0 / 34     0 / 6
+  11    0 / 39     0 / 8
+  ...
+> 71   77 / 79    19 / 20
+```
+
+Click one and you edit that build like any other set — the slot grid greys out the
+slots that level does not have, the codex refuses spells it cannot cast or afford,
+and hovering a row lists what is in it. `>` marks the band you are standing in.
+The totals include your CatsEyeXI learned bonus and, at 75, your Assimilation merits.
+
+Nothing is migrated: the set's own name row is its flat build — no level attached,
+all 20 slots, exactly as before — and a set stays that until you build a level under
+it. `/bludex apply <name>` picks the build for the level you are at, so one macro
+serves every sync.
+
 ### The trait explorer
 
 ![The Traits tab — Dual Wield expanded](docs/screenshots/traits.png)
@@ -96,7 +122,7 @@ Do not run the standalone addon and the dlac flavor at the same time.
 ## Commands
 
 ```
-/bludex            toggle the window            /bludex apply <name>   apply a saved set
+/bludex            toggle the window            /bludex apply <name> [level]  apply a saved set
 /bludex list       list saved sets              /bludex reset          unset every spell
 /bludex refresh    re-request job data          /bludex delay <0.2-5>  seconds between packets
 /bludex mode safe|fast                          /bludex debug          signature/points diagnostics

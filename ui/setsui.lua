@@ -1,7 +1,16 @@
 --[[
-    bludex/ui/setsui.lua -- the Sets tab: saved sets, the 20-slot editor, the
-    live budget meters, apply/read/clear against the game, and the computed
-    stats + traits panel for the set being edited.
+    bludex/ui/setsui.lua -- the Sets tab: the saved-set tree, the 20-slot
+    editor, the live budget meters, apply/read/clear against the game, and the
+    computed stats + traits panel for the build being edited.
+
+    A SAVED SET CAN HOLD A BUILD PER LEVEL (Henrik 2026-08-06). One set that
+    works at 75 and at 40 cannot exist -- the points and the slots are
+    different, so it is a different build, not a different name. The left
+    column lists the sets; the name row is the set's FLAT build (no level
+    attached -- what bludex has always had, and what a set stays until you
+    build a level), and under the selected one sit all eight level bands with
+    what each costs and what each allows. Clicking either edits that build
+    like any other set. Nothing is migrated: a flat set is still flat.
 
     The budget meter prefers the LIVE client value (lib/blu points signature;
     CatsEyeXI's custom merit/learning bonuses included). Everything degrades:
@@ -24,32 +33,73 @@ local MID_W   = 330;
 -- the window header's Save / Apply / Revert (host.renderBody)
 -- ---------------------------------------------------------------------------
 
--- Save the editing set into the saved list (the active entry, or a new one).
-function M.saveEditing(ctx)
-    local st, cfg = ctx.state, ctx.cfg;
-    local copy = ctx.sets.clone(st.editingSet, st.editingSet.name);
-    copy.name = st.editingSet.name;
-    if st.activeSet and cfg.sets[st.activeSet] then
-        cfg.sets[st.activeSet] = copy;
-    else
-        table.insert(cfg.sets, copy);
-        st.activeSet = #cfg.sets;
-    end
-    cfg.activeSetName = copy.name;                 -- remembered across loads
-    if ctx.save then ctx.save(); end
-    st.applyNote = 'Saved.';
+-- The level band being edited -- nil for the flat build, which is a real
+-- answer here and not a missing one.
+local function editLevel(ctx)
+    return ctx.state.editingSet.level;
 end
 
--- Revert the editing set to its saved copy (or to a fresh empty set when
--- nothing is saved yet) -- removes ALL unsaved changes.
+-- 41 -> '41-50', 71 -> '71-75'
+local function bandText(ctx, level)
+    return ('%d-%d'):format(level, ctx.sets.bandTop(level));
+end
+
+-- 'the Lv.41 build' / 'the set' -- for notes, which must never format a nil
+-- level as a number.
+local function buildText(level)
+    return (level == nil) and 'the set' or ('the Lv.%d build'):format(level);
+end
+
+-- Load one build of one saved set into the editor (level nil = its flat
+-- build). This is the ONE way the editing draft is replaced, so every path
+-- remembers the same two things.
+local function loadBuild(ctx, index, level)
+    local st, cfg = ctx.state, ctx.cfg;
+    local entry = cfg.sets[index];
+    if entry == nil then return; end
+    ctx.sets.normalizeGroup(entry);
+    st.activeSet, st.activeLevel = index, level;
+    st.editingSet = ctx.sets.draft(entry, level);
+    st.applyNote = nil;
+    st.addNote = nil;
+    cfg.activeSetName = entry.name;                -- remembered across loads
+    cfg.activeSetLevel = level or 0;               -- 0 = the flat build
+    if ctx.save then ctx.save(); end
+end
+M.loadBuild = loadBuild;
+
+-- Save the editing build into its set, at its own level (the active set, or a
+-- new one). The name box names the WHOLE set -- every build under it moves.
+function M.saveEditing(ctx)
+    local st, cfg = ctx.state, ctx.cfg;
+    local level = editLevel(ctx);
+    local entry = st.activeSet and cfg.sets[st.activeSet] or nil;
+    if entry == nil then
+        entry = ctx.sets.newGroup(st.editingSet.name);
+        table.insert(cfg.sets, entry);
+        st.activeSet = #cfg.sets;
+    end
+    entry.name = st.editingSet.name;
+    ctx.sets.groupPut(entry, level, st.editingSet.ids);
+    st.activeLevel = level;
+    cfg.activeSetName = entry.name;                -- remembered across loads
+    cfg.activeSetLevel = level or 0;
+    if ctx.save then ctx.save(); end
+    st.applyNote = (level == nil) and 'Saved.'
+        or ('Saved %s, Lv.%d.'):format(entry.name, level);
+end
+
+-- Revert the editing build to its saved copy (or to a fresh empty one when
+-- nothing is saved yet) -- removes ALL unsaved changes to THIS build.
 function M.revertEditing(ctx)
     local st, cfg = ctx.state, ctx.cfg;
     local saved = st.activeSet and cfg.sets[st.activeSet] or nil;
     if saved ~= nil then
-        st.editingSet = ctx.sets.clone(saved, saved.name);
-        st.applyNote = 'Reverted to the saved set.';
+        st.editingSet = ctx.sets.draft(saved, editLevel(ctx));
+        st.applyNote = (editLevel(ctx) == nil) and 'Reverted to the saved set.'
+            or ('Reverted to the saved Lv.%d build.'):format(editLevel(ctx));
     else
-        st.editingSet = ctx.sets.new(('Set %d'):format(#cfg.sets + 1));
+        st.editingSet = ctx.sets.new(('Set %d'):format(#cfg.sets + 1), editLevel(ctx));
         st.applyNote = 'Reverted - empty set.';
     end
     st.addNote = nil;
@@ -71,45 +121,147 @@ function M.applyEditing(ctx)
         for k = 1, 20 do snap[k] = st.editingSet.ids[k] or 0; end
         ctx.cfg.lastApplied = { ids = snap };
         if ctx.save then ctx.save(); end
-        st.applyNote = 'Applying the changes, lowest level first - watch the chat log.';
+        st.applyNote = ('Applying %s, lowest level first - watch the chat log.'):format(
+            buildText(st.editingSet.level));
     end
 end
 
--- Does the editing set differ from its SAVED copy? Drives the header's
+-- Does the editing build differ from its SAVED copy? Drives the header's
 -- green Save and the Revert. With no active saved set, any content counts.
 function M.unsaved(ctx)
     local st, cfg = ctx.state, ctx.cfg;
-    local saved = st.activeSet and cfg.sets[st.activeSet] or nil;
-    if saved == nil then
+    local entry = st.activeSet and cfg.sets[st.activeSet] or nil;
+    if entry == nil then
         return ctx.sets.count(st.editingSet) > 0;
     end
-    if tostring(saved.name) ~= tostring(st.editingSet.name) then return true; end
+    if tostring(entry.name) ~= tostring(st.editingSet.name) then return true; end
+    ctx.sets.normalizeGroup(entry);
+    local saved = ctx.sets.groupIds(entry, editLevel(ctx));
     for i = 1, 20 do
-        if (saved.ids[i] or 0) ~= (st.editingSet.ids[i] or 0) then return true; end
+        if saved[i] ~= (st.editingSet.ids[i] or 0) then return true; end
     end
     return false;
 end
 
 -- ---------------------------------------------------------------------------
--- saved sets (persisted in settings as { name = s, ids = {20} })
+-- the saved-set tree: the set (its flat build) and, under the selected one,
+-- the eight level bands
+-- (persisted as { name = s, ids = {20}, builds = { { level, ids }, ... } })
 -- ---------------------------------------------------------------------------
+
+-- Selectable in a color of our choosing (a row's color IS its state here:
+-- dim = nothing built, accent = a build that fits, red = one that cannot).
+local function tintedSelectable(im, col, label, selected)
+    local pushed = false;
+    if col ~= nil and kit.isFn(im, 'PushStyleColor') and kit.isFn(im, 'PopStyleColor') then
+        im.PushStyleColor(0, col);                 -- Text
+        pushed = true;
+    end
+    local ok, clicked = pcall(im.Selectable, kit.esc(label), selected == true);
+    if pushed then im.PopStyleColor(1); end
+    return ok and clicked or false;
+end
+
+-- One rung under a set: what it costs, what it is allowed, and what is in it.
+local function rungRow(ctx, index, entry, level, here)
+    local im, st, book = ctx.im, ctx.state, ctx.book;
+    local ids   = ctx.sets.groupIds(entry, level);
+    local used  = ctx.sets.pointsIds(ids, book);
+    local n     = ctx.sets.countIds(ids);
+    local slots = ctx.sets.slotsAtLevel(level);
+    local cap, src = ctx.rungBudget(level);
+    -- '79' the number we stand behind, '45+' the base rule with this
+    -- character's bonus still unmeasured, '?' nothing known at all
+    local capTxt = (cap ~= nil and cap > 0)
+        and (tostring(cap) .. (src == 'base' and '+' or '')) or '?';
+    local over = (n > slots) or (cap ~= nil and cap > 0 and src ~= 'base' and used > cap);
+    local col = kit.COL.dim;
+    if over then col = kit.COL.err; elseif n > 0 then col = kit.COL.accent; end
+
+    local label = ('%s%2d   %2d / %-4s %2d / %2d##bdxrung%d_%d'):format(
+        (here == level) and '>' or ' ', level, used, capTxt, n, slots, index, level);
+    local selected = (st.activeSet == index and st.editingSet.level == level);
+    if tintedSelectable(im, col, label, selected) then
+        loadBuild(ctx, index, level);
+    end
+
+    -- the hover: the rung's own rules first, then what is actually in it
+    local lines = {
+        ('Lv.%s -- the build for levels %s'):format(level, bandText(ctx, level)),
+        ('%d point%s, %d slot%s'):format(cap or 0, (cap == 1) and '' or 's',
+            slots, (slots == 1) and '' or 's'),
+    };
+    if src == 'base' then
+        lines[2] = ('%d points (the base rule -- your learned bonus is not\n'
+            .. 'measured yet, so the real total is higher), %d slots'):format(cap or 0, slots);
+    elseif cap == nil then
+        lines[2] = ('point total unknown, %d slots'):format(slots);
+    end
+    if n == 0 then
+        lines[#lines + 1] = '';
+        lines[#lines + 1] = 'Nothing built here yet -- click to start.';
+    else
+        local from = ctx.sets.usableFrom(ids, book);
+        if from ~= nil and from > level then
+            lines[#lines + 1] = ('complete from Lv.%d (its highest spell)'):format(from);
+        end
+        if over then
+            lines[#lines + 1] = 'OVER what this level allows -- remove something.';
+        end
+        lines[#lines + 1] = '';
+        for i = 1, 20 do
+            local s = book.spells[ids[i] or 0];
+            if s ~= nil then
+                lines[#lines + 1] = ('  %s  (%d pts)'):format(s.name, s.setPoints or 0);
+            elseif (ids[i] or 0) ~= 0 then
+                lines[#lines + 1] = ('  #%d'):format(ids[i]);
+            end
+        end
+    end
+    kit.tip(im, table.concat(lines, '\n'));
+end
+
 local function savedList(ctx)
     local im, st, cfg = ctx.im, ctx.state, ctx.cfg;
     kit.header(im, 'Saved sets');
+    local here = ctx.sets.rungFor(ctx.blu.effectiveLevel());
     if kit.isFn(im, 'Selectable') then
         for i, entry in ipairs(cfg.sets) do
-            local label = ('%s (%d)##bdxset%d'):format(entry.name, (function()
-                local n = 0;
-                for k = 1, 20 do if (entry.ids[k] or 0) ~= 0 then n = n + 1; end end
-                return n;
-            end)(), i);
-            local ok, clicked = pcall(im.Selectable, kit.esc(label), st.activeSet == i);
-            if ok and clicked then
-                st.activeSet = i;
-                st.editingSet = ctx.sets.clone(entry, entry.name);
-                st.applyNote = nil;
-                cfg.activeSetName = entry.name;    -- remembered across loads
-                if ctx.save then ctx.save(); end
+            ctx.sets.normalizeGroup(entry);
+            local built = ctx.sets.groupLevels(entry);
+            local flat  = ctx.sets.countIds(entry.ids);
+            -- the name row IS the flat build. It counts spells, exactly as it
+            -- always has; the level builds are counted beside it only when
+            -- there are any, so a set nobody has levelled reads unchanged.
+            local tag = ('%d'):format(flat);
+            if #built > 0 then
+                tag = (flat > 0) and ('%d, %d level%s'):format(flat, #built,
+                    (#built == 1) and '' or 's')
+                    or ('%d level%s'):format(#built, (#built == 1) and '' or 's');
+            end
+            local label = ('%s (%s)##bdxset%d'):format(entry.name, tag, i);
+            local open = (st.activeSet == i);
+            if tintedSelectable(im, kit.COL.head, label, open) then
+                loadBuild(ctx, i, nil);        -- the name row: the flat build
+                open = true;
+            end
+            kit.tip(im, ('%s -- the set with no level attached (%d spell%s).\n'
+                .. 'Apply it at any level; the game keeps what fits.%s\n\n'
+                .. 'Click to edit it%s.'):format(
+                entry.name, flat, (flat == 1) and '' or 's',
+                (#built > 0) and ('\nLevel builds: Lv.' .. table.concat(built, ', Lv.')) or '',
+                open and '' or ', and to see its levels'));
+            if open then
+                kit.ctext(im, kit.COL.dim, '  Lv    points     slots');
+                kit.tip(im, 'A build of its own for a level band. The game hands out\n'
+                    .. 'different points and different slots at each of these, so a\n'
+                    .. 'set that works at 75 cannot be the set that works at 41.\n\n'
+                    .. 'Click a level to build or edit it; ">" is where you are now.\n'
+                    .. 'Leave them all empty and the set stays exactly as it is.');
+                for _, lvl in ipairs(ctx.sets.LEVELS) do
+                    rungRow(ctx, i, entry, lvl, here);
+                end
+                if kit.isFn(im, 'Separator') then im.Separator(); end
             end
         end
     end
@@ -121,22 +273,27 @@ local function savedList(ctx)
     local rowW = kit.measure(im, { 'New', 'Save', 'Delete' }, 50);
     if kit.litButton(im, 'New', false, rowW, 22) then
         st.editingSet = ctx.sets.new(('Set %d'):format(#cfg.sets + 1));
-        st.activeSet = nil;
+        st.activeSet, st.activeLevel = nil, nil;
+        st.applyNote = 'New set - Save it, then pick a level under its name to build one for that level.';
     end
+    kit.tip(im, 'Start a new set with no level attached.\nOnce it is saved, its level bands are one click away under the name.');
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     if kit.litButton(im, 'Save', false, rowW, 22) then
         M.saveEditing(ctx);
     end
+    kit.tip(im, 'Save what you are editing back into the set.\nEvery other build under that name is untouched.');
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     if kit.litButton(im, 'Delete', false, rowW, 22) then
         if st.activeSet and cfg.sets[st.activeSet] then
             table.remove(cfg.sets, st.activeSet);
-            st.activeSet = nil;
+            st.activeSet, st.activeLevel = nil, nil;
             cfg.activeSetName = '';
+            cfg.activeSetLevel = 0;
             if ctx.save then ctx.save(); end
             st.applyNote = 'Deleted.';
         end
     end
+    kit.tip(im, 'Delete the whole set, every level build under it.\nTo drop ONE level build: Clear it, then Save.');
 
     -- one-way pull from the blusets addon's saved lists; existing bludex
     -- names are skipped, never overwritten -- safe to click repeatedly
@@ -207,7 +364,7 @@ local function slotList(ctx, liveIds)
     if shown == 0 then
         kit.ctext(im, kit.COL.dim, 'The set is empty - add spells from the Codex or Traits.');
     else
-        local free = 20 - ctx.sets.count(set);
+        local free = ctx.sets.slotMax(set) - ctx.sets.count(set);
         if free > 0 then
             kit.ctext(im, kit.COL.dim, ('%d free slot%s'):format(free, free == 1 and '' or 's'));
         end
@@ -217,6 +374,18 @@ local function slotGrid(ctx)
     local im, st, book = ctx.im, ctx.state, ctx.book;
     local set = st.editingSet;
     st.detailOpen = st.detailOpen or { false };
+    local slotMax = ctx.sets.slotMax(set);
+
+    -- WHICH BUILD this is. The set name lives in the box on the left; this is
+    -- the one thing about it that changes what the editor allows.
+    if set.level ~= nil then
+        kit.ctext(im, kit.COL.dim, ('Editing Lv.%s of "%s"  --  levels %s'):format(
+            set.level, set.name, bandText(ctx, set.level)));
+        kit.tip(im, ('The game gives the same %d slots and the same points\n'
+            .. 'anywhere in Lv.%s, so one build serves the whole band.\n\n'
+            .. 'Other levels of this set are under its name on the left.'):format(
+            slotMax, bandText(ctx, set.level)));
+    end
 
     -- the layout choice on the header line (Henrik 2026-08-04): the spatial
     -- 5x4 grid, or codex-grammar rows with names. Persisted.
@@ -263,9 +432,10 @@ local function slotGrid(ctx)
             if okx and type(cx) == 'number' then pcall(im.SetCursorPosX, cx + pad); end
         end
         local id = set.ids[i] or 0;
+        local locked = (i > slotMax);          -- this level does not have it
         if id ~= 0 then
             local inGame = liveIds == nil or liveIds[id] == true;
-            if spellsui.spellButton(ctx, id, cell, false, not inGame) then
+            if spellsui.spellButton(ctx, id, cell, false, locked or not inGame) then
                 ctx.sets.removeSlot(set, i);
                 st.applyNote = nil;
             end
@@ -281,6 +451,10 @@ local function slotGrid(ctx)
                 else
                     liveLine = '\nnot active in game (Apply sends it)';
                 end
+            end
+            if locked then
+                liveLine = liveLine .. ('\nBEYOND Lv.%s: that level has only %d slots'):format(
+                    set.level, slotMax);
             end
             local s = book.spells[id];
             if s ~= nil then
@@ -304,9 +478,13 @@ local function slotGrid(ctx)
                     styled = true;
                 end
                 -- same call shape as spellButton (frame padding 2) so image
-                -- cells always land at cell+4 regardless of which art loads
+                -- cells always land at cell+4 regardless of which art loads.
+                -- A slot this level does not have yet is drawn faint -- the
+                -- grid stays 5x4 so the shape of the set never jumps, but
+                -- what you may actually fill is visible at a glance.
+                local tint = locked and { 1, 1, 1, 0.20 } or { 1, 1, 1, 0.9 };
                 local okB = pcall(im.ImageButton, h, { cell, cell }, { 0, 0 }, { 1, 1 }, 2,
-                    { 0, 0, 0, 0 }, { 1, 1, 1, 0.9 });
+                    { 0, 0, 0, 0 }, tint);
                 if not okB then pcall(im.ImageButton, h, { cell, cell }); end
                 if styled then im.PopStyleColor(4); end
             else
@@ -315,7 +493,13 @@ local function slotGrid(ctx)
                 kit.litButton(im, '##e', false, cell + 4, cell + 4);
             end
             if pushed and kit.isFn(im, 'PopID') then pcall(im.PopID); end
-            kit.tip(im, ('slot %d (empty)'):format(i));
+            if locked then
+                kit.tip(im, ('slot %d -- Lv.%s does not have it.\n'
+                    .. 'The game gives %d slots there; slot %d opens at Lv.%d.'):format(
+                    i, set.level, slotMax, i, ctx.sets.levelForSlot(i) or 71));
+            else
+                kit.tip(im, ('slot %d (empty)'):format(i));
+            end
         end
     end
     end
@@ -326,8 +510,19 @@ local function slotGrid(ctx)
     kit.meter(im, 'Points', used, max, '');
     if max == nil then
         kit.tip(im, 'Live budget appears when you are on BLU.\nSet an override in settings otherwise.');
+    elseif set.level ~= nil then
+        local _, src = ctx.rungBudget(set.level);
+        kit.tip(im, (src == 'base')
+            and ('The base rule for Lv.%s. Your learned bonus is not measured\n'
+                .. 'yet, so your real total there is higher -- open\n'
+                .. 'Magic -> Blue Magic -> Set once and it settles.'):format(set.level)
+            or ('What the game gives you at Lv.%s.'):format(set.level));
     end
-    kit.meter(im, 'Slots ', ctx.sets.count(st.editingSet), 20, '');
+    kit.meter(im, 'Slots ', ctx.sets.count(st.editingSet), slotMax, '');
+    if set.level ~= nil and slotMax < 20 then
+        kit.tip(im, ('Lv.%s has %d of the 20 slots; the rest open every ten levels.'):format(
+            set.level, slotMax));
+    end
     kit.ctext(im, kit.COL.dim, ('Total MP %d'):format(ctx.sets.usedMP(st.editingSet, book)));
     -- the level-sync line: the meters above are the PLAN; this is what the
     -- client holds right now while synced under the cap (see host header)
@@ -383,6 +578,13 @@ local function slotGrid(ctx)
             -- draws them as '#id' cells and the totals simply skip them.
             st.applyNote = unknown == 0 and 'Read the live set.'
                 or ('Read the live set; %d slot(s) hold ids the data does not know.'):format(unknown);
+            -- the live set was built at YOUR level, not at this build's: say so
+            -- rather than letting the meters go quietly red
+            local nLive = ctx.sets.count(st.editingSet);
+            if nLive > slotMax then
+                st.applyNote = ('Read the live set - %d spells, but Lv.%s only has %d slots.'):format(
+                    nLive, set.level, slotMax);
+            end
         else
             st.applyNote = 'Could not read the live set.';
         end
@@ -488,7 +690,10 @@ function M.render(ctx)
     -- 'Clea', 'Man' and 'Dele' all clipped in the field at the old fixed
     -- widths)
     local rowW = kit.measure(im, { 'New', 'Save', 'Delete' }, 50);
-    LEFT_W = math.max(210, rowW * 3 + 32);
+    -- the left column must also hold a rung row whole ('>71  77 / 79+ 19 / 20')
+    -- -- measured, never guessed (the clipping law)
+    local rungW = kit.measure(im, { '>71   77 / 79+  19 / 20  ' }, 0) + 24;
+    LEFT_W = math.max(210, rowW * 3 + 32, rungW);
     local gameRow = kit.measure(im, { 'Apply in game', 'Applying...' }, 100)
         + kit.measure(im, { 'Read current' }, 90)
         + kit.measure(im, { 'Clear' }, 50);

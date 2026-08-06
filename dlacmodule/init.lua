@@ -49,8 +49,13 @@ end
 
 -- ---------------------------------------------------------------------------
 -- scalar codec: the framework store holds strings/numbers/booleans only.
--- Saved sets serialize as one string ('name<TAB>id,id,...' per line); the
--- last-applied snapshot as one 'id,id,...' line. Tolerant on the way in.
+-- Saved sets serialize as one string, ONE LINE PER BUILD:
+--   'name<TAB>id,id,...'          the set's flat build -- unchanged, byte for
+--                                 byte, from before level builds existed
+--   'name<TAB>level<TAB>id,..'    a build for one level band, under that name
+-- so a flat set still writes exactly one line and reads back identically in
+-- either direction. THERE IS NOTHING TO MIGRATE. The last-applied snapshot is
+-- one 'id,id,...' line.
 -- ---------------------------------------------------------------------------
 local codec = {};
 
@@ -75,17 +80,40 @@ function codec.encodeSets(list)
     local recs = {};
     for _, e in ipairs(list or {}) do
         local name = tostring(e.name or '?'):gsub('[\t\n]', ' ');
-        recs[#recs + 1] = name .. '\t' .. codec.encodeIds(e.ids);
+        recs[#recs + 1] = name .. '\t' .. codec.encodeIds(e.ids);   -- flat
+        for _, t in ipairs(e.builds or {}) do
+            recs[#recs + 1] = ('%s\t%d\t%s'):format(
+                name, tonumber(t.level) or 71, codec.encodeIds(t.ids));
+        end
     end
     return table.concat(recs, '\n');
 end
 
 function codec.decodeSets(s)
-    local out = {};
+    local out, byName = {}, {};
+    local function group(name)
+        local g = byName[name];
+        if g == nil then
+            g = { name = name, ids = codec.decodeIds(''), builds = {} };
+            byName[name] = g;
+            out[#out + 1] = g;
+        end
+        return g;
+    end
     for line in tostring(s or ''):gmatch('[^\n]+') do
-        local name, idcsv = line:match('^(.-)\t(.*)$');
+        local f = {};
+        for tok in (line .. '\t'):gmatch('([^\t]*)\t') do f[#f + 1] = tok; end
+        local name = f[1];
         if name ~= nil and name ~= '' then
-            out[#out + 1] = { name = name, ids = codec.decodeIds(idcsv) };
+            local g = group(name);
+            if #f >= 3 then
+                local lvl = tonumber(f[2]) or 0;
+                if lvl > 0 then
+                    g.builds[#g.builds + 1] = { level = lvl, ids = codec.decodeIds(f[3]) };
+                end
+            elseif #f == 2 then
+                g.ids = codec.decodeIds(f[2]);          -- the flat build
+            end
         end
     end
     return out;
@@ -103,6 +131,7 @@ local function loadCfg(S)
         sets           = codec.decodeSets(S.cfg.get('sets')),
         lastApplied    = { ids = codec.decodeIds(S.cfg.get('lastApplied')) },
         activeSetName  = S.cfg.get('activeSetName'),
+        activeSetLevel = S.cfg.get('activeSetLevel'),
         codexDensity   = S.cfg.get('codexDensity'),
         traitsDensity  = S.cfg.get('traitsDensity'),
         setsLayout     = S.cfg.get('setsLayout'),
@@ -126,6 +155,7 @@ local function saveCfg()
         Sref.cfg.set('lastApplied',
             (cfg.lastApplied and cfg.lastApplied.ids) and codec.encodeIds(cfg.lastApplied.ids) or '');
         Sref.cfg.set('activeSetName', tostring(cfg.activeSetName or ''));
+        Sref.cfg.set('activeSetLevel', tonumber(cfg.activeSetLevel) or 0);
         Sref.cfg.set('codexDensity', tostring(cfg.codexDensity or 'normal'));
         Sref.cfg.set('traitsDensity', tostring(cfg.traitsDensity or 'normal'));
         Sref.cfg.set('setsLayout', tostring(cfg.setsLayout or 'grid'));
@@ -147,6 +177,7 @@ return {
     config = {
         keys = {
             sets = 'string', lastApplied = 'string', activeSetName = 'string',
+            activeSetLevel = 'number',
             codexDensity = 'string', traitsDensity = 'string', setsLayout = 'string',
             applyMode = 'string',
             applyDelay = 'number', budgetOverride = 'number',
@@ -158,7 +189,7 @@ return {
             capLearnedBonus = 'number', capMeritPoints = 'number',
         },
         defaults = {
-            sets = '', lastApplied = '', activeSetName = '',
+            sets = '', lastApplied = '', activeSetName = '', activeSetLevel = 0,
             codexDensity = 'normal', traitsDensity = 'normal', setsLayout = 'grid',
             applyMode = 'safe',
             applyDelay = 1.1, budgetOverride = 0,

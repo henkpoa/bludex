@@ -5,28 +5,78 @@
     trait weights per category across set spells, highest tier with
     points <= total is active).
 
-    Pure logic; no AshitaCore, no imgui. A "set" is { name = s, ids = {20} }
-    with real spell ids (0 = empty slot).
+    Pure logic; no AshitaCore, no imgui.
+
+    TWO SHAPES, and they are not the same thing:
+      a BUILD (the thing being edited) is { name = s, level = 71, ids = {20} }
+        with real spell ids (0 = empty slot). `level` is the level band it is
+        for -- or NIL, which is the flat set bludex has always had: no level
+        attached, all 20 slots, apply it wherever you are;
+      a SAVED SET is { name = s, ids = {20}, builds = { {level, ids}, ... } } --
+        its flat build, plus any level builds made under it, sorted by level.
+    ("tier" in this file always means a TRAIT tier -- see traitEval.)
+    NOTHING IS MIGRATED (Henrik 2026-08-06): a set with no level builds is
+    exactly the flat set it was, and stays one until you build a level.
+    Everything computable (points, slots, stats, traits) takes a BUILD.
 ]]--
 
 local M = {};
 
-function M.new(name)
+-- ---------------------------------------------------------------------------
+-- THE RUNGS. The server's two set rules -- how many slots and how many base
+-- points -- both step every ten levels from 1, so one build serves a whole
+-- band: a set made for Lv.41 is the same set at 50. Eight rungs, each named
+-- for the level its band opens at. 71 is the last: 71-75 share a base, and
+-- the Assimilation merits land inside that band, at 75.
+-- ---------------------------------------------------------------------------
+M.LEVELS = { 1, 11, 21, 31, 41, 51, 61, 71 };
+M.TOP    = 71;
+
+-- The rung a level belongs to: 40 -> 31, 75 -> 71, 1 -> 1. nil off BLU.
+function M.rungFor(level)
+    if level == nil or level < 1 then return nil; end
+    local r = math.floor((level - 1) / 10) * 10 + 1;
+    if r > M.TOP then r = M.TOP; end
+    return r;
+end
+
+-- The top level a rung's band reaches: 41 -> 50, 71 -> 75 (the cap). A build
+-- may hold any spell its band can cast, not only what the rung level can --
+-- points and slots are flat across a band, spell levels are not.
+function M.bandTop(level)
+    if level == nil or level >= M.TOP then return 75; end
+    return level + 9;
+end
+
+-- level nil = the flat build (no level attached), which is what a set is
+-- until someone builds a level under it.
+function M.new(name, level)
     local ids = {};
     for i = 1, 20 do ids[i] = 0; end
-    return { name = name or 'New Set', ids = ids };
+    return { name = name or 'New Set', level = level, ids = ids };
 end
 
 function M.clone(set, name)
-    local c = M.new(name or (set.name .. ' copy'));
+    local c = M.new(name or (set.name .. ' copy'), set.level);
     for i = 1, 20 do c.ids[i] = set.ids[i] or 0; end
     return c;
 end
 
-function M.count(set)
+-- Slots this build may fill: its band's server slot count. A level-less one is
+-- the flat shape, and keeps all 20.
+function M.slotMax(set)
+    if set == nil or set.level == nil then return 20; end
+    return M.slotsAtLevel(set.level);
+end
+
+function M.countIds(ids)
     local n = 0;
-    for i = 1, 20 do if (set.ids[i] or 0) ~= 0 then n = n + 1; end end
+    for i = 1, 20 do if (ids[i] or 0) ~= 0 then n = n + 1; end end
     return n;
+end
+
+function M.count(set)
+    return M.countIds(set.ids);
 end
 
 function M.contains(set, id)
@@ -35,17 +85,32 @@ function M.contains(set, id)
 end
 
 function M.freeSlot(set)
-    for i = 1, 20 do if (set.ids[i] or 0) == 0 then return i; end end
+    for i = 1, M.slotMax(set) do if (set.ids[i] or 0) == 0 then return i; end end
     return nil;
 end
 
-function M.usedPoints(set, book)
+function M.pointsIds(ids, book)
     local n = 0;
     for i = 1, 20 do
-        local s = book.spells[set.ids[i] or 0];
+        local s = book.spells[ids[i] or 0];
         if s and s.setPoints then n = n + s.setPoints; end
     end
     return n;
+end
+
+function M.usedPoints(set, book)
+    return M.pointsIds(set.ids, book);
+end
+
+-- The level a build actually becomes usable at: the highest spell level in it.
+-- nil when it holds nothing the data knows a level for.
+function M.usableFrom(ids, book)
+    local top = nil;
+    for i = 1, 20 do
+        local s = book.spells[ids[i] or 0];
+        if s and s.level and (top == nil or s.level > top) then top = s.level; end
+    end
+    return top;
 end
 
 function M.usedMP(set, book)
@@ -57,7 +122,10 @@ function M.usedMP(set, book)
     return n;
 end
 
--- Can this spell go into the set? Returns ok, reason.
+-- Can this spell go into the build? Returns ok, reason. The three ceilings a
+-- level build adds over a flat set are its band's: the slot count, the budget
+-- the caller passes for that rung, and the highest spell level its band can
+-- cast (a Lv.41 plan reaches 50, so a Lv.62 spell has no business in it).
 function M.canAdd(set, id, book, budgetMax)
     local s = book.spells[id];
     if s == nil then return false, 'unknown spell'; end
@@ -66,7 +134,15 @@ function M.canAdd(set, id, book, budgetMax)
     if not book.learned(id) then return false, 'not learned'; end
     if s.setPoints == nil then return false, 'set cost unknown'; end
     if M.contains(set, id) then return false, 'already in set'; end
-    if M.freeSlot(set) == nil then return false, 'no free slot'; end
+    local top = M.bandTop(set.level);
+    if s.level ~= nil and s.level > top then
+        return false, ('needs Lv.%d - this set stops at %d'):format(s.level, top);
+    end
+    if M.freeSlot(set) == nil then
+        local n = M.slotMax(set);
+        if n < 20 then return false, ('no free slot (Lv.%d has %d)'):format(set.level, n); end
+        return false, 'no free slot';
+    end
     if budgetMax and budgetMax > 0
         and M.usedPoints(set, book) + s.setPoints > budgetMax then
         return false, 'over the point budget';
@@ -128,6 +204,15 @@ function M.slotsAtLevel(level)
     return n;
 end
 
+-- The inverse of slotsAtLevel: the lowest level that HAS slot i. Slots 1-6
+-- come with the job; every pair after that costs ten levels (7-8 at 11,
+-- 19-20 at 71).
+function M.levelForSlot(i)
+    if i == nil or i <= 6 then return 1; end
+    if i > 20 then return nil; end
+    return math.ceil((i - 6) / 2) * 10 + 1;
+end
+
 -- The server's BASE set-point budget for a BLU level, verbatim from
 -- blueutils.cpp GetTotalBlueMagicPoints:
 --     clamp(((level - 1) / 10) * 5 + 10, 0, 55)
@@ -145,6 +230,134 @@ function M.baseCapAtLevel(level)
     if n < 0 then n = 0; end
     if n > 55 then n = 55; end
     return n;
+end
+
+-- ---------------------------------------------------------------------------
+-- A SAVED SET HOLDS ITS FLAT BUILD AND ANY LEVEL BUILDS UNDER IT
+--
+-- One saved name, one build per level band under it -- because a set that
+-- works at 75 cannot work at 40: the points and the slots are different, so
+-- the answer is a different build, not a different name.
+--
+-- `level = nil` addresses the FLAT build everywhere in here -- the set as
+-- bludex has always had it, no level attached. A set with no level builds is
+-- that and nothing else; a level build exists only while it holds spells, and
+-- clearing one removes it again.
+-- ---------------------------------------------------------------------------
+function M.newGroup(name)
+    local ids = {};
+    for i = 1, 20 do ids[i] = 0; end
+    return { name = name or 'New Set', ids = ids, builds = {} };
+end
+
+local function sortBuilds(entry)
+    table.sort(entry.builds, function(a, b) return (a.level or 0) < (b.level or 0); end);
+end
+
+-- Bring a saved entry to the shape above WITHOUT converting anything: a set
+-- saved before levels existed is a flat set, and stays exactly that. All this
+-- does is give it an empty build list and tidy any builds it does have --
+-- levels snapped to real rungs, duplicates and empties dropped -- so a
+-- hand-edited settings file cannot surprise anything downstream.
+-- Idempotent: the UI runs it over every entry it draws.
+function M.normalizeGroup(entry)
+    if type(entry) ~= 'table' then return entry; end
+    local ids = {};
+    for i = 1, 20 do ids[i] = tonumber(entry.ids and entry.ids[i]) or 0; end
+    entry.ids = ids;
+    local seen, keep = {}, {};
+    for _, t in ipairs(entry.builds or {}) do
+        local lvl = M.rungFor(tonumber(t.level) or 0);
+        if lvl ~= nil and type(t.ids) == 'table' and not seen[lvl]
+            and M.countIds(t.ids) > 0 then
+            local tids = {};
+            for i = 1, 20 do tids[i] = tonumber(t.ids[i]) or 0; end
+            seen[lvl] = true;
+            keep[#keep + 1] = { level = lvl, ids = tids };
+        end
+    end
+    entry.builds = keep;
+    sortBuilds(entry);
+    return entry;
+end
+
+function M.groupBuild(entry, level)
+    for _, t in ipairs((entry and entry.builds) or {}) do
+        if t.level == level then return t; end
+    end
+    return nil;
+end
+
+-- A build's ids, always 20 long -- level nil is the flat build, and an
+-- unbuilt rung answers all zeros rather than nil.
+function M.groupIds(entry, level)
+    local src = (level == nil) and entry or M.groupBuild(entry, level);
+    local ids = {};
+    for i = 1, 20 do ids[i] = (src and src.ids and src.ids[i]) or 0; end
+    return ids;
+end
+
+-- Write a build back. An all-empty LEVEL build is REMOVED rather than stored:
+-- that is how a rung goes back to being unbuilt. The flat build is always
+-- there, empty or not -- it is the set itself.
+function M.groupPut(entry, level, ids)
+    local copy, any = {}, false;
+    for i = 1, 20 do
+        copy[i] = ids[i] or 0;
+        if copy[i] ~= 0 then any = true; end
+    end
+    if level == nil then entry.ids = copy; return; end
+    entry.builds = entry.builds or {};
+    for i, t in ipairs(entry.builds) do
+        if t.level == level then
+            if any then t.ids = copy; else table.remove(entry.builds, i); end
+            return;
+        end
+    end
+    if any then
+        entry.builds[#entry.builds + 1] = { level = level, ids = copy };
+        sortBuilds(entry);
+    end
+end
+
+-- The rungs that hold a build, ascending (the flat build is not one of them).
+function M.groupLevels(entry)
+    local out = {};
+    for _, t in ipairs((entry and entry.builds) or {}) do out[#out + 1] = t.level; end
+    table.sort(out);
+    return out;
+end
+
+-- The highest built rung, or nil when only the flat build exists.
+function M.groupTop(entry)
+    local lv = M.groupLevels(entry);
+    return lv[#lv];
+end
+
+-- The build to use AT a level: that level's own rung when it is built, else
+-- the highest built rung below it (a smaller build always fits). nil = the
+-- flat build, which is the answer whenever no rung suits -- including for a
+-- set that has never had a level build at all.
+function M.groupPick(entry, level)
+    local rung = M.rungFor(level);
+    if rung == nil then return nil; end
+    local best = nil;
+    for _, t in ipairs((entry and entry.builds) or {}) do
+        if t.level <= rung and (best == nil or t.level > best) then best = t.level; end
+    end
+    if best == nil and M.countIds(entry.ids or {}) == 0 then
+        -- nothing flat to fall back to: the lowest build there is beats none
+        for _, t in ipairs((entry and entry.builds) or {}) do
+            if best == nil or t.level < best then best = t.level; end
+        end
+    end
+    return best;
+end
+
+-- One build of a set as an editable draft (the shape every computation and
+-- the whole Sets tab takes).
+function M.draft(entry, level)
+    return { name = entry.name, level = level, ids = M.groupIds(entry, level) };
 end
 
 -- 'DUAL_WIELD' -> 'Dual Wield', 'MND' stays 'MND' (<=4 chars = stat acronym)

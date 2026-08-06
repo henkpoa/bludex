@@ -33,6 +33,7 @@ local function freshState(sets)
         scWeapon = { value = 'Sword' },
         editingSet = sets.new('Set 1'),
         activeSet = nil,
+        activeLevel = nil,             -- the level build being edited (nil = flat)
         addNote = nil,
         applyNote = nil,
         nameBuf = { '' },
@@ -68,14 +69,24 @@ function M.init(deps)
         deps.cfg.capMeritPoints  = deps.blu.meritPts or -1;
         if deps.save then deps.save(); end
     end;
-    -- restore the last active saved set (matched by name -- indices shift
-    -- when sets are deleted), exactly as if it had been clicked
+    -- every saved set gets tidied to the current shape here, once, before
+    -- anything draws or computes. Nothing is converted: a set with no level
+    -- builds is the flat set it always was and stays one.
+    for _, entry in ipairs(deps.cfg.sets) do deps.sets.normalizeGroup(entry); end
+    -- restore the last active saved set (matched by name -- indices shift when
+    -- sets are deleted) AND which of its builds was being edited, exactly as
+    -- if both had been clicked. 0 (or a level build since deleted) = the flat
+    -- build, which every set has.
     local want = deps.cfg.activeSetName;
     if want ~= nil and want ~= '' then
         for i, entry in ipairs(deps.cfg.sets) do
             if entry.name == want then
+                local saved = tonumber(deps.cfg.activeSetLevel) or 0;
+                local lvl = (saved > 0) and deps.sets.rungFor(saved) or nil;
+                if lvl ~= nil and deps.sets.groupBuild(entry, lvl) == nil then lvl = nil; end
                 M.state.activeSet = i;
-                M.state.editingSet = deps.sets.clone(entry, entry.name);
+                M.state.activeLevel = lvl;
+                M.state.editingSet = deps.sets.draft(entry, lvl);
                 break;
             end
         end
@@ -95,17 +106,31 @@ function M.isOpen()
     return M.state and M.state.open[1] or false;
 end
 
-local function budgetMax(deps)
-    -- blu.budget prefers the client's own number while it is trustworthy and
-    -- falls back to the measured model for the level we are actually at --
-    -- the client only recomputes its cap when the native Set Spells menu
-    -- opens, so after a level change its number describes the level we left.
-    local max = deps.blu.budget();
-    if max then return max; end
-    if deps.cfg.budgetOverride and deps.cfg.budgetOverride > 0 then
-        return deps.cfg.budgetOverride;
+-- THE BUDGET FOR ONE RUNG, and where the number came from. A build is planned
+-- at ITS OWN rung, not at the level you happen to be standing at -- that is
+-- what makes a Lv.41 build a Lv.41 plan. Our model answers for every rung once
+-- this character's learned bonus is known, which is exactly what measuring it
+-- was for; the client's own number only ever describes the level it was
+-- computed at, so it is allowed to speak for that rung and no other.
+--   'model' ours, right at every rung        'live' the client's / the override
+--   'base'  the server's base rule alone: a floor, the bonus not measured yet
+local function rungBudget(deps, level)
+    local cap, src = deps.blu.rungCap(level);
+    if src == 'model' then return cap, 'model'; end
+    local here = deps.sets.rungFor(deps.blu.effectiveLevel());
+    if level == nil or here == nil or level == here then
+        local live = deps.blu.budget();
+        if live then return live, 'live'; end
+        local ov = deps.cfg.budgetOverride;
+        if ov and ov > 0 then return ov, 'live'; end
     end
-    return nil;
+    return cap, src;                   -- 'base', or nil,nil with no rung at all
+end
+
+local function budgetMax(deps)
+    local st = M.state;
+    local lvl = (st and st.editingSet) and st.editingSet.level or nil;
+    return (rungBudget(deps, lvl));
 end
 
 local TABS = { 'Codex', 'Sets', 'Traits', 'Settings' };
@@ -187,6 +212,10 @@ local function tabCtx(im, st, deps, embedded)
         -- the codex then routes Spell Info there instead of its in-panel pane
         floatWindow = deps.floatWindow == true,
         budgetMax = function() return budgetMax(deps); end,
+        -- the same answer for ANY rung, so the saved-set tree and the editor
+        -- meters can never disagree about what a level is worth
+        rungBudget = function(level) return rungBudget(deps, level); end,
+        slotMax = function() return deps.sets.slotMax(st.editingSet); end,
     };
 end
 
@@ -217,6 +246,18 @@ local function renderBody(im, st, deps, embedded)
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
     end
     kit.ctext(im, kit.COL.head, 'BLUDEX');
+    -- WHICH RUNG is being edited, next to the numbers that come from it: the
+    -- meters below are that rung's ceilings, not the level you are standing at
+    local elvl = st.editingSet.level;
+    if elvl ~= nil then
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        kit.ctext(im, kit.COL.accent, ('  Lv.%d'):format(elvl));
+        kit.tip(im, ('You are editing the Lv.%d build of "%s".\n'
+            .. 'It covers levels %d-%d -- the game gives the same slots and\n'
+            .. 'the same points anywhere in that band.\n\n'
+            .. 'Pick another level under the set name in the Sets tab.'):format(
+            elvl, st.editingSet.name, elvl, deps.sets.bandTop(elvl)));
+    end
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     -- the header meters are the EDITING set against the budget -- the
     -- planning numbers needed while adding from the codex. Live-vs-
@@ -224,10 +265,10 @@ local function renderBody(im, st, deps, embedded)
     local max = budgetMax(deps);
     kit.meter(im, '   Set:', deps.sets.usedPoints(st.editingSet, deps.book), max, ' pts');
     kit.tip(im, max ~= nil
-        and 'Points used by the set you are editing /\nyour total from the game client (CatsEyeXI bonuses included).'
+        and 'Points used by the set you are editing /\nthe total at that set\'s level (CatsEyeXI bonuses included).'
         or 'Points used by the set you are editing.\nThe total appears when you are on BLU (or set budgetOverride).');
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    kit.meter(im, '   Slots:', deps.sets.count(st.editingSet), 20, '');
+    kit.meter(im, '   Slots:', deps.sets.count(st.editingSet), deps.sets.slotMax(st.editingSet), '');
     -- the level-sync line (Henrik 2026-08-06): the meters above stay the
     -- PLAN (the editing set at full level); when the effective BLU level is
     -- under the 75 cap this shows what the client holds RIGHT NOW -- the

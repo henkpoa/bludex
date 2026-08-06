@@ -2,6 +2,8 @@
     bludex/lib/blusetsimport.lua -- one-way import of `blusets` spell lists
     (config/addons/blusets/<name>.txt -- one spell name per line, blank line
     = empty slot) into bludex saved sets { name, ids = {20 real ids} }.
+    blusets has no notion of level, so an imported list lands as a FLAT set --
+    level builds are something you add afterwards, under the name.
 
     parse() is pure given the book; everything touching AshitaCore or the
     filesystem is guarded, so the module loads headless (smoke test).
@@ -93,7 +95,7 @@ function M.importAll(cfg, book, only)
                 local lines = readLines(f.path);
                 if lines ~= nil then
                     local ids, unknown = M.parse(lines, book);
-                    table.insert(cfg.sets, { name = f.name, ids = ids });
+                    table.insert(cfg.sets, { name = f.name, ids = ids, builds = {} });
                     have[book.norm(f.name)] = true;
                     res.imported[#res.imported + 1] = f.name;
                     for _, u in ipairs(unknown) do

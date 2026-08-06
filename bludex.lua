@@ -8,7 +8,7 @@
 
 addon.name    = 'bludex';
 addon.author  = 'Mindie';
-addon.version = '1.0.1';
+addon.version = '1.1.0';
 addon.desc    = 'Blue Magic codex + visual set planner (CatsEyeXI, level-75 cap).';
 addon.link    = 'https://github.com/henkpoa/bludex';
 
@@ -44,6 +44,8 @@ blu.mode  = cfg.applyMode or 'safe';
 settings.register('settings', 'bdx_settings_update', function(s)
     if s ~= nil then
         cfg = s;
+        -- a settings file written before level builds existed arrives here too
+        for _, entry in ipairs(cfg.sets or {}) do sets.normalizeGroup(entry); end
         host.deps.cfg = cfg;
         blu.delay = cfg.applyDelay or 1.1;
         blu.mode  = cfg.applyMode or 'safe';
@@ -76,7 +78,7 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
         msg('/bludex (or /bdx) - toggle the window.');
         msg('/bludex list - list saved sets.');
         msg('/bludex import [name] - import blusets spell lists as saved sets.');
-        msg('/bludex apply <name> - apply a saved set (only the changed slots).');
+        msg('/bludex apply <name> [level] - apply a saved set (only the changed slots); without a level, the build for the level you are at.');
         msg('/bludex reset - unset every spell.');
         msg('/bludex refresh - re-request job data (wakes a stuck points read).');
         msg('/bludex delay <0.2-5> - seconds between set-spell packets.');
@@ -176,9 +178,13 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
             return;
         end
         for _, entry in ipairs(cfg.sets) do
-            local n = 0;
-            for i = 1, 20 do if (entry.ids[i] or 0) ~= 0 then n = n + 1; end end
-            msg(('  %s (%d spells)'):format(entry.name, n));
+            sets.normalizeGroup(entry);
+            local parts = { ('%d spells'):format(sets.countIds(entry.ids)) };
+            for _, lvl in ipairs(sets.groupLevels(entry)) do
+                parts[#parts + 1] = ('Lv.%d: %d'):format(
+                    lvl, sets.countIds(sets.groupIds(entry, lvl)));
+            end
+            msg(('  %s (%s)'):format(entry.name, table.concat(parts, ', ')));
         end
         return;
     end
@@ -196,16 +202,36 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
         return;
     end
 
+    -- /bludex apply <name> [level] -- WHICH BUILD: the named level when you
+    -- give one; otherwise the build for the level you are standing at (its own
+    -- band if you made one, else the highest band below it -- a smaller build
+    -- always fits), and the set's flat build when no band suits. A set with no
+    -- level builds behaves exactly as it always did.
     if args[2]:any('apply') and #args >= 3 then
-        local entry = findSet(table.concat(args, ' ', 3));
+        local rest = table.concat(args, ' ', 3);
+        local want, asked = nil, rest:match('%s(%d+)$');
+        if asked ~= nil then
+            want = sets.rungFor(tonumber(asked));
+            rest = rest:gsub('%s%d+$', '');
+        end
+        local entry = findSet(rest);
         if entry == nil then
             msg('No saved set by that name. /bludex list shows them.');
             return;
         end
-        if blu.applyDiff(entry.ids, book) then
-            local snap = {};
-            for i = 1, 20 do snap[i] = entry.ids[i] or 0; end
-            cfg.lastApplied = { ids = snap };
+        sets.normalizeGroup(entry);
+        local level = want or sets.groupPick(entry, blu.effectiveLevel());
+        local ids = sets.groupIds(entry, level);
+        if sets.countIds(ids) == 0 then
+            msg(('"%s" has nothing in its %s build. /bludex list shows what it has.'):format(
+                entry.name, (level == nil) and 'flat' or ('Lv.' .. level)));
+            return;
+        end
+        if level ~= nil then
+            msg(('Applying %s, the Lv.%d build.'):format(entry.name, level));
+        end
+        if blu.applyDiff(ids, book) then
+            cfg.lastApplied = { ids = ids };
             saveSettings();
         end
         return;

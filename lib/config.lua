@@ -20,13 +20,17 @@ end
 -- mutates what it is given.
 function M.defaults()
     return TT{
-        sets = TT{ },             -- { { name = s, ids = {20 real ids} }, ... }
+        -- a saved set is its flat build plus any LEVEL builds made under it:
+        --   { { name = s, ids = {20 real ids}, tiers = { {level, ids} } }, .. }
+        -- a set with no level builds is just the flat set it always was
+        sets = TT{ },
         budgetOverride = 0,       -- shown when the live budget is unavailable
         applyDelay = 1.1,         -- seconds between set-spell packets
         applyMode = 'safe',       -- 'safe' (client-paced) | 'fast' (injected)
         autoRestore = false,      -- re-add spells stripped by level changes
         lastApplied = TT{ },      -- { ids = {20} } -- the auto-restore target
         activeSetName = '',       -- last selected saved set, reloaded at startup
+        activeSetLevel = 0,       -- and which build under it (0 = the flat one)
         codexDensity = 'normal',  -- codex list size: 'big'|'medium'|'normal'|'compact'
         traitsDensity = 'normal', -- traits spell-row size, same four choices
         setsLayout = 'grid',      -- Sets slots as 'grid' (5x4 cells) | 'list' (named rows)
