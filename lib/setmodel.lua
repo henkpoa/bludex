@@ -268,6 +268,7 @@ function M.normalizeGroup(entry)
     local ids = {};
     for i = 1, 20 do ids[i] = tonumber(entry.ids and entry.ids[i]) or 0; end
     entry.ids = ids;
+    if not M.RULE_KEYS[entry.rule] then entry.rule = nil; end   -- back to derived
     local seen, keep = {}, {};
     for _, t in ipairs(entry.builds or {}) do
         local lvl = M.rungFor(tonumber(t.level) or 0);
@@ -334,6 +335,30 @@ function M.groupRemove(entry, level)
         if t.level == level then table.remove(entry.builds, i); return true; end
     end
     return false;
+end
+
+-- ---------------------------------------------------------------------------
+-- THE LEVEL-CHANGE RULE BELONGS TO THE SET (Henrik 2026-08-07), not to the
+-- addon and not to a level build: "Solo follows my level" is a fact about
+-- Solo. The set you last APPLIED is the one whose rule the engine obeys.
+--
+-- Unset, the rule is DERIVED from the shape of the set -- restore while it is
+-- flat, lvl-set-switch once it has levels to switch between -- so the default
+-- follows what you build without anything being flipped behind your back.
+-- Picking one stores it, and a stored choice stands.
+-- ---------------------------------------------------------------------------
+M.RULE_KEYS = { restore = true, switch = true, manual = true };
+
+function M.ruleOf(entry)
+    if type(entry) ~= 'table' then return 'restore'; end
+    if M.RULE_KEYS[entry.rule] then return entry.rule; end
+    return (#(entry.builds or {}) > 0) and 'switch' or 'restore';
+end
+
+function M.setRule(entry, rule)
+    if type(entry) ~= 'table' or not M.RULE_KEYS[rule] then return false; end
+    entry.rule = rule;
+    return true;
 end
 
 -- The bands not yet added, ascending -- what the Add list offers.

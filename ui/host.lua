@@ -149,31 +149,55 @@ local TABS = { 'Codex', 'Sets', 'Traits', 'Settings' };
 -- The standalone render calls this itself; an EMBEDDING host (dlac's BLU
 -- helper) calls it directly every frame, even while its panel is hidden.
 
+-- THE SET BEING FOLLOWED: the one last APPLIED, by name. Never what happens
+-- to be selected in the UI -- the rule is about what you are wearing.
+local function followedSet(deps)
+    local name = deps.cfg.lastAppliedSet;
+    if name == nil or name == '' then return nil; end
+    for _, e in ipairs(deps.cfg.sets) do
+        if e.name == name then return deps.sets.normalizeGroup(e); end
+    end
+    return nil;
+end
+
+-- The rule THAT SET carries (Henrik 2026-08-07: the rule belongs to the set).
+-- No set to follow means nothing runs, whatever any other set says.
+local function activeRule(deps)
+    local entry = followedSet(deps);
+    if entry == nil then return 'manual', nil; end
+    return deps.sets.ruleOf(entry), entry;
+end
+
+-- The band's OWN build, when it has one worth wearing. nil means this level
+-- has no build of its own -- and then Lvl Set Switch behaves as Restore does,
+-- on the set's normal build (Henrik's wording: "will equip normal set with
+-- restore behaviour, unless a level appropriate set has been defined").
+local function bandBuild(deps, entry)
+    local rung = deps.sets.rungFor(deps.blu.effectiveLevel());
+    if entry == nil or rung == nil then return nil; end
+    local b = deps.sets.groupBuild(entry, rung);
+    if b == nil or deps.sets.countIds(b.ids) == 0 then return nil; end
+    return b;
+end
+
 -- THE BAND SWITCH (Henrik 2026-08-06, from the field: "I walked out now, and
 -- I still have my level 31 set equipped"). A level build serves ITS band and
--- no other, so crossing a band boundary means the set you are wearing is the
--- wrong build of itself. Re-apply the right one -- the new band's own build
--- if it exists, otherwise the set's flat build, which is what a flat set is
--- for. Only the LAST APPLIED set is followed, and only by name: nothing is
--- guessed from what happens to be selected in the UI.
+-- no other, so crossing into a band that HAS one means the set you are
+-- wearing is the wrong build of itself: equip that band's build outright.
 --
--- Deliberately quiet when it has nothing to do -- a band change that does not
--- move a spell must not cost the game's 60s Blue Magic cast lock, so the
--- diff is checked here rather than left to applyDiff's chat line.
+-- A band with no build of its own is not this rule's business -- the restore
+-- path below covers it, adds-only, exactly as a flat set has always behaved.
+--
+-- Deliberately quiet when it has nothing to do: a band change that does not
+-- move a spell must not cost the game's 60s Blue Magic cast lock, so the diff
+-- is checked here rather than left to applyDiff's chat line.
 local function bandSwitch(deps)
-    local name = deps.cfg.lastAppliedSet;
-    if name == nil or name == '' then return; end
     if deps.blu.applying or not deps.blu.canApply() then return; end
-    local entry = nil;
-    for _, e in ipairs(deps.cfg.sets) do
-        if e.name == name then entry = e; break; end
-    end
-    if entry == nil then return; end
-    deps.sets.normalizeGroup(entry);
-    local lvl = deps.blu.effectiveLevel();
-    local pick = deps.sets.groupPick(entry, lvl);
-    local ids = deps.sets.groupIds(entry, pick);
-    if deps.sets.countIds(ids) == 0 then return; end
+    local rule, entry = activeRule(deps);
+    if rule ~= 'switch' then return; end
+    local build = bandBuild(deps, entry);
+    if build == nil then return; end
+    local ids = build.ids;
     local live = deps.blu.currentSet();
     if #live ~= 20 then return; end
     local T = deps.sets.sortedLayout(ids, deps.book);
@@ -182,15 +206,34 @@ local function bandSwitch(deps)
         if (live[i] or 0) ~= T[i] then same = false; break; end
     end
     if same then return; end
-    deps.blu.say(('Level %s: switching "%s" to %s.'):format(
-        tostring(lvl), entry.name,
-        (pick == nil) and 'its flat build' or ('its Lv.%d build'):format(pick)));
+    deps.blu.say(('Level %s: equipping the Lv.%d set of "%s".'):format(
+        tostring(deps.blu.effectiveLevel()), build.level, entry.name));
     if deps.blu.applyDiff(ids, deps.book) then
         local snap = {};
         for i = 1, 20 do snap[i] = ids[i] or 0; end
         deps.cfg.lastApplied = { ids = snap };
         if deps.save then deps.save(); end
     end
+end
+
+-- THE RESTORE PATH: put back what a level change stripped, adds-only, never
+-- removing anything. Under Lvl Set Switch it works from the followed set --
+-- its build for this band if there is one, otherwise its normal build --
+-- rather than from the raw last-applied snapshot, which may be some other
+-- band's build entirely.
+local function restoreNow(deps)
+    local rule, entry = activeRule(deps);
+    if rule == 'manual' then return; end
+    local ids = nil;
+    if rule == 'switch' and entry ~= nil then
+        ids = deps.sets.groupIds(entry, deps.sets.groupPick(entry, deps.blu.effectiveLevel()));
+        if deps.sets.countIds(ids) == 0 then ids = nil; end
+    end
+    if ids == nil then
+        local last = deps.cfg.lastApplied;
+        ids = (last ~= nil) and last.ids or nil;
+    end
+    if ids ~= nil then deps.blu.restoreMissing(ids, deps.book); end
 end
 
 function M.tick()
@@ -216,8 +259,9 @@ function M.tick()
         elseif rung ~= M.lastRung then
             M.lastRung = rung;
             -- one delayed check: the client's structs are mid-flight through a
-            -- sync transition, and the live set cannot be read honestly yet
-            if deps.cfg.autoSwitch == true then M.switchCheck = os.clock() + 3.0; end
+            -- sync transition, and the live set cannot be read honestly yet.
+            -- The rule is re-read when it fires, not latched here.
+            M.switchCheck = os.clock() + 3.0;
         end
     end
     if M.switchCheck ~= nil and os.clock() >= M.switchCheck then
@@ -235,9 +279,10 @@ function M.tick()
     end
     if M.downCheck ~= nil and os.clock() >= M.downCheck then
         M.downCheck = nil;
-        -- under Switch the set is about to be replaced outright, and its own
-        -- line says so: the what-the-sync-disabled report would be noise
-        if deps.cfg.autoSwitch ~= true then
+        -- when a band build is about to be equipped outright its own line says
+        -- so, and the what-the-sync-disabled report would be noise on top
+        local rule, entry = activeRule(deps);
+        if not (rule == 'switch' and bandBuild(deps, entry) ~= nil) then
             deps.blu.reportLevelDown(deps.book);
         end
     end
@@ -246,12 +291,7 @@ function M.tick()
         if due ~= nil and os.clock() >= due then
             table.remove(M.restoreChecks, 1);
             if #M.restoreChecks == 0 then M.restoreChecks = nil; end
-            if deps.cfg.autoRestore == true and deps.cfg.autoSwitch ~= true then
-                local last = deps.cfg.lastApplied;
-                if last ~= nil and last.ids ~= nil then
-                    deps.blu.restoreMissing(last.ids, deps.book);
-                end
-            end
+            pcall(restoreNow, deps);
         end
     end
 end
@@ -278,6 +318,12 @@ end
 
 -- the per-frame ctx handed to every tab (and to the detail float)
 local function tabCtx(im, st, deps, embedded)
+    -- the tooltip dwell belongs to the kit (every tooltip in Bludex goes
+    -- through it) but the setting lives in cfg -- carried across here, at the
+    -- one point every rendering flavor passes through. NOT in tick(): an
+    -- embedding host may gate its beat (dlac's rides an activity predicate),
+    -- and a tooltip can be hovered whether or not the beat is running.
+    kit.hoverDelay = tonumber(deps.cfg.tooltipDelay) or 0.5;
     return {
         im = im, book = deps.book, blu = deps.blu, sets = deps.sets,
         cfg = deps.cfg, save = deps.save, state = st,

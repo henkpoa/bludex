@@ -233,6 +233,24 @@ check(sets.countIds(sets.copyInto(wide, nil, book)) == 20,
 check(sets.copyInto({}, 41, book) ~= nil and sets.countIds(sets.copyInto({}, 41, book)) == 0,
     'copying nothing is not an error');
 
+-- THE LEVEL-CHANGE RULE BELONGS TO THE SET (Henrik 2026-08-07), and unset it
+-- is DERIVED from the set's shape -- so the default follows what you build
+-- rather than being flipped behind your back. A stored choice stands.
+local r = sets.newGroup('Rules');
+check(sets.ruleOf(r) == 'restore', 'a flat set restores');
+sets.groupAdd(r, 41);
+check(sets.ruleOf(r) == 'switch', 'give it a level and it switches between them');
+check(sets.setRule(r, 'manual') and sets.ruleOf(r) == 'manual', 'a stored choice wins');
+sets.groupAdd(r, 71);
+check(sets.ruleOf(r) == 'manual', 'and keeps winning as the set grows');
+check(not sets.setRule(r, 'nonsense') and sets.ruleOf(r) == 'manual',
+    'an unknown rule is refused, not stored');
+r.rule = 'nonsense';                           -- as if hand-edited into the file
+sets.normalizeGroup(r);
+check(r.rule == nil and sets.ruleOf(r) == 'switch',
+    'and one that got in anyway is dropped back to derived');
+check(sets.ruleOf(nil) == 'restore', 'no set, no rule to run');
+
 -- NOTHING IS MIGRATED (Henrik 2026-08-06): a set saved before level builds
 -- existed is a flat set and stays one.
 local legacy = sets.normalizeGroup({ name = 'Old', ids = { 623, 0, 513 } });
@@ -629,12 +647,13 @@ check(#sctx.cfg.sets[1].builds == 0 and sets.countIds(sctx.cfg.sets[1].ids) == 2
     'Remove drops the band, flat build untouched');
 check(saves > 0, 'every one of those persisted');
 
-print('smoke: the level-change Switch rule');
+print('smoke: the level-change rule');
 -- The one rule that sends packets on its own, so it is driven end to end here
 -- with a stub client. What it must get right: fire only when the level crosses
--- into a different BAND, apply that band's build (or the flat one), and stay
--- silent when nothing would move -- a band change that costs a 60s cast lock
--- for no reason is the failure that matters.
+-- into a band THAT HAS ITS OWN BUILD, equip that, and stay silent otherwise --
+-- a band change that costs a 60s cast lock for no reason is the failure that
+-- matters. Everywhere else Lvl Set Switch behaves as Restore does, adds-only,
+-- which is the restoreMissing path and not this one.
 local host = require('bludex\\ui\\host');
 local fake;                      -- declared first: the stubs close over it
 fake = {
@@ -646,10 +665,13 @@ fake = {
     currentSet = function() return fake.live; end,
     say = function(s) fake.says[#fake.says + 1] = s; end,
     applyDiff = function(ids) fake.applied = ids; return true; end,
+    -- the adds-only path Restore (and Lvl Set Switch, off a band build) uses
+    restoreMissing = function(ids) fake.restored = ids; return true; end,
+    reportLevelDown = function() end,
 };
 for i = 1, 20 do fake.live[i] = 0; end
 local fcfg = {
-    sets = {}, autoSwitch = true, autoRestore = false,
+    sets = {},
     lastApplied = {}, lastAppliedSet = 'Solo',
     capModelVer = 3, capLearnedBonus = 24, capMeritPoints = 10,
     activeSetName = '', activeSetLevel = 0,
@@ -671,34 +693,43 @@ fake.level = 40;                                   -- sync down: 71 -> 31 band
 tickNow();
 check(fake.applied ~= nil and fake.applied[1] == 549,
     'crossing into Lv.31-40 applies that band\'s build');
-check(#fake.says == 1 and fake.says[1]:find('Lv.31 build') ~= nil,
-    'and says which build, by name');
+check(#fake.says == 1 and fake.says[1]:find('Lv.31 set of "Solo"', 1, true) ~= nil,
+    'and says which build it equipped, by name');
 fake.live[1] = 549;                                -- the game now holds it
 fake.applied = nil;
-fake.level = 45;                                   -- still the Lv.41 band? no: 41
+fake.level = 45;                                   -- up into the Lv.41 band
 tickNow();
-check(fake.applied ~= nil, 'moving up into Lv.41-50 switches again -- to the flat build');
-check(fake.applied[1] == 623 and fake.applied[2] == 513,
-    'because no Lv.41 build exists, and the flat set is the backup');
+check(fake.applied == nil,
+    'a band with no build of its own equips nothing outright...');
+check(sets.groupPick(fcfg.sets[1], 45) == nil,
+    '...it is the flat set that serves there, restore-style');
 fake.applied = nil;
 fake.level = 48;                                   -- same band
 tickNow();
 check(fake.applied == nil and host.switchCheck == nil,
     'moving inside a band is not a band change -- nothing is scheduled');
--- already wearing the right build: no packets, no cast lock
-fake.live = sets.sortedLayout(flat, book);
-fake.level = 75;
-tickNow();
-check(fake.applied == nil, 'and a band change that would move nothing sends nothing');
--- disarmed, it never fires
-fcfg.autoSwitch = false;
+-- back into the band that HAS a build, while already wearing it: no packets
+fake.live = sets.sortedLayout(low, book);
 fake.level = 40;
 tickNow();
-check(fake.applied == nil, 'Manual/Restore never triggers it');
+check(fake.applied == nil, 'and a band change that would move nothing sends nothing');
+-- the rule lives on the SET, and Manual means Manual
+fcfg.sets[1].rule = 'manual';
+fake.live = sets.sortedLayout(flat, book);
+fake.level = 75; tickNow();
+fake.level = 40; tickNow();
+check(fake.applied == nil, 'Manual on the set never triggers it');
+fcfg.sets[1].rule = 'restore';
+fake.level = 75; tickNow();
+fake.level = 40; tickNow();
+check(fake.applied == nil, 'nor does Restore -- it never swaps builds');
+fcfg.sets[1].rule = nil;                           -- back to derived: has levels
+check(sets.ruleOf(fcfg.sets[1]) == 'switch',
+    'a set with levels derives Lvl Set Switch');
 -- and it follows nothing it was not told about
-fcfg.autoSwitch, fcfg.lastAppliedSet = true, '';
-fake.level = 75;
-tickNow();
+fcfg.lastAppliedSet = '';
+fake.level = 75; tickNow();
+fake.level = 40; tickNow();
 check(fake.applied == nil, 'with no last-applied set there is nothing to follow');
 
 print('smoke: dlac module adapter');
@@ -707,7 +738,19 @@ check(dm.api == 2 and type(dm.panel) == 'function' and type(dm.init) == 'functio
     and type(dm.window) == 'function' and type(dm.open) == 'function',
     'contract shape (api 2, panel, init, window, open)');
 check(dm.config and dm.config.keys and dm.config.keys.sets == 'string'
-    and dm.config.defaults.autoRestore == false, 'config declaration');
+    and dm.config.defaults.lastAppliedSet == '', 'config declaration');
+-- the two flavors keep ONE settings shape: a key the library defaults but
+-- this adapter never declared is a setting that silently forgets itself in
+-- dlac. (`sets` and `lastApplied` are declared as the codec's strings.)
+local libdef = require('bludex\\lib\\config').defaults();
+local undeclared = nil;
+for k in pairs(libdef) do
+    if dm.config.keys[k] == nil then undeclared = k; break; end
+end
+check(undeclared == nil, 'every library setting is declared here too'
+    .. (undeclared and (' -- missing ' .. undeclared) or ''));
+check(dm.config.defaults.tooltipDelay == libdef.tooltipDelay,
+    'and the hover delay defaults the same in both flavors');
 local ids = {}; for i = 1, 20 do ids[i] = 0; end
 ids[1] = 623; ids[7] = 700;
 local rt = dm._codec.decodeIds(dm._codec.encodeIds(ids));
@@ -741,5 +784,59 @@ check(tl[1].ids[7] == 700 and #tl[2].builds == 0,
 local old = dm._codec.decodeSets('Solo\t' .. dm._codec.encodeIds(ids));
 check(#old == 1 and #old[1].builds == 0 and old[1].ids[7] == 700,
     'a pre-level settings string reads back as one flat set');
+-- the set's level-change rule rides as its own line, and only when stored
+local rw = dm._codec.decodeSets(dm._codec.encodeSets({
+    { name = 'A', ids = ids, builds = {}, rule = 'manual' },
+    { name = 'B', ids = ids, builds = {} },
+}));
+check(rw[1].rule == 'manual' and rw[2].rule == nil,
+    'a picked rule round-trips; a derived one writes nothing');
+check(dm._codec.encodeSets({ { name = 'B', ids = ids, builds = {} } }):find('rule') == nil,
+    'so a set nobody configured stays exactly one line');
+
+print('smoke: the hover gate');
+-- The tooltip dwell (Settings: hover tooltip delay). Pure timing, so it runs
+-- here; the busy-waits are the only honest way to watch a clock tick.
+local kit = require('bludex\\ui\\kit');
+kit.hoverDelay = 0;
+check(kit.hoverReady('a') == true, 'zero delay shows a tooltip at once');
+kit.hoverDelay = 5;
+check(kit.hoverReady('b') == false, 'a delay holds it back');
+check(kit.hoverReady('b') == false, 'and keeps holding while the cursor rests');
+kit.hoverDelay = 0.02;
+kit.hoverReady('c');                                   -- the dwell starts here
+local ready, t0 = false, os.clock();
+while os.clock() - t0 < 0.06 do ready = kit.hoverReady('c'); end
+check(ready == true, 'and shows once the dwell is served');
+check(kit.hoverReady('d') == false, 'moving to another item restarts it');
+kit.hoverReady('c');
+t0 = os.clock();
+while os.clock() - t0 < 0.30 do end                    -- longer than HOVER_GAP
+check(kit.hoverReady('c') == false, 'and so does coming back after leaving');
+
+print('smoke: the spell tooltip');
+-- No textures headless, so tooltip takes its plain-text path -- which is
+-- exactly the text, in order, that the rich flavor draws line by line.
+local spellsui = require('bludex\\ui\\spellsui');
+local tipText = nil;
+local tctx = {
+    im = {
+        IsItemHovered = function() return true; end,
+        SetTooltip = function(s) tipText = s; end,
+    },
+    book = book, sets = sets,
+    blu = { onBlu = function() return false; end },
+    state = { editingSet = sets.new('T') },
+};
+kit.hoverDelay = 0;
+spellsui.tooltip(tctx, 719, true);                     -- Searing Tempest
+check(tipText ~= nil and tipText:find('116 MP', 1, true) ~= nil,
+    'it carries the MP cost');
+check(tipText:find('Set: 8 pts', 1, true) ~= nil, 'beside the set cost');
+kit.hoverDelay = 5;
+tipText = nil;
+spellsui.tooltip(tctx, 719, true);
+check(tipText == nil, 'and waits out the hover delay like every other tooltip');
+kit.hoverDelay = 0.5;
 
 print('smoke: all green');

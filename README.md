@@ -10,8 +10,9 @@ Bludex combines what `blucheck` and `blusets` did — and goes further:
   CatsEyeXI additions) as icon+name rows in up to three columns. Filter by name,
   category, element, spell type, trait, and learned/missing; sort by name, level, or
   type; pick your view density (64px / 32px / 24px icons, or a compact text-only list).
-  Hover any spell for a rich tooltip — artwork, stats, set cost, its trait and your
-  set's progress toward the next trait rank. Click for the full Spell Info window:
+  Hover any spell for a rich tooltip — artwork, MP cost, stats, set cost, its trait and
+  your set's progress toward the next trait rank; tooltips wait for the cursor to rest
+  half a second (Settings → hover tooltip delay). Click for the full Spell Info window:
   cast/recast, skillchain properties, magic-burst windows, stat bonuses, and where to
   learn it.
 - **Set planner** — 20 slots as a spatial grid or a named list, a live set-point budget
@@ -39,7 +40,7 @@ Bludex combines what `blucheck` and `blusets` did — and goes further:
 
 Every castable spell, filterable and sortable, at your chosen density (Medium 32px
 here). **Green names are in your current set**, dim names aren't learned yet. Hovering
-shows the tooltip: artwork, category/level/kind, set cost, the spell's stat bonuses,
+shows the tooltip: artwork, category/level/kind, MP cost, set cost, the spell's stat bonuses,
 its trait — and your set's live progress toward that trait's next rank (`0 / 2 - for
 rank 1`). Right-click adds or removes without opening anything. The header is always
 in view: the editing set's points and slots, and **Save / Apply / Revert** — Apply
@@ -101,10 +102,17 @@ level-31 build to 75. To make a band from one you already have, click it and pre
 first, only what that band can cast, only as many as its slots hold — and it will
 land over the point budget, which is yours to trim.
 
-`Level change: Switch` arms that as a rule: cross into a different band and the set
-you last applied is re-applied as the right build for where you now are. Nothing is
-sent when the build already matches, and `/bludex apply <name>` picks the same build
-by hand, so one macro serves every sync.
+**Level change** — under the name box, because it belongs to the set, not to any one
+of its levels. The set you last *applied* is the one whose rule runs:
+
+- **Restore** — will equip spells as spell slots and points become available.
+- **Lvl Set Switch** — will equip your normal set with restore behaviour, unless a
+  level appropriate set has been defined, which will be equipped if present instead.
+- **Manual** — all changes must be manually applied.
+
+Left alone it follows what you build: Restore while the set is flat, Lvl Set Switch
+once it has levels. Nothing is sent when what you are wearing already matches, and
+`/bludex apply <name>` picks the same build by hand, so one macro serves every sync.
 
 ### The trait explorer
 

@@ -9,12 +9,11 @@
     The approval envelope (what this module DOES) is documented for review
     in README.md beside this file. In one breath: it renders the Blue Magic
     codex/set-planner Panel, reads the client's own BLU structs, and -- only
-    on the player's explicit Apply or the level-change rule they armed
-    themselves (Restore, or Switch: re-apply the last-applied set as the
-    build for the level band they just entered) -- sets/unsets Blue Magic
-    spells through the client's own 0x102 path, one spell per packet, paced.
-    Both rules default OFF. It never equips gear and never opens an Action
-    sequence.
+    on the player's explicit Apply, or the level-change rule carried by the
+    set they last applied (Restore / Lvl Set Switch / Manual) -- sets/unsets
+    Blue Magic spells through the client's own 0x102 path, one spell per
+    packet, paced. Nothing acts until a set has been applied by hand at least
+    once. It never equips gear and never opens an Action sequence.
 
     Contract notes, per the authoring guide:
     - Panels may not open windows: the library renders with embedded = true
@@ -55,6 +54,8 @@ end
 --   'name<TAB>id,id,...'          the set's flat build -- unchanged, byte for
 --                                 byte, from before level builds existed
 --   'name<TAB>level<TAB>id,..'    a build for one level band, under that name
+--   'name<TAB>rule<TAB>key'       the set's level-change rule, only when the
+--                                 player picked one (otherwise it is derived)
 -- so a flat set still writes exactly one line and reads back identically in
 -- either direction. THERE IS NOTHING TO MIGRATE. The last-applied snapshot is
 -- one 'id,id,...' line.
@@ -83,6 +84,9 @@ function codec.encodeSets(list)
     for _, e in ipairs(list or {}) do
         local name = tostring(e.name or '?'):gsub('[\t\n]', ' ');
         recs[#recs + 1] = name .. '\t' .. codec.encodeIds(e.ids);   -- flat
+        if e.rule ~= nil then
+            recs[#recs + 1] = ('%s\trule\t%s'):format(name, tostring(e.rule));
+        end
         for _, t in ipairs(e.builds or {}) do
             recs[#recs + 1] = ('%s\t%d\t%s'):format(
                 name, tonumber(t.level) or 71, codec.encodeIds(t.ids));
@@ -108,7 +112,9 @@ function codec.decodeSets(s)
         local name = f[1];
         if name ~= nil and name ~= '' then
             local g = group(name);
-            if #f >= 3 then
+            if #f >= 3 and f[2] == 'rule' then
+                g.rule = f[3];                          -- the set's level rule
+            elseif #f >= 3 then
                 local lvl = tonumber(f[2]) or 0;
                 if lvl > 0 then
                     g.builds[#g.builds + 1] = { level = lvl, ids = codec.decodeIds(f[3]) };
@@ -134,14 +140,13 @@ local function loadCfg(S)
         lastApplied    = { ids = codec.decodeIds(S.cfg.get('lastApplied')) },
         activeSetName  = S.cfg.get('activeSetName'),
         activeSetLevel = S.cfg.get('activeSetLevel'),
+        tooltipDelay   = S.cfg.get('tooltipDelay'),
         codexDensity   = S.cfg.get('codexDensity'),
         traitsDensity  = S.cfg.get('traitsDensity'),
         setsLayout     = S.cfg.get('setsLayout'),
         applyMode      = S.cfg.get('applyMode'),
         applyDelay     = S.cfg.get('applyDelay'),
         budgetOverride = S.cfg.get('budgetOverride'),
-        autoRestore    = S.cfg.get('autoRestore'),
-        autoSwitch     = S.cfg.get('autoSwitch'),
         lastAppliedSet = S.cfg.get('lastAppliedSet'),
     };
     local any = false;
@@ -160,14 +165,13 @@ local function saveCfg()
             (cfg.lastApplied and cfg.lastApplied.ids) and codec.encodeIds(cfg.lastApplied.ids) or '');
         Sref.cfg.set('activeSetName', tostring(cfg.activeSetName or ''));
         Sref.cfg.set('activeSetLevel', tonumber(cfg.activeSetLevel) or 0);
+        Sref.cfg.set('tooltipDelay', tonumber(cfg.tooltipDelay) or 0.5);
         Sref.cfg.set('codexDensity', tostring(cfg.codexDensity or 'normal'));
         Sref.cfg.set('traitsDensity', tostring(cfg.traitsDensity or 'normal'));
         Sref.cfg.set('setsLayout', tostring(cfg.setsLayout or 'grid'));
         Sref.cfg.set('applyMode', tostring(cfg.applyMode or 'safe'));
         Sref.cfg.set('applyDelay', tonumber(cfg.applyDelay) or 1.1);
         Sref.cfg.set('budgetOverride', tonumber(cfg.budgetOverride) or 0);
-        Sref.cfg.set('autoRestore', cfg.autoRestore == true);
-        Sref.cfg.set('autoSwitch', cfg.autoSwitch == true);
         Sref.cfg.set('lastAppliedSet', tostring(cfg.lastAppliedSet or ''));
     end);
 end
@@ -184,10 +188,10 @@ return {
         keys = {
             sets = 'string', lastApplied = 'string', activeSetName = 'string',
             activeSetLevel = 'number',
+            tooltipDelay = 'number',
             codexDensity = 'string', traitsDensity = 'string', setsLayout = 'string',
             applyMode = 'string',
             applyDelay = 'number', budgetOverride = 'number',
-            autoRestore = 'boolean', autoSwitch = 'boolean',
             lastAppliedSet = 'string',
             -- the point-budget model (see ui/settingsui.lua). This flavor
             -- has no packet hook, so the 0x063 cross-check never arrives
@@ -197,10 +201,11 @@ return {
         },
         defaults = {
             sets = '', lastApplied = '', activeSetName = '', activeSetLevel = 0,
+            tooltipDelay = 0.5,
             codexDensity = 'normal', traitsDensity = 'normal', setsLayout = 'grid',
             applyMode = 'safe',
             applyDelay = 1.1, budgetOverride = 0,
-            autoRestore = false, autoSwitch = false, lastAppliedSet = '',
+            lastAppliedSet = '',
             capModelVer = 3, capLearnedBonus = -1, capMeritPoints = -1,
         },
     },
