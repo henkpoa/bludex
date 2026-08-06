@@ -257,8 +257,11 @@ end
 -- Bring a saved entry to the shape above WITHOUT converting anything: a set
 -- saved before levels existed is a flat set, and stays exactly that. All this
 -- does is give it an empty build list and tidy any builds it does have --
--- levels snapped to real rungs, duplicates and empties dropped -- so a
--- hand-edited settings file cannot surprise anything downstream.
+-- levels snapped to real rungs, duplicates dropped -- so a hand-edited
+-- settings file cannot surprise anything downstream.
+--
+-- An EMPTY build is kept: bands are added on purpose (groupAdd) and one you
+-- added but have not filled yet is a real thing, not a leftover.
 -- Idempotent: the UI runs it over every entry it draws.
 function M.normalizeGroup(entry)
     if type(entry) ~= 'table' then return entry; end
@@ -268,8 +271,7 @@ function M.normalizeGroup(entry)
     local seen, keep = {}, {};
     for _, t in ipairs(entry.builds or {}) do
         local lvl = M.rungFor(tonumber(t.level) or 0);
-        if lvl ~= nil and type(t.ids) == 'table' and not seen[lvl]
-            and M.countIds(t.ids) > 0 then
+        if lvl ~= nil and type(t.ids) == 'table' and not seen[lvl] then
             local tids = {};
             for i = 1, 20 do tids[i] = tonumber(t.ids[i]) or 0; end
             seen[lvl] = true;
@@ -297,30 +299,54 @@ function M.groupIds(entry, level)
     return ids;
 end
 
--- Write a build back. An all-empty LEVEL build is REMOVED rather than stored:
--- that is how a rung goes back to being unbuilt. The flat build is always
--- there, empty or not -- it is the set itself.
+-- Write a build back, empty or not: emptying a band is not the same as not
+-- having one, and only groupRemove takes a band away.
 function M.groupPut(entry, level, ids)
-    local copy, any = {}, false;
-    for i = 1, 20 do
-        copy[i] = ids[i] or 0;
-        if copy[i] ~= 0 then any = true; end
-    end
+    local copy = {};
+    for i = 1, 20 do copy[i] = ids[i] or 0; end
     if level == nil then entry.ids = copy; return; end
     entry.builds = entry.builds or {};
-    for i, t in ipairs(entry.builds) do
-        if t.level == level then
-            if any then t.ids = copy; else table.remove(entry.builds, i); end
-            return;
-        end
+    for _, t in ipairs(entry.builds) do
+        if t.level == level then t.ids = copy; return; end
     end
-    if any then
-        entry.builds[#entry.builds + 1] = { level = level, ids = copy };
-        sortBuilds(entry);
-    end
+    entry.builds[#entry.builds + 1] = { level = level, ids = copy };
+    sortBuilds(entry);
 end
 
--- The rungs that hold a build, ascending (the flat build is not one of them).
+-- BANDS ARE ADDED ON PURPOSE (Henrik 2026-08-06). Offering all eight under
+-- every set reads as eight things you are behind on; a set has the levels you
+-- said it has, and none to begin with. Returns true when this added one.
+function M.groupAdd(entry, level)
+    -- nil is the flat build, which every set already has, and a level that is
+    -- not a band start is not a band at all
+    if level == nil or M.rungFor(level) ~= level then return false; end
+    if M.groupBuild(entry, level) ~= nil then return false; end
+    entry.builds = entry.builds or {};
+    local ids = {};
+    for i = 1, 20 do ids[i] = 0; end
+    entry.builds[#entry.builds + 1] = { level = level, ids = ids };
+    sortBuilds(entry);
+    return true;
+end
+
+function M.groupRemove(entry, level)
+    for i, t in ipairs((entry and entry.builds) or {}) do
+        if t.level == level then table.remove(entry.builds, i); return true; end
+    end
+    return false;
+end
+
+-- The bands not yet added, ascending -- what the Add list offers.
+function M.groupFree(entry)
+    local out = {};
+    for _, lvl in ipairs(M.LEVELS) do
+        if M.groupBuild(entry, lvl) == nil then out[#out + 1] = lvl; end
+    end
+    return out;
+end
+
+-- The rungs that HAVE a build, ascending, empty ones included (the flat build
+-- is not one of them).
 function M.groupLevels(entry)
     local out = {};
     for _, t in ipairs((entry and entry.builds) or {}) do out[#out + 1] = t.level; end
@@ -348,18 +374,24 @@ end
 -- Returns the rung, or nil for the flat build. The one exception is the set
 -- with an EMPTY flat build: there is no backup to fall back on, so the
 -- nearest build below answers rather than nothing at all.
+-- A band that was added but never filled is NOT a build to pick: it means
+-- "I will get to this", not "wear nothing here".
 function M.groupPick(entry, level)
     local rung = M.rungFor(level);
     if rung == nil then return nil; end
-    if M.groupBuild(entry, rung) ~= nil then return rung; end
+    local own = M.groupBuild(entry, rung);
+    if own ~= nil and M.countIds(own.ids) > 0 then return rung; end
     if M.countIds((entry and entry.ids) or {}) > 0 then return nil; end
     local best = nil;
     for _, t in ipairs((entry and entry.builds) or {}) do
-        if t.level <= rung and (best == nil or t.level > best) then best = t.level; end
+        if M.countIds(t.ids) > 0 and t.level <= rung
+            and (best == nil or t.level > best) then best = t.level; end
     end
     if best == nil then
         for _, t in ipairs((entry and entry.builds) or {}) do
-            if best == nil or t.level < best then best = t.level; end
+            if M.countIds(t.ids) > 0 and (best == nil or t.level < best) then
+                best = t.level;
+            end
         end
     end
     return best;

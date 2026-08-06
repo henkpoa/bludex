@@ -226,48 +226,120 @@ local function rungRow(ctx, index, entry, level, here)
     kit.tip(im, table.concat(lines, '\n'));
 end
 
+-- THE LEVELS OF THE SELECTED SET, under the box that names it (Henrik
+-- 2026-08-06): the set list stays a list of sets, and everything about the
+-- one you have open sits together at the bottom -- its name, then its levels.
+--
+-- Only the bands actually ADDED are listed. A set opens with none, which is
+-- what a flat set is; eight rows offered up front read as eight things you
+-- are behind on.
+local function levelsSection(ctx)
+    local im, st, cfg = ctx.im, ctx.state, ctx.cfg;
+    local entry = st.activeSet and cfg.sets[st.activeSet] or nil;
+    if kit.isFn(im, 'Separator') then im.Separator(); end
+    kit.helpLabel(im, 'Levels', 'One build per level band, for the set above.\n\n'
+        .. 'The game hands out different set points and different slots at\n'
+        .. 'each of these, so a set that works at 75 cannot be the set that\n'
+        .. 'works at 41 -- it is a different build, not a different name.\n\n'
+        .. 'A set with no levels here is a plain flat set, and the flat set\n'
+        .. 'is what gets used at every level you have not built one for.');
+    if entry == nil then
+        kit.ctext(im, kit.COL.dim, 'select a set first');
+        return;
+    end
+    ctx.sets.normalizeGroup(entry);
+    local here = ctx.sets.rungFor(ctx.blu.effectiveLevel());
+    local levels = ctx.sets.groupLevels(entry);
+    if #levels == 0 then
+        kit.ctext(im, kit.COL.dim, 'none - this set is flat');
+    else
+        kit.ctext(im, kit.COL.dim, '  Lv   points    slots');
+        kit.tip(im, 'What each build costs against what its level allows.\n'
+            .. '">" is the band you are standing in right now.');
+        for _, lvl in ipairs(levels) do
+            rungRow(ctx, st.activeSet, entry, lvl, here);
+        end
+    end
+
+    -- add: only the bands this set does not have yet, plus all of them at once
+    local free = ctx.sets.groupFree(entry);
+    local rowW = kit.measure(im, { 'Remove' }, 66);
+    if #free > 0 then
+        local choices = {};
+        for _, lvl in ipairs(free) do
+            choices[#choices + 1] = ('Lv.%s'):format(bandText(ctx, lvl));
+        end
+        if #free > 1 then choices[#choices + 1] = 'All of them'; end
+        st.addLevel = st.addLevel or {};
+        if kit.combo(im, '##bdxaddlvl', st.addLevel, choices, 'Add a level',
+                     LEFT_W - 24 - rowW) then
+            local pickIdx = nil;
+            for i, c in ipairs(choices) do if c == st.addLevel.value then pickIdx = i; end end
+            st.addLevel.value = nil;                  -- back to the prompt
+            if pickIdx == #choices and #free > 1 then
+                for _, lvl in ipairs(free) do ctx.sets.groupAdd(entry, lvl); end
+                st.applyNote = ('Added every level to "%s".'):format(entry.name);
+                if ctx.save then ctx.save(); end
+            elseif pickIdx ~= nil and free[pickIdx] ~= nil then
+                local lvl = free[pickIdx];
+                ctx.sets.groupAdd(entry, lvl);
+                if ctx.save then ctx.save(); end
+                loadBuild(ctx, st.activeSet, lvl);    -- open what you just made
+                st.applyNote = ('Added Lv.%d. Build it, or copy one you have into it.'):format(lvl);
+            end
+        end
+        kit.tip(im, 'Give this set a build of its own for one more level band.\n'
+            .. 'It starts empty, and opens for editing straight away.');
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    end
+    -- remove: the band being edited, and only ever that one
+    local editing = st.editingSet.level;
+    local canRemove = (editing ~= nil) and (ctx.sets.groupBuild(entry, editing) ~= nil);
+    if kit.litButton(im, 'Remove', false, rowW, 20, canRemove and nil or kit.PAL.off)
+        and canRemove then
+        local n = ctx.sets.countIds(ctx.sets.groupIds(entry, editing));
+        ctx.sets.groupRemove(entry, editing);
+        if ctx.save then ctx.save(); end
+        loadBuild(ctx, st.activeSet, nil);            -- back to the flat build
+        st.applyNote = (n > 0)
+            and ('Removed the Lv.%d build and its %d spell%s.'):format(
+                editing, n, (n == 1) and '' or 's')
+            or ('Removed Lv.%d.'):format(editing);
+    end
+    kit.tip(im, canRemove
+        and ('Take Lv.%d away from this set, spells and all.\n'
+            .. 'The set falls back to its flat build at those levels again.'):format(editing)
+        or 'Open one of the levels above to remove it.');
+end
+
 local function savedList(ctx)
     local im, st, cfg = ctx.im, ctx.state, ctx.cfg;
     kit.header(im, 'Saved sets');
-    local here = ctx.sets.rungFor(ctx.blu.effectiveLevel());
     if kit.isFn(im, 'Selectable') then
         for i, entry in ipairs(cfg.sets) do
             ctx.sets.normalizeGroup(entry);
             local built = ctx.sets.groupLevels(entry);
             local flat  = ctx.sets.countIds(entry.ids);
-            -- the name row IS the flat build. It counts spells, exactly as it
-            -- always has; the level builds are counted beside it only when
-            -- there are any, so a set nobody has levelled reads unchanged.
+            -- the row IS the set's flat build. It counts spells, exactly as it
+            -- always has; its levels are counted beside it only when it has
+            -- any, so a set nobody has levelled reads unchanged.
             local tag = ('%d'):format(flat);
             if #built > 0 then
-                tag = (flat > 0) and ('%d, %d level%s'):format(flat, #built,
-                    (#built == 1) and '' or 's')
-                    or ('%d level%s'):format(#built, (#built == 1) and '' or 's');
+                tag = ('%d, %d level%s'):format(flat, #built, (#built == 1) and '' or 's');
             end
             local label = ('%s (%s)##bdxset%d'):format(entry.name, tag, i);
             local open = (st.activeSet == i);
             if tintedSelectable(im, kit.COL.head, label, open) then
-                loadBuild(ctx, i, nil);        -- the name row: the flat build
+                loadBuild(ctx, i, nil);        -- the row: the flat build
                 open = true;
             end
             kit.tip(im, ('%s -- the set with no level attached (%d spell%s).\n'
-                .. 'Apply it at any level; the game keeps what fits.%s\n\n'
+                .. 'Apply it at any level; the game keeps what fits, and it is\n'
+                .. 'what serves every level you have not built one for.%s\n\n'
                 .. 'Click to edit it%s.'):format(
                 entry.name, flat, (flat == 1) and '' or 's',
-                (#built > 0) and ('\nLevel builds: Lv.' .. table.concat(built, ', Lv.')) or '',
-                open and '' or ', and to see its levels'));
-            if open then
-                kit.ctext(im, kit.COL.dim, '  Lv   points    slots');
-                kit.tip(im, 'A build of its own for a level band. The game hands out\n'
-                    .. 'different points and different slots at each of these, so a\n'
-                    .. 'set that works at 75 cannot be the set that works at 41.\n\n'
-                    .. 'Click a level to build or edit it; ">" is where you are now.\n'
-                    .. 'Leave them all empty and the set stays exactly as it is.');
-                for _, lvl in ipairs(ctx.sets.LEVELS) do
-                    rungRow(ctx, i, entry, lvl, here);
-                end
-                if kit.isFn(im, 'Separator') then im.Separator(); end
-            end
+                (#built > 0) and ('\nIts levels: Lv.' .. table.concat(built, ', Lv.')) or '',
+                open and '' or '; its levels appear below the name'));
         end
     end
     if #cfg.sets == 0 then
@@ -279,9 +351,9 @@ local function savedList(ctx)
     if kit.litButton(im, 'New', false, rowW, 22) then
         st.editingSet = ctx.sets.new(('Set %d'):format(#cfg.sets + 1));
         st.activeSet, st.activeLevel = nil, nil;
-        st.applyNote = 'New set - Save it, then pick a level under its name to build one for that level.';
+        st.applyNote = 'New set - Save it, and its own levels can be added under the name.';
     end
-    kit.tip(im, 'Start a new set with no level attached.\nOnce it is saved, its level bands are one click away under the name.');
+    kit.tip(im, 'Start a new set with no level attached.\nOnce it is saved you can give it levels of its own, below.');
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     if kit.litButton(im, 'Save', false, rowW, 22) then
         M.saveEditing(ctx);
@@ -298,7 +370,7 @@ local function savedList(ctx)
             st.applyNote = 'Deleted.';
         end
     end
-    kit.tip(im, 'Delete the whole set, every level build under it.\nTo drop ONE level build: Clear it, then Save.');
+    kit.tip(im, 'Delete the whole set, every level under it.\nTo drop ONE level: open it and press Remove, below.');
 
     -- one-way pull from the blusets addon's saved lists; existing bludex
     -- names are skipped, never overwritten -- safe to click repeatedly
@@ -320,6 +392,8 @@ local function savedList(ctx)
             st.editingSet.name = st.nameBuf[1];
         end
     end
+
+    levelsSection(ctx);
 end
 
 -- ---------------------------------------------------------------------------
@@ -396,8 +470,11 @@ local function copyRow(ctx)
     end
     local below, above = nil, nil;
     for _, lvl in ipairs(ctx.sets.groupLevels(entry)) do
-        if lvl < set.level then below = lvl;
-        elseif lvl > set.level and above == nil then above = lvl; end
+        -- a band that was added but never filled is not a source
+        if ctx.sets.countIds(ctx.sets.groupIds(entry, lvl)) > 0 then
+            if lvl < set.level then below = lvl;
+            elseif lvl > set.level and above == nil then above = lvl; end
+        end
     end
     if below ~= nil then srcs[#srcs + 1] = { level = below, label = ('Lv.%d'):format(below) }; end
     if above ~= nil then srcs[#srcs + 1] = { level = above, label = ('Lv.%d'):format(above) }; end
@@ -815,7 +892,10 @@ function M.render(ctx)
     -- the left column must also hold a rung row whole ('>71  77 / 79+ 19 / 20')
     -- -- measured, never guessed (the clipping law)
     local rungW = kit.measure(im, { '>71   77 / 79+  19 / 20  ' }, 0) + 24;
-    LEFT_W = math.max(210, rowW * 3 + 32, rungW);
+    -- and the Levels row under the name box: the add list beside Remove
+    local lvlW = kit.measure(im, { 'Add a level' }, 90)
+        + kit.measure(im, { 'Remove' }, 66) + 30;
+    LEFT_W = math.max(210, rowW * 3 + 32, rungW, lvlW);
     local gameRow = kit.measure(im, { 'Apply in game', 'Applying...' }, 100)
         + kit.measure(im, { 'Read current' }, 90)
         + kit.measure(im, { 'Clear' }, 50);

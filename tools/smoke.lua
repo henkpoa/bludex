@@ -164,11 +164,29 @@ check(sets.countIds(sets.groupIds(g, 71)) == 2
 check(sets.countIds(sets.groupIds(g, nil)) == 3, 'and the flat build is untouched');
 check(sets.groupTop(g) == 71 and #sets.groupLevels(g) == 2, 'levels and top');
 sets.groupPut(g, 41, {});
-check(#g.builds == 1 and sets.groupBuild(g, 41) == nil,
-    'clearing a level build REMOVES it -- the band goes back to unbuilt');
+check(#g.builds == 2 and sets.groupBuild(g, 41) ~= nil,
+    'emptying a level build is not the same as not having one -- it stays');
+check(sets.groupRemove(g, 41) and #g.builds == 1 and sets.groupBuild(g, 41) == nil,
+    'only Remove takes a band away');
+check(not sets.groupRemove(g, 41), 'and removing one twice is not an error');
 sets.groupPut(g, nil, {});
 check(g.ids ~= nil and sets.countIds(g.ids) == 0,
-    'but the flat build always exists, empty or not -- it is the set itself');
+    'the flat build always exists, empty or not -- it is the set itself');
+
+-- BANDS ARE ADDED ON PURPOSE: a set has the levels you gave it, none to start
+check(sets.groupAdd(g, 41) and sets.groupBuild(g, 41) ~= nil
+    and sets.countIds(sets.groupIds(g, 41)) == 0,
+    'groupAdd gives the set an empty band to build in');
+check(not sets.groupAdd(g, 41), 'adding a band it already has does nothing');
+check(not sets.groupAdd(g, 45) and not sets.groupAdd(g, nil),
+    'and only real bands can be added');
+local free = sets.groupFree(g);
+check(#free == #sets.LEVELS - 2 and free[1] == 1,
+    'groupFree offers exactly the bands not added yet');
+sets.groupPut(g, nil, { 623 });                -- something to fall back to
+check(sets.groupPick(g, 45) == nil,
+    'an EMPTY band is not a build to pick -- it means "not yet", not "wear nothing"');
+sets.groupRemove(g, 41);
 -- THE SELECTION RULE (Henrik 2026-08-06, after walking out of a sync still
 -- wearing the Lv.31 build): the band's OWN build, otherwise THE FLAT BUILD.
 -- A level build serves its band and NOWHERE else -- it must not fill forward.
@@ -231,12 +249,12 @@ check(#twice.builds == 0 and twice.ids[1] == 623,
 local messy = sets.normalizeGroup({ name = 'Hand', ids = {}, builds = {
     { level = 45, ids = { 623 } },            -- not a band start: snapped to 41
     { level = 41, ids = { 513 } },            -- so this one is the duplicate
-    { level = 71, ids = {} },                 -- empty: dropped
+    { level = 71, ids = {} },                 -- empty, but added on purpose: KEPT
     { level = 0,  ids = { 549 } },            -- no such band: dropped
 } });
-check(#messy.builds == 1 and messy.builds[1].level == 41
-    and messy.builds[1].ids[1] == 623,
-    'a hand-edited file is snapped to bands, deduped and pruned');
+check(#messy.builds == 2 and messy.builds[1].level == 41
+    and messy.builds[1].ids[1] == 623 and messy.builds[2].level == 71,
+    'a hand-edited file is snapped to bands and deduped, empties kept');
 check(sets.usableFrom(sets.groupIds(legacy, nil), book)
     == math.max(book.spells[623].level, book.spells[513].level),
     'usableFrom reports the highest spell level in a build');
@@ -602,8 +620,13 @@ check(sctx.cfg.sets[1].name == 'Solo DD' and #sctx.cfg.sets[1].builds == 1,
 setsui.loadBuild(sctx, 1, 41);
 sets.clear(sctx.state.editingSet);
 setsui.saveEditing(sctx);
+check(#sctx.cfg.sets[1].builds == 1 and sets.countIds(sctx.cfg.sets[1].ids) == 2,
+    'clearing a level build empties it but keeps it -- Remove is what drops it');
+check(sets.groupPick(sctx.cfg.sets[1], 45) == nil,
+    'and an emptied band falls back to the flat build like an unbuilt one');
+sets.groupRemove(sctx.cfg.sets[1], 41);
 check(#sctx.cfg.sets[1].builds == 0 and sets.countIds(sctx.cfg.sets[1].ids) == 2,
-    'clearing a level build and saving drops it, flat build untouched');
+    'Remove drops the band, flat build untouched');
 check(saves > 0, 'every one of those persisted');
 
 print('smoke: the level-change Switch rule');

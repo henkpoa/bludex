@@ -72,26 +72,26 @@ it ends).
 
 A set that works at 75 cannot be the set that works at 41 — the game hands out
 different points and different slots, so the spells you can afford are different too.
-Select a set and eight level bands appear under its name, each showing what it costs
-against what that level allows:
+Sets start with no levels at all. **Add a level**, under the name box, gives one a
+build of its own for a level band — as many as you want, one at a time or all eight —
+and each shows what it costs against what that level allows:
 
 ```
-Solo (19)
-  Lv    points     slots
-   1    0 / 34     0 / 6
-  11    0 / 39     0 / 8
-  ...
-> 71   77 / 79    19 / 20
+Levels
+  Lv   points    slots
+> 31    3 / 49    1 / 12
+  71   77 / 79   19 / 20
 ```
 
 Click one and you edit that build like any other set — the slot grid greys out the
 slots that level does not have, the codex refuses spells it cannot cast or afford,
 and hovering a row lists what is in it. `>` marks the band you are standing in.
 The totals include your CatsEyeXI learned bonus and, at 75, your Assimilation merits.
+**Remove** takes a level back off again.
 
-Nothing is migrated: the set's own name row is its flat build — no level attached,
-all 20 slots, exactly as before — and a set stays that until you build a level under
-it.
+Nothing is migrated: the row in the set list is the set's flat build — no level
+attached, all 20 slots, exactly as before — and a set stays that until you give it
+one.
 
 **The flat build is the backup.** The build for a level is that band's own build if
 you made one, and otherwise the flat set — a Lv.31 build serves Lv.31-40 and nowhere
