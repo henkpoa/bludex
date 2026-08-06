@@ -222,6 +222,30 @@ end
 -- ---------------------------------------------------------------------------
 local capWatch = { max = nil, lvl = nil, suspect = false };
 
+-- THE MEASURED GAP. The server's base rule is known exactly (setmodel
+-- .baseCapAtLevel, from blueutils.cpp), but everything above it is
+-- character-specific and cannot be derived from anything the client tells
+-- us. So we MEASURE it, at the one moment the client's number is known
+-- good: right after it recomputes.
+--
+-- Two constants, because the pieces have different level rules
+-- (blueutils.cpp GetTotalBlueMagicPoints + CatsEyeXI's custom addition):
+--   sub  = the learning bonus alone -- CEXI grants points for spells
+--          learned, and it applies at EVERY level
+--   at75 = that same bonus PLUS Assimilation merits, which the server adds
+--          only when level >= 75 (a sync below 75 drops them)
+--
+-- Henrik 2026-08-06, both measured in one session: at 75 the client read 79
+-- against a base of 45 (at75 = 34); synced to 40 it read 49 against a base
+-- of 25 (sub = 24). The 10-point difference is his 5 Assimilation merits at
+-- CEXI's 2 points each -- which is why meritBonus() below is derivable
+-- without ever reading a merit.
+--
+-- Seeded from settings by host.init and re-measured whenever the client
+-- recomputes, so learning new spells corrects it by itself.
+M.capExtra   = { at75 = nil, sub = nil };
+M.onCapLearn = nil;    -- host sets this to persist a newly measured gap
+
 -- true when a level change has happened and the client has not recomputed
 -- since: max (and spent) still belong to the level we left.
 function M.capStale()
@@ -233,15 +257,55 @@ function M.capLevel()
     return capWatch.lvl;
 end
 
+-- The modelled cap for a level: the server's base rule plus the measured
+-- gap. nil until the gap for that side of 75 has been seen once.
+function M.expectedCap(level)
+    level = level or M.effectiveLevel();
+    if level == nil or level < 1 then return nil; end
+    local extra = M.capExtra[(level >= 75) and 'at75' or 'sub'];
+    if extra == nil then return nil; end
+    return setmodel.baseCapAtLevel(level) + extra;
+end
+
+-- Assimilation merit points, DERIVED: merits ride only at 75+ while the
+-- learning bonus rides everywhere, so the difference between the two gaps
+-- is exactly the merit contribution. nil until both have been measured.
+function M.meritBonus()
+    local a, s = M.capExtra.at75, M.capExtra.sub;
+    if a == nil or s == nil or a < s then return nil; end
+    return a - s;
+end
+
+-- The budget to SHOW. The client's own number while it is trustworthy;
+-- otherwise the model for the level we are actually standing at.
+-- Returns value, source: 'live' | 'model' | 'stale' (nothing better known).
+function M.budget()
+    local mx = M.points();
+    if mx ~= nil and not capWatch.suspect then return mx, 'live'; end
+    local est = M.expectedCap();
+    if est ~= nil then return est, 'model'; end
+    if mx ~= nil then return mx, 'stale'; end
+    return nil, nil;
+end
+
 -- Call once per frame (host.tick does). Cheap: two reads and a compare.
 function M.watchCap()
     if not M.onBlu() then capWatch.suspect = false; return; end
     local mx = M.points();
     local lvl = M.effectiveLevel();
     if mx ~= capWatch.max then
-        -- the value moved: the client just recomputed, and it did so FOR the
-        -- level we are standing at now
+        -- The value moved: the client just recomputed, and it did so FOR the
+        -- level we are standing at now. This is the ONLY instant its number
+        -- is known to match our level -- measure the gap while it is true.
         capWatch.max, capWatch.lvl, capWatch.suspect = mx, lvl, false;
+        if mx ~= nil and lvl ~= nil and lvl >= 1 then
+            local key   = (lvl >= 75) and 'at75' or 'sub';
+            local extra = mx - setmodel.baseCapAtLevel(lvl);
+            if extra >= 0 and M.capExtra[key] ~= extra then
+                M.capExtra[key] = extra;
+                if M.onCapLearn ~= nil then pcall(M.onCapLearn, key, extra); end
+            end
+        end
         return;
     end
     if lvl == nil or capWatch.lvl == nil then return; end

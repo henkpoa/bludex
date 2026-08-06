@@ -100,9 +100,13 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
         else
             msg('points raw: read failed (signature missing or pointer chain dead)');
         end
-        msg(('cap: %s (computed by the client at Lv.%s)'):format(
-            blu.capStale() and 'STALE - open the native Set Spells menu once' or 'fresh',
-            tostring(blu.capLevel())));
+        local bmax, bsrc = blu.budget();
+        msg(('budget: %s from %s (client value computed at Lv.%s)'):format(
+            tostring(bmax), tostring(bsrc), tostring(blu.capLevel())));
+        msg(('measured gap: at75=%s sub75=%s%s'):format(
+            tostring(blu.capExtra.at75 or 'not measured'),
+            tostring(blu.capExtra.sub or 'not measured'),
+            blu.meritBonus() and (('  -> %d Assimilation merit points'):format(blu.meritBonus())) or ''));
         local live = blu.currentSet();
         if #live == 20 then
             local n = 0;

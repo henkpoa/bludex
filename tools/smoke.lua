@@ -93,6 +93,27 @@ check(sets.slotsAtLevel(1) == 6 and sets.slotsAtLevel(10) == 6
     and sets.slotsAtLevel(75) == 20 and sets.slotsAtLevel(99) == 20,
     'slotsAtLevel follows the server rule (6 at 1-10, +2 per 10, cap 20)');
 
+-- the server's base point rule, bracket by bracket (Henrik's table,
+-- 2026-08-06; blueutils.cpp clamp(((lvl-1)/10)*5+10, 0, 55))
+local BASE_BRACKETS = {
+    { 1, 10 }, { 10, 10 }, { 11, 15 }, { 20, 15 }, { 21, 20 }, { 30, 20 },
+    { 31, 25 }, { 40, 25 }, { 41, 30 }, { 50, 30 }, { 51, 35 }, { 60, 35 },
+    { 61, 40 }, { 70, 40 }, { 71, 45 }, { 75, 45 },
+};
+local baseOk = true;
+for _, b in ipairs(BASE_BRACKETS) do
+    if sets.baseCapAtLevel(b[1]) ~= b[2] then baseOk = false; end
+end
+check(baseOk, 'baseCapAtLevel matches the server bracket table (10..45, +5 per 10)');
+-- the two field measurements this whole model rests on: at Lv75 the client
+-- read 79 (base 45, gap 34); synced to Lv40 it read 49 (base 25, gap 24).
+-- The 10-point difference IS the Assimilation merits, which apply only 75+.
+check(79 - sets.baseCapAtLevel(75) == 34 and 49 - sets.baseCapAtLevel(40) == 24,
+    'field 2026-08-06: measured gaps are 34 at Lv75 and 24 synced to Lv40');
+check((79 - sets.baseCapAtLevel(75)) - (49 - sets.baseCapAtLevel(40))
+    == 5 * book.traits.rules.assimilationPerMerit,
+    'the gap difference equals 5 Assimilation merits at +2 each');
+
 -- budget rules sanity
 check(book.traits.rules.assimilationPerMerit == 2, 'field: +2 per Assimilation merit');
 check(book.traits.rules.expectedTotalAt75 == 80, 'field: expected total 80');

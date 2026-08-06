@@ -48,6 +48,18 @@ end
 function M.init(deps)
     M.deps = deps;                      -- { im, book, blu, sets, cfg, save }
     M.state = freshState(deps.sets);
+    -- restore the measured point-budget gap and keep it saved. Both flavors
+    -- come through here, so the dlac module gets this for free. 0 means
+    -- never measured: blu treats that as unknown, not as a real zero gap.
+    deps.blu.capExtra = {
+        at75 = (deps.cfg.capExtra75 or 0) > 0 and deps.cfg.capExtra75 or nil,
+        sub  = (deps.cfg.capExtraSub or 0) > 0 and deps.cfg.capExtraSub or nil,
+    };
+    deps.blu.onCapLearn = function()
+        deps.cfg.capExtra75  = deps.blu.capExtra.at75 or 0;
+        deps.cfg.capExtraSub = deps.blu.capExtra.sub or 0;
+        if deps.save then deps.save(); end
+    end;
     -- restore the last active saved set (matched by name -- indices shift
     -- when sets are deleted), exactly as if it had been clicked
     local want = deps.cfg.activeSetName;
@@ -76,7 +88,11 @@ function M.isOpen()
 end
 
 local function budgetMax(deps)
-    local max = deps.blu.points();
+    -- blu.budget prefers the client's own number while it is trustworthy and
+    -- falls back to the measured model for the level we are actually at --
+    -- the client only recomputes its cap when the native Set Spells menu
+    -- opens, so after a level change its number describes the level we left.
+    local max = deps.blu.budget();
     if max then return max; end
     if deps.cfg.budgetOverride and deps.cfg.budgetOverride > 0 then
         return deps.cfg.budgetOverride;
@@ -226,14 +242,30 @@ local function renderBody(im, st, deps, embedded)
     -- rather than showing a confident wrong number -- and name the one action
     -- that actually fixes it, because nothing Bludex can send does.
     if deps.blu.capStale() then
+        local _, src = deps.blu.budget();
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        kit.ctext(im, kit.COL.warn, '   cap stale');
-        kit.tip(im, ('The point total above was computed by the game at Lv.%s\n'
-            .. 'and it has not recomputed since your level changed.\n\n'
-            .. 'Open the native Set Spells menu once and it corrects itself.\n'
-            .. 'The cap never crosses the network, so Bludex cannot refresh\n'
-            .. 'it for you -- your set list and levels below stay accurate.'):format(
-            tostring(deps.blu.capLevel())));
+        if src == 'model' then
+            -- we have measured this character's gap, so the number above is
+            -- ours and correct -- say where it came from, quietly
+            kit.ctext(im, kit.COL.dim, '   (computed)');
+            kit.tip(im, ('The game client has not recomputed its point total since\n'
+                .. 'your level changed -- it still holds the Lv.%s figure. The\n'
+                .. 'total shown above is Bludex\'s own: the server\'s base rule\n'
+                .. 'for Lv.%s plus the %d-point bonus measured on this character.\n\n'
+                .. 'Open the native Set Spells menu to see the game agree.'):format(
+                tostring(deps.blu.capLevel()),
+                tostring(deps.blu.effectiveLevel()),
+                deps.blu.capExtra[(( deps.blu.effectiveLevel() or 0) >= 75) and 'at75' or 'sub'] or 0));
+        else
+            kit.ctext(im, kit.COL.warn, '   cap stale');
+            kit.tip(im, ('The point total above was computed by the game at Lv.%s\n'
+                .. 'and it has not recomputed since your level changed.\n\n'
+                .. 'Open the native Set Spells menu once: it corrects the number\n'
+                .. 'AND teaches Bludex your point bonus, after which Bludex can\n'
+                .. 'work it out for itself at every level. The cap never crosses\n'
+                .. 'the network, so this one look is the only way to learn it.'):format(
+                tostring(deps.blu.capLevel())));
+        end
     end
     if deps.blu.onBlu() and (deps.blu.points()) == nil then
         if kit.isFn(im, 'SameLine') then im.SameLine(); end

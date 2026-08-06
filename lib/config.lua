@@ -30,6 +30,12 @@ function M.defaults()
         codexDensity = 'normal',  -- codex list size: 'big'|'medium'|'normal'|'compact'
         traitsDensity = 'normal', -- traits spell-row size, same four choices
         setsLayout = 'grid',      -- Sets slots as 'grid' (5x4 cells) | 'list' (named rows)
+        -- the MEASURED set-point gap above the server's base rule, so the
+        -- budget survives a reload and a level sync (blu.capExtra): merits
+        -- ride only at 75+, the learning bonus rides everywhere. 0 = not
+        -- measured yet -- one look at the native Set Spells menu teaches it.
+        capExtra75 = 0,
+        capExtraSub = 0,
     };
 end
 
