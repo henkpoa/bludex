@@ -108,7 +108,11 @@ function M.render(ctx)
         .. 'merit list on every zone-in, and again whenever you raise or lower\n'
         .. 'a merit. Nothing is requested; it simply arrives. It can also be\n'
         .. 'worked out as cap - base - learned bonus at Lv75. Type to override.',
-        mKnown and tostring(blu.meritPts) or 'not known yet',
+        mKnown and (blu.meritCount
+            and ('%d   (%d merits x %d%s)'):format(blu.meritPts, blu.meritCount,
+                blu.meritValue, blu.meritValueProven and ', measured' or '')
+            or tostring(blu.meritPts))
+            or 'not known yet',
         mKnown and kit.COL.ok or kit.COL.warn);
     edit(im, '##bdxmerits', blu.meritPts or 0, mKnown,
         function(n) blu.meritPts = n; save(); end,

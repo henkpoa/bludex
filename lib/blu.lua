@@ -297,6 +297,8 @@ end
 -- meaning that merit is back to zero.
 M.MERIT_ASSIMILATION = 3014;   -- merits.sql 3014 = MCATEGORY_BLU_2 + 0x06
 M.meritValue         = 2;      -- CatsEyeXI pays 2 points per merit (stock: 1)
+M.meritCount         = nil;    -- merits ALLOCATED, straight off 0x08C
+M.meritValueProven   = false;  -- true once meritValue is measured, not assumed
 
 -- Pure parser: 0x08C wire data (header included) -> the Assimilation merit
 -- COUNT, or nil when this packet carries no Assimilation entry. Bounds-
@@ -327,6 +329,22 @@ end
 -- Returns true when something changed.
 local function reconcile()
     if M.wireTotal == nil then return false; end
+    -- All three known? Then the per-merit rate is MEASURED, not assumed:
+    -- 0x08C gives the allocations, a sub-75 reading gives the learned bonus
+    -- on its own, and the rest of the wire total is what the merits are
+    -- worth. Proves (or corrects) the +2 CatsEyeXI is believed to pay.
+    if M.meritCount ~= nil and M.meritCount > 0 and M.learnedBonus ~= nil then
+        local worth = M.wireTotal - M.learnedBonus;
+        if worth >= 0 and (worth % M.meritCount) == 0 then
+            local per = worth / M.meritCount;
+            if per > 0 then
+                M.meritValue = per;
+                M.meritValueProven = true;
+                if M.meritPts ~= worth then M.meritPts = worth; return true; end
+                return false;
+            end
+        end
+    end
     if M.meritPts ~= nil then
         local b = M.wireTotal - M.meritPts;
         if b >= 0 and M.learnedBonus ~= b then M.learnedBonus = b; return true; end
@@ -344,11 +362,13 @@ end
 -- at any level. With the merits known, one 0x063 completes the set.
 function M.setMeritCount(count)
     if count == nil then return false; end
+    M.meritCount = count;
     local pts = count * M.meritValue;
-    if M.meritPts == pts then return false; end
+    local moved = (M.meritPts ~= pts);
     M.meritPts = pts;
-    reconcile();
-    return true;
+    -- reconcile may correct meritValue (and so meritPts) from the real numbers
+    local fixed = reconcile();
+    return moved or fixed;
 end
 
 -- The 0x063 reading (standalone only): learnedBonus + merits, summed.

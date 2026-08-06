@@ -163,7 +163,24 @@ blu.wireTotal = 39;                            -- +5 collected from Boruko
 check(blu.setMeritCount(4) and blu.meritPts == 8, 'merits changed to 4 = 8 points');
 check(blu.learnedBonus == 31, 'a moved total re-derives the bonus (39 - 8), not a one-shot');
 blu.learnedBonus, blu.meritPts, blu.wireTotal = nil, nil, nil;
+-- THE PER-MERIT RATE IS MEASURED, NOT ASSUMED, once all three are in hand:
+-- 0x08C gives the allocations, a sub-75 reading gives the learned bonus by
+-- itself, and the remainder of the wire total is what the merits are worth.
 blu.learnedBonus, blu.meritPts, blu.wireTotal = nil, nil, nil;
+blu.meritCount, blu.meritValue, blu.meritValueProven = nil, 2, false;
+blu.learnedBonus = 24;                         -- measured at a Lv40 sync
+blu.wireTotal = 34;                            -- 0x063 at Lv75
+blu.setMeritCount(5);
+check(blu.meritPts == 10 and blu.meritValue == 2 and blu.meritValueProven,
+    'five merits worth 34-24=10 proves the +2 rate rather than assuming it');
+-- a server paying a different rate is caught rather than mis-modelled
+blu.learnedBonus, blu.meritPts, blu.wireTotal = 24, nil, 39;
+blu.meritCount, blu.meritValue, blu.meritValueProven = nil, 2, false;
+blu.setMeritCount(5);
+check(blu.meritPts == 15 and blu.meritValue == 3,
+    'a 39 total against 24 learned and 5 merits measures the rate as 3, not 2');
+blu.learnedBonus, blu.meritPts, blu.wireTotal = nil, nil, nil;
+blu.meritCount, blu.meritValue, blu.meritValueProven = nil, 2, false;
 
 -- THE CAP WATCH, driven directly (three field bugs have lived in here).
 -- The rule: the client's cap is trustworthy only while our level still
