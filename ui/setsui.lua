@@ -120,6 +120,11 @@ function M.applyEditing(ctx)
         local snap = {};
         for k = 1, 20 do snap[k] = st.editingSet.ids[k] or 0; end
         ctx.cfg.lastApplied = { ids = snap };
+        -- WHICH SET this came from, by name: the Switch rule needs it to find
+        -- the build for the band you move into. Only a SAVED set has one --
+        -- an unsaved draft leaves nothing to follow, and says so by clearing.
+        local entry = st.activeSet and ctx.cfg.sets[st.activeSet] or nil;
+        ctx.cfg.lastAppliedSet = (entry ~= nil) and entry.name or '';
         if ctx.save then ctx.save(); end
         st.applyNote = ('Applying %s, lowest level first - watch the chat log.'):format(
             buildText(st.editingSet.level));
@@ -370,6 +375,69 @@ local function slotList(ctx, liveIds)
         end
     end
 end
+-- START A LEVEL BUILD FROM ONE YOU ALREADY HAVE (Henrik 2026-08-06). This is
+-- how a flat set becomes a level one -- click the band, copy the set into it,
+-- trim -- and how you carry a build upward as you level instead of having any
+-- band silently serve levels it was not made for.
+--
+-- Only into an EMPTY band, and only from a build that has something: no
+-- confirm to get wrong, and Clear puts a band back to empty if you want to
+-- redo it.
+local function copyRow(ctx)
+    local im, st = ctx.im, ctx.state;
+    local set = st.editingSet;
+    if set.level == nil or ctx.sets.count(set) > 0 then return; end
+    local entry = st.activeSet and ctx.cfg.sets[st.activeSet] or nil;
+    if entry == nil then return; end
+
+    local srcs = {};
+    if ctx.sets.countIds(entry.ids) > 0 then
+        srcs[#srcs + 1] = { level = nil, label = 'the set' };
+    end
+    local below, above = nil, nil;
+    for _, lvl in ipairs(ctx.sets.groupLevels(entry)) do
+        if lvl < set.level then below = lvl;
+        elseif lvl > set.level and above == nil then above = lvl; end
+    end
+    if below ~= nil then srcs[#srcs + 1] = { level = below, label = ('Lv.%d'):format(below) }; end
+    if above ~= nil then srcs[#srcs + 1] = { level = above, label = ('Lv.%d'):format(above) }; end
+    if #srcs == 0 then return; end
+
+    kit.ctext(im, kit.COL.dim, 'Copy from:');
+    for _, src in ipairs(srcs) do
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        local w = kit.measure(im, { src.label }, 44);
+        if kit.litButton(im, src.label, false, w, 18) then
+            local from = ctx.sets.groupIds(entry, src.level);
+            local ids, rep = ctx.sets.copyInto(from, set.level, ctx.book);
+            for i = 1, 20 do set.ids[i] = ids[i]; end
+            local parts = { ('Copied %d spell%s from %s.'):format(
+                rep.taken, (rep.taken == 1) and '' or 's', src.label) };
+            if rep.tooHigh > 0 then
+                parts[#parts + 1] = ('%d need%s a higher level than Lv.%s reaches.'):format(
+                    rep.tooHigh, (rep.tooHigh == 1) and 's' or '', bandText(ctx, set.level));
+            end
+            if rep.noSlot > 0 then
+                parts[#parts + 1] = ('%d had no slot (Lv.%d has %d).'):format(
+                    rep.noSlot, set.level, ctx.sets.slotMax(set));
+            end
+            local cap = ctx.budgetMax();
+            local used = ctx.sets.usedPoints(set, ctx.book);
+            if cap ~= nil and cap > 0 and used > cap then
+                parts[#parts + 1] = ('%d / %d points - trim it.'):format(used, cap);
+            end
+            st.applyNote = table.concat(parts, ' ');
+        end
+        kit.tip(im, ('Fill this Lv.%d build from %s.\n'
+            .. 'Lowest spell levels first, only what Lv.%s can cast, only as\n'
+            .. 'many as its %d slots hold. It can land OVER the point budget --\n'
+            .. 'that is yours to trim, not mine to guess at.'):format(
+            set.level, (src.level == nil) and 'the set\'s own flat build'
+                or ('the Lv.%d build'):format(src.level),
+            bandText(ctx, set.level), ctx.sets.slotMax(set)));
+    end
+end
+
 local function slotGrid(ctx)
     local im, st, book = ctx.im, ctx.state, ctx.book;
     local set = st.editingSet;
@@ -386,6 +454,8 @@ local function slotGrid(ctx)
             .. 'Other levels of this set are under its name on the left.'):format(
             slotMax, bandText(ctx, set.level)));
     end
+
+    copyRow(ctx);
 
     -- the layout choice on the header line (Henrik 2026-08-04): the spatial
     -- 5x4 grid, or codex-grammar rows with names. Persisted.
@@ -599,26 +669,43 @@ local function slotGrid(ctx)
     end
     if st.applyNote then kit.ctext(im, kit.COL.dim, st.applyNote); end
 
-    -- level-change behavior: restore the last-applied set automatically, or
-    -- leave everything to the Apply button
+    -- level-change behavior: three exclusive choices, stored as the two
+    -- booleans the settings already carry.
     -- the naming law: name the rule for its condition, never 'Auto <thing>'
     kit.ctext(im, kit.COL.dim, 'Level change:');
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    local lvW = kit.measure(im, { 'Restore', 'Manual' }, 64);
-    local auto = ctx.cfg.autoRestore == true;
-    if kit.litButton(im, 'Restore', auto, lvW, 20) and not auto then
-        ctx.cfg.autoRestore = true;
+    local lvW = kit.measure(im, { 'Restore', 'Switch', 'Manual' }, 64);
+    local switch = ctx.cfg.autoSwitch == true;
+    local auto = (not switch) and ctx.cfg.autoRestore == true;
+    local function setRule(restore, sw)
+        ctx.cfg.autoRestore, ctx.cfg.autoSwitch = restore, sw;
         if ctx.save then ctx.save(); end
+    end
+    if kit.litButton(im, 'Switch', switch, lvW, 20) and not switch then
+        setRule(false, true);
+    end
+    kit.tip(im, 'When your level moves into a different BAND, the set you last\n'
+        .. 'applied is re-applied as the build for the band you are now in --\n'
+        .. 'its own build if you made one, otherwise the set\'s flat build.\n\n'
+        .. 'This is what brings you back after a sync: a Lv.31 build serves\n'
+        .. 'Lv.31-40 and nothing else, so walking out of a Lv.40 party puts\n'
+        .. 'the flat set back on (or your Lv.71 build, if you built one).\n\n'
+        .. 'It sends real set changes, so it costs the game\'s usual ~60s\n'
+        .. 'Blue Magic cast lock each time a band change actually moves\n'
+        .. 'something. Nothing is sent when the build already matches.');
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    if kit.litButton(im, 'Restore', auto, lvW, 20) and not auto then
+        setRule(true, false);
     end
     kit.tip(im, 'After a level UP or job change, any spells stripped from the\n'
         .. 'LAST APPLIED set are re-set automatically - lowest level first,\n'
         .. 'into the lowest open slots. Adds only; never removes.\n'
         .. 'A level DOWN (sync, delevel) never sends anything: the game\n'
-        .. 'disables over-level spells itself and brings them back after.');
+        .. 'disables over-level spells itself and brings them back after.\n\n'
+        .. 'Knows nothing about level builds - use Switch for those.');
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    if kit.litButton(im, 'Manual', not auto, lvW, 20) and auto then
-        ctx.cfg.autoRestore = false;
-        if ctx.save then ctx.save(); end
+    if kit.litButton(im, 'Manual', not auto and not switch, lvW, 20) and (auto or switch) then
+        setRule(false, false);
     end
     kit.tip(im, 'Nothing is applied automatically - you click Apply.');
 

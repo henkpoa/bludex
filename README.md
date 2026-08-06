@@ -91,8 +91,20 @@ The totals include your CatsEyeXI learned bonus and, at 75, your Assimilation me
 
 Nothing is migrated: the set's own name row is its flat build — no level attached,
 all 20 slots, exactly as before — and a set stays that until you build a level under
-it. `/bludex apply <name>` picks the build for the level you are at, so one macro
-serves every sync.
+it.
+
+**The flat build is the backup.** The build for a level is that band's own build if
+you made one, and otherwise the flat set — a Lv.31 build serves Lv.31-40 and nowhere
+else, so walking out of a sync party puts the flat set back rather than dragging a
+level-31 build to 75. To make a band from one you already have, click it and press
+**`Copy from: the set`** (or `Lv.21`, or `Lv.71`): it takes the lowest spell levels
+first, only what that band can cast, only as many as its slots hold — and it will
+land over the point budget, which is yours to trim.
+
+`Level change: Switch` arms that as a rule: cross into a different band and the set
+you last applied is re-applied as the right build for where you now are. Nothing is
+sent when the build already matches, and `/bludex apply <name>` picks the same build
+by hand, so one macro serves every sync.
 
 ### The trait explorer
 

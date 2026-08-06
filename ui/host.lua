@@ -145,8 +145,54 @@ local TABS = { 'Codex', 'Sets', 'Traits', 'Settings' };
 --     over-level spells itself and re-enables them when the level returns,
 --     and the level-sorted layout keeps the survivors in the low slots.
 --     One delayed chat line reports what the sync disabled, nothing more.
+-- SWITCH replaces both when it is the armed rule: see bandSwitch below.
 -- The standalone render calls this itself; an EMBEDDING host (dlac's BLU
 -- helper) calls it directly every frame, even while its panel is hidden.
+
+-- THE BAND SWITCH (Henrik 2026-08-06, from the field: "I walked out now, and
+-- I still have my level 31 set equipped"). A level build serves ITS band and
+-- no other, so crossing a band boundary means the set you are wearing is the
+-- wrong build of itself. Re-apply the right one -- the new band's own build
+-- if it exists, otherwise the set's flat build, which is what a flat set is
+-- for. Only the LAST APPLIED set is followed, and only by name: nothing is
+-- guessed from what happens to be selected in the UI.
+--
+-- Deliberately quiet when it has nothing to do -- a band change that does not
+-- move a spell must not cost the game's 60s Blue Magic cast lock, so the
+-- diff is checked here rather than left to applyDiff's chat line.
+local function bandSwitch(deps)
+    local name = deps.cfg.lastAppliedSet;
+    if name == nil or name == '' then return; end
+    if deps.blu.applying or not deps.blu.canApply() then return; end
+    local entry = nil;
+    for _, e in ipairs(deps.cfg.sets) do
+        if e.name == name then entry = e; break; end
+    end
+    if entry == nil then return; end
+    deps.sets.normalizeGroup(entry);
+    local lvl = deps.blu.effectiveLevel();
+    local pick = deps.sets.groupPick(entry, lvl);
+    local ids = deps.sets.groupIds(entry, pick);
+    if deps.sets.countIds(ids) == 0 then return; end
+    local live = deps.blu.currentSet();
+    if #live ~= 20 then return; end
+    local T = deps.sets.sortedLayout(ids, deps.book);
+    local same = true;
+    for i = 1, 20 do
+        if (live[i] or 0) ~= T[i] then same = false; break; end
+    end
+    if same then return; end
+    deps.blu.say(('Level %s: switching "%s" to %s.'):format(
+        tostring(lvl), entry.name,
+        (pick == nil) and 'its flat build' or ('its Lv.%d build'):format(pick)));
+    if deps.blu.applyDiff(ids, deps.book) then
+        local snap = {};
+        for i = 1, 20 do snap[i] = ids[i] or 0; end
+        deps.cfg.lastApplied = { ids = snap };
+        if deps.save then deps.save(); end
+    end
+end
+
 function M.tick()
     local deps = M.deps;
     if deps == nil then return; end
@@ -154,6 +200,25 @@ function M.tick()
     -- renders: the client recomputes the cap on its own schedule (the native
     -- Set Spells menu), and we have to catch the moment it does
     deps.blu.watchCap();
+    -- the BAND watch: cheap, every frame, and independent of watchJobState --
+    -- what matters here is not that the level moved but that it crossed into
+    -- a band with a different build. An unreadable level (nil: mid-handoff,
+    -- off BLU) is not a change; it holds the last band until one reads again.
+    local rung = deps.sets.rungFor(deps.blu.effectiveLevel());
+    if rung ~= nil then
+        if M.lastRung == nil then
+            M.lastRung = rung;
+        elseif rung ~= M.lastRung then
+            M.lastRung = rung;
+            -- one delayed check: the client's structs are mid-flight through a
+            -- sync transition, and the live set cannot be read honestly yet
+            if deps.cfg.autoSwitch == true then M.switchCheck = os.clock() + 3.0; end
+        end
+    end
+    if M.switchCheck ~= nil and os.clock() >= M.switchCheck then
+        M.switchCheck = nil;
+        pcall(bandSwitch, deps);
+    end
     local change = deps.blu.watchJobState();
     if change == 'down' then
         M.downCheck = os.clock() + 2.0;
@@ -165,14 +230,18 @@ function M.tick()
     end
     if M.downCheck ~= nil and os.clock() >= M.downCheck then
         M.downCheck = nil;
-        deps.blu.reportLevelDown(deps.book);
+        -- under Switch the set is about to be replaced outright, and its own
+        -- line says so: the what-the-sync-disabled report would be noise
+        if deps.cfg.autoSwitch ~= true then
+            deps.blu.reportLevelDown(deps.book);
+        end
     end
     if M.restoreChecks ~= nil then
         local due = M.restoreChecks[1];
         if due ~= nil and os.clock() >= due then
             table.remove(M.restoreChecks, 1);
             if #M.restoreChecks == 0 then M.restoreChecks = nil; end
-            if deps.cfg.autoRestore == true then
+            if deps.cfg.autoRestore == true and deps.cfg.autoSwitch ~= true then
                 local last = deps.cfg.lastApplied;
                 if last ~= nil and last.ids ~= nil then
                     deps.blu.restoreMissing(last.ids, deps.book);

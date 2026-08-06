@@ -334,24 +334,77 @@ function M.groupTop(entry)
     return lv[#lv];
 end
 
--- The build to use AT a level: that level's own rung when it is built, else
--- the highest built rung below it (a smaller build always fits). nil = the
--- flat build, which is the answer whenever no rung suits -- including for a
--- set that has never had a level build at all.
+-- The build to use AT a level -- the one rule the whole feature turns on
+-- (Henrik 2026-08-06):
+--
+--   the band's OWN build when there is one; otherwise THE FLAT BUILD.
+--
+-- The flat build is the set's backup, and it stays the answer everywhere no
+-- band build has been made. It does NOT fill forward: a Lv.31 build is for
+-- Lv.31-40 and nowhere else, so walking out of a sync goes back to the flat
+-- set rather than dragging a level-31 build to 75. Copy it up a band if you
+-- want it to keep serving (setsui's Copy).
+--
+-- Returns the rung, or nil for the flat build. The one exception is the set
+-- with an EMPTY flat build: there is no backup to fall back on, so the
+-- nearest build below answers rather than nothing at all.
 function M.groupPick(entry, level)
     local rung = M.rungFor(level);
     if rung == nil then return nil; end
+    if M.groupBuild(entry, rung) ~= nil then return rung; end
+    if M.countIds((entry and entry.ids) or {}) > 0 then return nil; end
     local best = nil;
     for _, t in ipairs((entry and entry.builds) or {}) do
         if t.level <= rung and (best == nil or t.level > best) then best = t.level; end
     end
-    if best == nil and M.countIds(entry.ids or {}) == 0 then
-        -- nothing flat to fall back to: the lowest build there is beats none
+    if best == nil then
         for _, t in ipairs((entry and entry.builds) or {}) do
             if best == nil or t.level < best then best = t.level; end
         end
     end
     return best;
+end
+
+-- Copy a build's spells into another band, keeping what that band can
+-- actually hold: nothing above the level it can cast, lowest levels first,
+-- until its slots run out.
+--
+-- The POINT budget is deliberately NOT enforced. Coming in over budget is the
+-- workflow -- you see the red meter and cut what you can spare, which is a
+-- judgement only the player can make; a copy that quietly dropped the spells
+-- it happened to like least would take that away and look tidy doing it.
+--
+-- Returns ids{20}, report { taken, tooHigh, noSlot }.
+function M.copyInto(ids, level, book)
+    local slots = (level == nil) and 20 or M.slotsAtLevel(level);
+    local top = M.bandTop(level);
+    local pick, tooHigh = {}, 0;
+    for i = 1, 20 do
+        local id = ids[i] or 0;
+        if id ~= 0 then
+            local s = book.spells[id];
+            if s ~= nil and s.level ~= nil and s.level > top then
+                tooHigh = tooHigh + 1;
+            else
+                pick[#pick + 1] = id;
+            end
+        end
+    end
+    table.sort(pick, function(a, b)
+        local sa, sb = book.spells[a], book.spells[b];
+        local la = (sa and sa.level) or 999;
+        local lb = (sb and sb.level) or 999;
+        if la ~= lb then return la < lb; end
+        return a < b;
+    end);
+    local out = {};
+    for i = 1, 20 do out[i] = pick[i] or 0; end
+    local taken = #pick;
+    if taken > slots then
+        for i = slots + 1, 20 do out[i] = 0; end
+        taken = slots;
+    end
+    return out, { taken = taken, tooHigh = tooHigh, noSlot = #pick - taken };
 end
 
 -- One build of a set as an editable draft (the shape every computation and

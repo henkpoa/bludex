@@ -622,6 +622,11 @@ local function msg(s)
     print(chat.header('bludex'):append(chat.message(s)));
 end
 
+-- One chat voice for the whole library: rules that act on their own (the
+-- host's level-change rules) say so through the same prefix the apply engine
+-- uses, rather than growing a second one.
+M.say = msg;
+
 -- The CAST LOCK: setting or unsetting any spell locks Blue Magic casting
 -- for about a minute (the game's own rule). Every 0x102 we send restamps
 -- the clock, so the countdown runs from the LAST packet of an apply.

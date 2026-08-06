@@ -29,9 +29,12 @@ do not run both flavors at once.
 1. **0x102 extended-equip packets** that set or unset Blue Magic spells —
    the same packet the game's own Set Spells menu sends, one spell per
    packet. Fired only by (a) the player clicking Apply, (b) the player's
-   `/…apply` command, or (c) the **Restore on level change** rule, which
-   **defaults OFF** and only ever re-adds spells the player's last applied
-   set already contained (it never unsets anything). Default 'safe' mode
+   `/…apply` command, or (c) one of the two **level change** rules the player
+   may arm — both **default OFF**, and only one can be armed at a time:
+   **Restore**, which only ever re-adds spells the last applied set already
+   contained (it never unsets anything), or **Switch**, which re-applies that
+   same set as the build made for the level band the player just entered, and
+   sends nothing when the live set already matches it. Default 'safe' mode
    sends through the client's own function, which self-paces to ~1/s; the
    opt-in 'fast' mode injects the identical packet with a player-set delay
    (floor 0.2s).
@@ -49,11 +52,18 @@ second readers for things dlac already answers.
 
 ## Behavior defaults
 
-- The **Restore on level change** rule defaults **off**; the player arms it.
-  When armed: after a job/level change it re-adds spells stripped from the
-  last applied set, lowest spell level first, and reports one line with how
-  many stuck. Success cases are silent; refusals are one line naming the
-  blocker.
+- The **level change** rules default to **Manual** — nothing acts on its own
+  until the player picks one:
+  - **Restore**: after a job/level change it re-adds spells stripped from the
+    last applied set, lowest spell level first, and reports one line with how
+    many stuck. Success cases are silent; refusals are one line naming the
+    blocker.
+  - **Switch**: when the level crosses into a different level BAND (1/11/…/71,
+    where the game's own set-point and slot rules step), the last applied set
+    is re-applied as the build the player made for that band — or their flat
+    build, if they made none. One line says which build and why; nothing is
+    sent when the live set already matches, so a band change that changes
+    nothing costs no packets and no cast lock.
 - Everything else acts only on a click.
 
 ## Strings

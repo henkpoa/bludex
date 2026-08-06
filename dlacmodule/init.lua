@@ -9,10 +9,12 @@
     The approval envelope (what this module DOES) is documented for review
     in README.md beside this file. In one breath: it renders the Blue Magic
     codex/set-planner Panel, reads the client's own BLU structs, and -- only
-    on the player's explicit Apply or their armed level-change Restore rule
-    -- sets/unsets Blue Magic spells through the client's own 0x102 path,
-    one spell per packet, paced. It never equips gear and never opens an
-    Action sequence.
+    on the player's explicit Apply or the level-change rule they armed
+    themselves (Restore, or Switch: re-apply the last-applied set as the
+    build for the level band they just entered) -- sets/unsets Blue Magic
+    spells through the client's own 0x102 path, one spell per packet, paced.
+    Both rules default OFF. It never equips gear and never opens an Action
+    sequence.
 
     Contract notes, per the authoring guide:
     - Panels may not open windows: the library renders with embedded = true
@@ -139,6 +141,8 @@ local function loadCfg(S)
         applyDelay     = S.cfg.get('applyDelay'),
         budgetOverride = S.cfg.get('budgetOverride'),
         autoRestore    = S.cfg.get('autoRestore'),
+        autoSwitch     = S.cfg.get('autoSwitch'),
+        lastAppliedSet = S.cfg.get('lastAppliedSet'),
     };
     local any = false;
     for i = 1, 20 do
@@ -163,6 +167,8 @@ local function saveCfg()
         Sref.cfg.set('applyDelay', tonumber(cfg.applyDelay) or 1.1);
         Sref.cfg.set('budgetOverride', tonumber(cfg.budgetOverride) or 0);
         Sref.cfg.set('autoRestore', cfg.autoRestore == true);
+        Sref.cfg.set('autoSwitch', cfg.autoSwitch == true);
+        Sref.cfg.set('lastAppliedSet', tostring(cfg.lastAppliedSet or ''));
     end);
 end
 
@@ -181,7 +187,8 @@ return {
             codexDensity = 'string', traitsDensity = 'string', setsLayout = 'string',
             applyMode = 'string',
             applyDelay = 'number', budgetOverride = 'number',
-            autoRestore = 'boolean',
+            autoRestore = 'boolean', autoSwitch = 'boolean',
+            lastAppliedSet = 'string',
             -- the point-budget model (see ui/settingsui.lua). This flavor
             -- has no packet hook, so the 0x063 cross-check never arrives
             -- here -- both figures come from readings or the Settings tab.
@@ -193,7 +200,7 @@ return {
             codexDensity = 'normal', traitsDensity = 'normal', setsLayout = 'grid',
             applyMode = 'safe',
             applyDelay = 1.1, budgetOverride = 0,
-            autoRestore = false,
+            autoRestore = false, autoSwitch = false, lastAppliedSet = '',
             capModelVer = 3, capLearnedBonus = -1, capMeritPoints = -1,
         },
     },

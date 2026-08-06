@@ -232,6 +232,7 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
         end
         if blu.applyDiff(ids, book) then
             cfg.lastApplied = { ids = ids };
+            cfg.lastAppliedSet = entry.name;      -- what the Switch rule follows
             saveSettings();
         end
         return;

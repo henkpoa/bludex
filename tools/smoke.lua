@@ -128,9 +128,9 @@ check(invOk, 'levelForSlot is the LOWEST level holding that slot');
 -- a tier knows its own ceiling: a Lv.41 draft stops at fourteen slots
 local t1 = sets.new('Mid', 41);
 check(sets.slotMax(t1) == 14 and sets.slotMax(sets.new('High')) == 20,
-    'slotMax follows the tier level (a new tier is the top rung)');
+    'slotMax follows the build level (a level-less build keeps all 20)');
 for _, id in ipairs(book.filter({})) do sets.add(t1, id, book, 999); end
-check(sets.count(t1) == 14, 'a Lv.41 tier fills fourteen slots and no more');
+check(sets.count(t1) == 14, 'a Lv.41 build fills fourteen slots and no more');
 check((select(2, sets.add(t1, 623, book, 999))):find('Lv.41 has 14') ~= nil,
     'and says which level ran out of slots');
 -- the band ceiling: a Lv.41 build reaches level 50, so nothing above it fits
@@ -141,9 +141,9 @@ for _, id in ipairs(book.filter({})) do
 end
 check(highId ~= nil, 'the data has a spell above level 50 to test the band with');
 check((select(2, sets.add(sets.new('Mid', 41), highId, book, 999))):find('stops at 50') ~= nil,
-    'a Lv.41 tier refuses a spell its band cannot cast');
+    'a Lv.41 build refuses a spell its band cannot cast');
 check(sets.add(sets.new('Top', 71), highId, book, 999),
-    ('and the top rung takes it (Lv.%d, band reaches 75)'):format(highLvl));
+    ('and the top band takes it (Lv.%d, it reaches 75)'):format(highLvl));
 
 -- A SAVED SET: its flat build, plus a build per level band under it. `level
 -- nil` addresses the flat one everywhere -- it is a real answer, not a
@@ -169,17 +169,51 @@ check(#g.builds == 1 and sets.groupBuild(g, 41) == nil,
 sets.groupPut(g, nil, {});
 check(g.ids ~= nil and sets.countIds(g.ids) == 0,
     'but the flat build always exists, empty or not -- it is the set itself');
--- groupPick: the band you stand in, else the highest below it, else flat
+-- THE SELECTION RULE (Henrik 2026-08-06, after walking out of a sync still
+-- wearing the Lv.31 build): the band's OWN build, otherwise THE FLAT BUILD.
+-- A level build serves its band and NOWHERE else -- it must not fill forward.
+sets.groupPut(g, nil, { 623, 513 });           -- a flat build to fall back on
 sets.groupPut(g, 21, { 623 });
-check(sets.groupPick(g, 75) == 71 and sets.groupPick(g, 25) == 21
-    and sets.groupPick(g, 45) == 21,
-    'groupPick: own band, else the highest below it');
-check(sets.groupPick(g, 5) == 21,
-    'with an empty flat build the lowest level build beats nothing');
+check(sets.groupPick(g, 25) == 21, 'the band you stand in wins');
+check(sets.groupPick(g, 75) == 71, 'and so does the top band, with a build');
+sets.groupPut(g, 71, {});                      -- drop the 71 build again
+check(sets.groupPick(g, 75) == nil and sets.groupPick(g, 45) == nil,
+    'no build for this band -> the FLAT build, not the nearest below');
+check(sets.groupPick(g, 21) == 21, 'the built band still answers for itself');
+-- the one exception: a set with an empty flat build has no backup to give
+sets.groupPut(g, nil, {});
+check(sets.groupPick(g, 45) == 21 and sets.groupPick(g, 5) == 21,
+    'with nothing flat to fall back on, the nearest build beats nothing at all');
 sets.groupPut(g, nil, { 623 });
-check(sets.groupPick(g, 5) == nil, 'with a flat build to fall back on, that wins');
+check(sets.groupPick(g, 45) == nil, 'and the flat build takes over the moment it exists');
 check(sets.groupPick(sets.newGroup('x'), 75) == nil,
     'a set with no level builds always answers flat');
+
+-- COPY: how a flat set becomes a level one, and how a build carries upward.
+-- Keeps what the band can hold -- lowest spell levels first, nothing above
+-- what it can cast, no more than its slots -- and lets the POINTS overflow,
+-- because trimming is the player's call.
+local wide = {};
+for i, id in ipairs(book.filter({})) do if i <= 20 then wide[i] = id; end end
+local into41, rep41 = sets.copyInto(wide, 41, book);
+check(sets.countIds(into41) == 14 and rep41.taken == 14,
+    'a copy into Lv.41 fills its fourteen slots');
+local levelsOk, prev = true, 0;
+for i = 1, sets.countIds(into41) do
+    local s = book.spells[into41[i]];
+    if s.level < prev then levelsOk = false; end
+    if s.level > 50 then levelsOk = false; end
+    prev = s.level;
+end
+check(levelsOk, 'lowest levels first, and nothing its band cannot cast');
+check(rep41.tooHigh > 0 and rep41.tooHigh + rep41.noSlot + rep41.taken == 20,
+    'and every spell is accounted for: taken + too high + no slot');
+local into1 = sets.copyInto(wide, 1, book);
+check(sets.countIds(into1) <= 6, 'a copy into Lv.1 cannot exceed six slots');
+check(sets.countIds(sets.copyInto(wide, nil, book)) == 20,
+    'copying into the flat build keeps all twenty');
+check(sets.copyInto({}, 41, book) ~= nil and sets.countIds(sets.copyInto({}, 41, book)) == 0,
+    'copying nothing is not an error');
 
 -- NOTHING IS MIGRATED (Henrik 2026-08-06): a set saved before level builds
 -- existed is a flat set and stays one.
@@ -571,6 +605,78 @@ setsui.saveEditing(sctx);
 check(#sctx.cfg.sets[1].builds == 0 and sets.countIds(sctx.cfg.sets[1].ids) == 2,
     'clearing a level build and saving drops it, flat build untouched');
 check(saves > 0, 'every one of those persisted');
+
+print('smoke: the level-change Switch rule');
+-- The one rule that sends packets on its own, so it is driven end to end here
+-- with a stub client. What it must get right: fire only when the level crosses
+-- into a different BAND, apply that band's build (or the flat one), and stay
+-- silent when nothing would move -- a band change that costs a 60s cast lock
+-- for no reason is the failure that matters.
+local host = require('bludex\\ui\\host');
+local fake;                      -- declared first: the stubs close over it
+fake = {
+    level = 75, live = {}, applied = nil, says = {}, applying = false,
+    watchCap = function() end,
+    watchJobState = function() return nil; end,
+    effectiveLevel = function() return fake.level; end,
+    canApply = function() return true; end,
+    currentSet = function() return fake.live; end,
+    say = function(s) fake.says[#fake.says + 1] = s; end,
+    applyDiff = function(ids) fake.applied = ids; return true; end,
+};
+for i = 1, 20 do fake.live[i] = 0; end
+local fcfg = {
+    sets = {}, autoSwitch = true, autoRestore = false,
+    lastApplied = {}, lastAppliedSet = 'Solo',
+    capModelVer = 3, capLearnedBonus = 24, capMeritPoints = 10,
+    activeSetName = '', activeSetLevel = 0,
+};
+local flat = {}; for i = 1, 20 do flat[i] = 0; end
+flat[1] = 623; flat[2] = 513;                      -- the flat build: 2 spells
+local low  = {}; for i = 1, 20 do low[i] = 0; end
+low[1] = 549;                                      -- the Lv.31 build: 1 spell
+fcfg.sets[1] = { name = 'Solo', ids = flat, builds = { { level = 31, ids = low } } };
+host.init({ book = book, blu = fake, sets = sets, cfg = fcfg, save = function() end });
+
+local function tickNow()                           -- fire any pending check now
+    host.tick();
+    if host.switchCheck ~= nil then host.switchCheck = 0; host.tick(); end
+end
+tickNow();
+check(fake.applied == nil, 'the first tick only baselines the band -- nothing is sent');
+fake.level = 40;                                   -- sync down: 71 -> 31 band
+tickNow();
+check(fake.applied ~= nil and fake.applied[1] == 549,
+    'crossing into Lv.31-40 applies that band\'s build');
+check(#fake.says == 1 and fake.says[1]:find('Lv.31 build') ~= nil,
+    'and says which build, by name');
+fake.live[1] = 549;                                -- the game now holds it
+fake.applied = nil;
+fake.level = 45;                                   -- still the Lv.41 band? no: 41
+tickNow();
+check(fake.applied ~= nil, 'moving up into Lv.41-50 switches again -- to the flat build');
+check(fake.applied[1] == 623 and fake.applied[2] == 513,
+    'because no Lv.41 build exists, and the flat set is the backup');
+fake.applied = nil;
+fake.level = 48;                                   -- same band
+tickNow();
+check(fake.applied == nil and host.switchCheck == nil,
+    'moving inside a band is not a band change -- nothing is scheduled');
+-- already wearing the right build: no packets, no cast lock
+fake.live = sets.sortedLayout(flat, book);
+fake.level = 75;
+tickNow();
+check(fake.applied == nil, 'and a band change that would move nothing sends nothing');
+-- disarmed, it never fires
+fcfg.autoSwitch = false;
+fake.level = 40;
+tickNow();
+check(fake.applied == nil, 'Manual/Restore never triggers it');
+-- and it follows nothing it was not told about
+fcfg.autoSwitch, fcfg.lastAppliedSet = true, '';
+fake.level = 75;
+tickNow();
+check(fake.applied == nil, 'with no last-applied set there is nothing to follow');
 
 print('smoke: dlac module adapter');
 local dm = require('bludex\\dlacmodule\\init');

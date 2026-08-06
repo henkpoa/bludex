@@ -27,8 +27,12 @@ function M.defaults()
         budgetOverride = 0,       -- shown when the live budget is unavailable
         applyDelay = 1.1,         -- seconds between set-spell packets
         applyMode = 'safe',       -- 'safe' (client-paced) | 'fast' (injected)
+        -- the level-change rule, three exclusive choices in two flags:
+        -- Manual (both false), Restore (autoRestore), Switch (autoSwitch)
         autoRestore = false,      -- re-add spells stripped by level changes
+        autoSwitch = false,       -- re-apply the build for the band you enter
         lastApplied = TT{ },      -- { ids = {20} } -- the auto-restore target
+        lastAppliedSet = '',      -- and its set BY NAME -- what Switch follows
         activeSetName = '',       -- last selected saved set, reloaded at startup
         activeSetLevel = 0,       -- and which build under it (0 = the flat one)
         codexDensity = 'normal',  -- codex list size: 'big'|'medium'|'normal'|'compact'
