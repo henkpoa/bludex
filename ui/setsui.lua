@@ -252,7 +252,7 @@ local function savedList(ctx)
                 (#built > 0) and ('\nLevel builds: Lv.' .. table.concat(built, ', Lv.')) or '',
                 open and '' or ', and to see its levels'));
             if open then
-                kit.ctext(im, kit.COL.dim, '  Lv    points     slots');
+                kit.ctext(im, kit.COL.dim, '  Lv   points    slots');
                 kit.tip(im, 'A build of its own for a level band. The game hands out\n'
                     .. 'different points and different slots at each of these, so a\n'
                     .. 'set that works at 75 cannot be the set that works at 41.\n\n'
