@@ -361,33 +361,73 @@ end
 -- The budget to SHOW. The client's own number while it is trustworthy;
 -- otherwise the model for the level we are actually standing at.
 -- Returns value, source: 'live' | 'model' | 'stale' (nothing better known).
-function M.budget()
-    local mx = M.points();
-    if mx ~= nil and not capWatch.suspect then return mx, 'live'; end
-    local est = M.expectedCap();
-    if est ~= nil then return est, 'model'; end
+-- OURS WINS once both parts are known (Henrik's call 2026-08-06, and the
+-- evidence backs it): the client's number is a cache that goes stale on
+-- every level change, while ours is recomputed from the level each frame.
+-- Once a zone has given the merits and one recompute has given the learned
+-- bonus, our answer is right at every level and the client's is right only
+-- until you sync.
+--
+-- The exception is the useful one: if the client's value is FRESH -- it just
+-- recomputed, so it describes this very level -- and still disagrees with
+-- ours, then OUR MODEL IS WRONG. Defer to the client and let the UI say so,
+-- rather than quietly overriding the game with arithmetic.
+function M.budget(levelIn)
+    local mx  = M.points();
+    local est = M.expectedCap(levelIn);
+    local fresh = (mx ~= nil) and not capWatch.suspect;
+    if est ~= nil then
+        if fresh and mx ~= est then return mx, 'live'; end
+        return est, 'model';
+    end
+    if fresh then return mx, 'live'; end
     if mx ~= nil then return mx, 'stale'; end
     return nil, nil;
 end
 
+-- true when the client just recomputed and still disagrees with our model:
+-- a real signal that one of the three parts is wrong, not a staleness.
+function M.capDisagrees(levelIn)
+    local mx, est = M.points(), M.expectedCap(levelIn);
+    if mx == nil or est == nil or capWatch.suspect then return false; end
+    return mx ~= est;
+end
+
 -- Call once per frame (host.tick does). Cheap: two reads and a compare.
-function M.watchCap()
-    if not M.onBlu() then capWatch.suspect = false; return; end
-    local mx = M.points();
-    local lvl = M.effectiveLevel();
-    if mx ~= capWatch.max then
-        -- The value MOVED, which means the client recomputed just now, for
-        -- the level we are standing at. That is the only instant its number
-        -- is known to describe our level.
-        --
-        -- But the FIRST reading after a load is not a transition -- it is
-        -- merely the first time we looked, and the value may have been stale
-        -- for hours. Learning from it is how capExtraSub became 54 on
-        -- 2026-08-06 (a stale Lv75 total of 79 measured against Lv40's base
-        -- of 25). So: adopt it as the baseline, never learn from it.
-        local firstLook = (capWatch.max == nil);
+-- mxIn/lvlIn override the live reads so the suite can drive it (this
+-- function has been the source of three separate field bugs; it is not
+-- allowed to stay untestable).
+--
+-- The rule it exists to enforce: the client's cap is trustworthy ONLY while
+-- our level still matches the level it was computed at. Everything below is
+-- about not mistaking something else for a recompute.
+function M.watchCap(mxIn, lvlIn)
+    local testing = (mxIn ~= nil or lvlIn ~= nil);
+    if not testing and not M.onBlu() then capWatch.suspect = false; return; end
+    local mx  = testing and mxIn or M.points();
+    local lvl = testing and lvlIn or M.effectiveLevel();
+
+    -- An EMPTY struct is not a reading. It reads empty through a zone
+    -- handoff and at login, and treating the nil -> value bounce as a
+    -- recompute is how a Lv40 cap of 49 got adopted as correct for Lv75
+    -- after zoning out of a sync (field 2026-08-06). Hold everything.
+    if mx == nil then return; end
+
+    -- The FIRST real reading is not a transition either -- it is merely the
+    -- first time we looked, and the value may have been stale for hours.
+    -- Baseline it, never learn from it (this produced a bogus 54-point
+    -- learned bonus, and a 133-point budget with it).
+    if capWatch.max == nil then
         capWatch.max, capWatch.lvl, capWatch.suspect = mx, lvl, false;
-        if not firstLook and mx ~= nil and lvl ~= nil and lvl >= 1 then
+        return;
+    end
+
+    if mx ~= capWatch.max then
+        -- A real value -> value change: the client recomputed just now, for
+        -- the level we are standing at. The one instant its number is known
+        -- to describe our level -- so measure while it is true.
+        capWatch.max, capWatch.lvl, capWatch.suspect = mx, lvl, false;
+        if lvl ~= nil and lvl >= 1 then
             local rest, moved = mx - setmodel.baseCapAtLevel(lvl), false;
             if lvl < 75 then
                 -- merits do not apply here, so what is left above the base IS
@@ -405,8 +445,15 @@ function M.watchCap()
         end
         return;
     end
+
+    -- Unchanged value: trustworthy only if we are still at its level.
     if lvl == nil or capWatch.lvl == nil then return; end
     capWatch.suspect = (lvl ~= capWatch.lvl);
+end
+
+-- test seam: forget everything the watch has observed
+function M.resetCapWatch()
+    capWatch = { max = nil, lvl = nil, suspect = false };
 end
 
 -- Call freely (the header does, every frame it shows 'reading...'): fires

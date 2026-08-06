@@ -249,7 +249,18 @@ local function renderBody(im, st, deps, embedded)
     -- only recomputes it when the native Set Spells menu opens). Say so
     -- rather than showing a confident wrong number -- and name the one action
     -- that actually fixes it, because nothing Bludex can send does.
-    if deps.blu.capStale() then
+    if deps.blu.capDisagrees() then
+        -- the client just recomputed for THIS level and still disagrees:
+        -- one of our three parts is wrong, and that is worth saying loudly
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        kit.ctext(im, kit.COL.err, '   check Settings');
+        kit.tip(im, ('The game client recomputed its total for your current level\n'
+            .. 'and got %s, but Bludex works it out as %s.\n\n'
+            .. 'The game is right -- it is showing the game\'s number. One of the\n'
+            .. 'parts on the Settings tab is wrong (most likely the learned\n'
+            .. 'bonus, if you have collected more from Boruko since).'):format(
+            tostring(deps.blu.points()), tostring(deps.blu.expectedCap())));
+    elseif deps.blu.capStale() then
         local _, src = deps.blu.budget();
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
         if src == 'model' then

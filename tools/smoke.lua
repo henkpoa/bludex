@@ -157,6 +157,33 @@ check(blu.setMeritCount(5) and blu.meritPts == 10, 'five merits = 10 points');
 check(blu.learnedBonus == 24, '0x063 total 34 minus 10 merits leaves the 24 learned');
 blu.learnedBonus, blu.meritPts, blu.wireTotal = nil, nil, nil;
 
+-- THE CAP WATCH, driven directly (three field bugs have lived in here).
+-- The rule: the client's cap is trustworthy only while our level still
+-- matches the level it was computed at.
+blu.resetCapWatch(); blu.learnedBonus, blu.meritPts = 24, 10;
+blu.watchCap(79, 75);
+check(not blu.capStale(), 'first reading is a baseline, not stale');
+blu.watchCap(79, 40);                         -- sync down, client has not recomputed
+check(blu.capStale(), 'level moved away from the cap it was computed at -> stale');
+blu.watchCap(49, 40);                         -- the set menu opened while synced
+check(not blu.capStale(), 'a real value change is a recompute -> fresh again');
+-- THE ZONE BOUNCE (field 2026-08-06): the struct reads empty through a zone
+-- handoff. nil is NOT a reading, and the value coming back is NOT a
+-- recompute -- treating it as one adopted a Lv40 cap of 49 as correct at 75.
+blu.watchCap(nil, 40);
+blu.watchCap(nil, 75);
+blu.watchCap(49, 75);
+check(blu.capStale(), 'a zone bounce through nil does not clear the suspicion');
+check(blu.budget(75) == 79, 'so the budget answers 79 at Lv75, not the stale 49');
+-- and once the client really does recompute at 75, it agrees
+blu.watchCap(79, 75);
+check(not blu.capStale() and blu.budget(75) == 79, 'client recomputes to 79 and agrees');
+-- OURS WINS while the client's number is stale...
+blu.watchCap(79, 40);
+check(blu.capStale() and blu.budget(40) == 49, 'stale client -> our Lv40 answer, 49');
+check(not blu.capDisagrees(40), 'a stale client is not a disagreement');
+blu.resetCapWatch(); blu.learnedBonus, blu.meritPts = nil, nil;
+
 -- THE BUDGET MODEL: cap = base + learnedBonus + merits, merits only at 75.
 -- Henrik's field numbers 2026-08-06: Lv40 read 49 (base 25 -> bonus 24) and
 -- Lv75 read 79 (base 45 -> merits = 79 - 45 - 24 = 10, his five merits).
