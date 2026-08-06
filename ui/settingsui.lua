@@ -70,16 +70,34 @@ function M.render(ctx)
         .. 'three parts below, so the total stays right after a level sync.');
     if kit.isFn(im, 'Separator') then im.Separator(); end
 
+    -- THE GAME'S number, not ours -- this row exists to be compared against
+    -- the one below it, so it must never show our own answer.
+    local clientCap, clientLvl = blu.capValue(), blu.capLevel();
     field(im, 'Current last measured cap',
-        'The last total the game client itself worked out.\n\n'
+        'The last total the GAME CLIENT itself worked out -- not Bludex\'s.\n\n'
         .. 'It refreshes ONLY when you open:\n'
         .. '    Magic  ->  Blue Magic  ->  Set\n'
         .. 'and at no other time -- so after a level change it still describes\n'
         .. 'the level you left until you open that menu once.\n\n'
         .. 'Also zone once after loading Bludex: your merits arrive with the\n'
         .. 'zone, and both are needed before the total can be worked out.',
-        ('%s   (base for Lv.%s is %d)'):format(
-            total and tostring(total) or '--', tostring(lvl or '?'), base));
+        clientCap and ('%d   (worked out at Lv.%s)'):format(clientCap, tostring(clientLvl or '?'))
+            or 'not read yet',
+        (clientCap ~= nil and clientLvl == lvl) and kit.COL.ok or kit.COL.warn);
+
+    local src = select(2, blu.budget());
+    field(im, 'Budget Bludex is using',
+        'What the meters actually show.\n\n'
+        .. 'Bludex\'s own figure whenever it can work one out, because it is\n'
+        .. 'rebuilt from your CURRENT level every frame, while the game\'s is a\n'
+        .. 'stored number that only refreshes at the set menu.\n\n'
+        .. 'It defers to the game only when the game has been SEEN to\n'
+        .. 'recalculate at this very level and still disagrees -- then the\n'
+        .. 'game is right and one of the figures below is wrong.',
+        ('%s   %s   (base for Lv.%s is %d)'):format(
+            total and tostring(total) or '--',
+            (src == 'model') and '[computed]' or (src == 'live') and '[from the game]' or '[stale]',
+            tostring(lvl or '?'), base));
 
     local mKnown = blu.meritPts ~= nil;
     field(im, 'Assimilation Points',
