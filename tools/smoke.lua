@@ -88,6 +88,10 @@ print(('       (Dual Wield at weight %d: %s)'):format(found.weight, found.tierTe
 local stats = sets.stats(s2, book);
 check(type(stats) == 'table', 'stats aggregate');
 check(sets.prettyStat('DUAL_WIELD') == 'Dual Wield', 'prettyStat');
+check(sets.slotsAtLevel(1) == 6 and sets.slotsAtLevel(10) == 6
+    and sets.slotsAtLevel(11) == 8 and sets.slotsAtLevel(38) == 12
+    and sets.slotsAtLevel(75) == 20 and sets.slotsAtLevel(99) == 20,
+    'slotsAtLevel follows the server rule (6 at 1-10, +2 per 10, cap 20)');
 
 -- budget rules sanity
 check(book.traits.rules.assimilationPerMerit == 2, 'field: +2 per Assimilation merit');
