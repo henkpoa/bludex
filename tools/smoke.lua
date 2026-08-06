@@ -130,6 +130,23 @@ check(blu.parseMeritBonus(miscdata(0x02, 0, 0)) == 0, '0x063: zero is a real rea
 check(blu.parseMeritBonus(miscdata(0x05, 31, 10)) == nil, '0x063: other MISCDATA types ignored');
 check(blu.parseMeritBonus('short') == nil, '0x063: short packet cannot over-read');
 
+-- THE 133 BUG (2026-08-06): the two gaps are per-side-of-75 totals and must
+-- NEVER be summed. Henrik's field state: 0x063 sent 34 (the whole Lv75 gap),
+-- the sub-75 gap measured 24 -- his true totals are 79 at Lv75 and 49 at
+-- Lv40. Adding them gave 45+34+24 = 103, and with a poisoned sub of 54, 133.
+blu.capExtra = { at75 = 34, sub = 24 };
+check(blu.expectedCap(75) == 79, 'Lv75 uses the at75 gap alone (45 + 34 = 79)');
+check(blu.expectedCap(40) == 49, 'Lv40 uses the sub gap alone (25 + 24 = 49)');
+check(blu.expectedCap(60) == 59, 'a synced Lv60 uses the sub gap too (35 + 24)');
+check(blu.meritBonus() == 10, 'merits derive as the difference of the two gaps');
+-- and 34 could never have been merits alone: assimilation caps at 5 upgrades
+check(34 > 5 * book.traits.rules.assimilationPerMerit,
+    '0x063 bluBonus exceeds any possible merit total -- it carries the bonus too');
+blu.capExtra = { at75 = nil, sub = 24 };
+check(blu.expectedCap(75) == nil, 'no Lv75 gap yet -> no guess at Lv75');
+check(blu.expectedCap(40) == 49, '...but the sub gap still answers below 75');
+blu.capExtra = { at75 = nil, sub = nil };
+
 -- budget rules sanity
 check(book.traits.rules.assimilationPerMerit == 2, 'field: +2 per Assimilation merit');
 check(book.traits.rules.expectedTotalAt75 == 80, 'field: expected total 80');

@@ -52,6 +52,14 @@ function M.init(deps)
     -- restore the measured point-budget gap and keep it saved. Both flavors
     -- come through here, so the dlac module gets this for free. 0 means
     -- never measured: blu treats that as unknown, not as a real zero gap.
+    -- measurements taken under an older model meant something else: drop
+    -- them rather than compute confidently from them (2026-08-06: a sub-75
+    -- gap learned from a stale reading produced 133 points against a true 79)
+    if (deps.cfg.capModelVer or 0) < 2 then
+        deps.cfg.capModelVer = 2;
+        deps.cfg.capExtra75, deps.cfg.capExtraSub = 0, 0;
+        if deps.save then deps.save(); end
+    end
     deps.blu.capExtra = {
         at75 = (deps.cfg.capExtra75 or 0) > 0 and deps.cfg.capExtra75 or nil,
         sub  = (deps.cfg.capExtraSub or 0) > 0 and deps.cfg.capExtraSub or nil,

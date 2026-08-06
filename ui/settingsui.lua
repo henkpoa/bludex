@@ -86,13 +86,15 @@ function M.render(ctx)
     local meritAuto  = (cfg.capMerits or 0);
     local meritManual = (cfg.capMeritsManual or AUTO);
     local meritUsed  = blu.meritPts;
-    kit.ctext(im, kit.COL.head, 'Assimilation merits');
+    kit.ctext(im, kit.COL.head, 'Level 75 bonus (merits + spells learned)');
     kit.ctext(im, kit.COL.dim,
-        'Read automatically -- the server sends it on packet 0x063 at login,\n'
-        .. 'on every zone, and whenever you change a merit. Nothing is requested;\n'
-        .. 'it simply arrives. The value is already in POINTS (CatsEyeXI pays 2\n'
-        .. 'per merit, so 5 merits show as 10), and the server applies it only at\n'
-        .. 'level 75 and above -- under a sync it is worth nothing, by design.');
+        'Read automatically -- the server sends it on packet 0x063 at login, on\n'
+        .. 'every zone, and whenever you change a merit. Nothing is requested; it\n'
+        .. 'simply arrives. On CatsEyeXI this one number carries EVERYTHING above\n'
+        .. 'the base rule -- your Assimilation merits and the spells-learned bonus,\n'
+        .. 'already added together -- so at level 75 no menu visit is needed at all.\n'
+        .. 'The server applies it only at 75 and above: under a sync it does not\n'
+        .. 'count, which is why the figure below is measured separately.');
     if meritUsed ~= nil then
         kit.ctext(im, kit.COL.ok, ('   read from the server: %d points%s'):format(
             meritUsed, (meritManual ~= AUTO) and ' (overridden below)' or ''));
@@ -111,18 +113,21 @@ function M.render(ctx)
     elseif mv ~= nil and mv >= 0 and mv ~= meritManual then
         cfg.capMeritsManual = mv;
         blu.meritPts = mv;
+        blu.capExtra.at75 = mv;    -- this figure IS the Lv75 gap
         if ctx.save then ctx.save(); end
     end
 
     -- 3. the learning bonus
-    kit.ctext(im, kit.COL.head, 'Bonus points (spells learned)');
+    kit.ctext(im, kit.COL.head, 'Under-sync bonus (spells learned only)');
     kit.ctext(im, kit.COL.dim,
-        'CatsEyeXI awards extra set points for spells you have learned. Nothing\n'
-        .. 'reports this number, so Bludex MEASURES it: open the native Set Spells\n'
-        .. 'menu once and the client recomputes its total, which Bludex catches and\n'
-        .. 'subtracts the base and merits from. Below level 75 that is all it needs;\n'
-        .. 'at 75 it needs the merit figure above first. It re-measures itself every\n'
-        .. 'time you open that menu, so learning new spells keeps it current.');
+        'Merits stop counting under a level sync, so the figure above does not\n'
+        .. 'apply there -- only the spells-learned part survives, and nothing\n'
+        .. 'reports it. Bludex MEASURES it: while synced BELOW 75, open the native\n'
+        .. 'Set Spells menu once. The client recomputes its total for that level,\n'
+        .. 'Bludex catches the change and subtracts the base rule. It re-measures\n'
+        .. 'on every later visit, so learning new spells keeps it current.\n'
+        .. 'The two figures are never added together -- each is the whole bonus\n'
+        .. 'for its own side of level 75.');
     local bonus = blu.capExtra.sub;
     if bonus ~= nil then
         kit.ctext(im, kit.COL.ok, ('   measured: %d points'):format(bonus));
@@ -148,11 +153,15 @@ function M.render(ctx)
     end
 
     if kit.isFn(im, 'Separator') then im.Separator(); end
-    kit.ctext(im, kit.COL.dim, ('check: %d base + %s merits + %s bonus = %s'):format(
-        base,
-        tostring(blu.meritBonus(lvl) or '?'),
-        tostring(blu.capExtra.sub or '?'),
+    local usingGap = ((lvl or 0) >= 75) and blu.capExtra.at75 or blu.capExtra.sub;
+    kit.ctext(im, kit.COL.dim, ('check: %d base + %s bonus for Lv.%s = %s'):format(
+        base, tostring(usingGap or '?'), tostring(lvl or '?'),
         tostring(blu.expectedCap(lvl) or '?')));
+    local mb = blu.meritBonus();
+    if mb ~= nil then
+        kit.ctext(im, kit.COL.dim, ('your Assimilation merits work out at %d points '
+            .. '(the difference between the two figures)'):format(mb));
+    end
 end
 
 return M;

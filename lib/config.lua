@@ -36,7 +36,11 @@ function M.defaults()
         -- measured yet -- one look at the native Set Spells menu teaches it.
         capExtra75 = 0,
         capExtraSub = 0,
-        capMerits = 0,            -- Assimilation POINTS last read off 0x063
+        -- bumped when the budget model changes meaning: measurements taken
+        -- under the old rules are discarded rather than silently reused.
+        -- 2 = 0x063 carries the whole Lv75 gap, and only sub-75 is measured.
+        capModelVer = 2,
+        capMerits = 0,            -- the Lv75 gap as sent on 0x063 (NOT merits)
         capMeritsManual = -1,     -- Settings override; -1 = use the packet
         capBonusManual = -1,      -- Settings override; -1 = use the measurement
     };

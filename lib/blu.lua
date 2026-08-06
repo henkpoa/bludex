@@ -288,24 +288,40 @@ function M.capLevel()
     return capWatch.lvl;
 end
 
--- Feed the server's merit answer in (standalone addon, packet 0x063). Only
--- believed at level 75+, because the server zeroes the field below that --
--- a sync must never wipe what we learned at full level.
+-- Feed the server's 0x063 answer in (standalone addon only).
+--
+-- WHAT THIS NUMBER ACTUALLY IS (field-corrected 2026-08-06, second pass):
+-- NOT the merit points. Stock LSB fills bluBonus with the Assimilation
+-- merits alone, but merits.sql caps Assimilation at 5 upgrades -- so the
+-- merit half can never exceed about 10, and Henrik's client sent 34 while
+-- his true Lv75 total was 79 over a base of 45. CatsEyeXI has overridden
+-- the field to carry EVERYTHING above the base rule: merits AND the custom
+-- learning bonus, already summed.
+--
+-- So this IS the level-75 gap, handed over for free -- no menu visit needed
+-- at 75 at all. It cannot be split into its two halves on its own; only a
+-- measurement below 75 (where merits do not apply) separates them.
+--
+-- Believed only at level 75+, because the server gates the field on level --
+-- a sync must never overwrite what full level told us.
 function M.setMeritPoints(n)
     if n == nil then return false; end
     local lvl = M.effectiveLevel();
     if lvl == nil or lvl < 75 then return false; end
     if M.meritPts == n then return false; end
     M.meritPts = n;
+    M.capExtra.at75 = n;          -- this is the Lv75 gap, straight from the server
     return true;
 end
 
--- The merit contribution at a level: the server applies Assimilation only
--- from 75 up, so a sync drops it to nothing.
-function M.meritBonus(level)
-    level = level or M.effectiveLevel();
-    if level == nil or level < 75 then return 0; end
-    return M.meritPts;      -- nil when we have not been told yet
+-- The Assimilation merit points, DERIVED and display-only: the 75 gap
+-- carries merits plus the learning bonus, the sub-75 gap carries the
+-- learning bonus alone, so the difference is the merits. nil until both
+-- are known.
+function M.meritBonus()
+    local a, s = M.capExtra.at75, M.capExtra.sub;
+    if a == nil or s == nil or a < s then return nil; end
+    return a - s;
 end
 
 -- The modelled cap for a level: the server's base rule, plus this
@@ -316,23 +332,21 @@ end
 -- do not apply there. At 75 it needs the merit figure to separate the two.
 -- The raw at75 gap remains as a fallback for the flavor that cannot read
 -- packets: it is a correct total at 75 even when it cannot be decomposed.
+-- ONE gap per side of 75, never summed together. at75 covers merits plus the
+-- learning bonus (the server hands it over on 0x063); sub covers the learning
+-- bonus alone and can only come from a measurement below 75, where merits do
+-- not apply. Adding them would double-count the learning bonus -- which is
+-- exactly the 133-instead-of-79 bug of 2026-08-06.
 function M.expectedCap(level)
     level = level or M.effectiveLevel();
     if level == nil or level < 1 then return nil; end
-    local base = setmodel.baseCapAtLevel(level);
-    local bonus = M.capExtra.sub;                    -- the learning bonus
-    if bonus ~= nil then
-        local merit = M.meritBonus(level);
-        if merit ~= nil then return base + bonus + merit; end
-    end
-    -- fallbacks: a measured total at 75, or decompose one using the merits
-    if level >= 75 and M.capExtra.at75 ~= nil then
-        return base + M.capExtra.at75;
-    end
-    if level < 75 and M.capExtra.at75 ~= nil and M.meritPts ~= nil then
-        return base + (M.capExtra.at75 - M.meritPts);
-    end
-    return nil;
+    -- explicit branches, NOT `cond and a or b`: when the wanted gap is nil
+    -- that idiom silently falls through to the other side of 75 (the and/or
+    -- trap, HANDOVER law 3) and would answer Lv75 with the under-sync figure
+    local gap;
+    if level >= 75 then gap = M.capExtra.at75; else gap = M.capExtra.sub; end
+    if gap == nil then return nil; end
+    return setmodel.baseCapAtLevel(level) + gap;
 end
 
 -- The budget to SHOW. The client's own number while it is trustworthy;
@@ -353,29 +367,28 @@ function M.watchCap()
     local mx = M.points();
     local lvl = M.effectiveLevel();
     if mx ~= capWatch.max then
-        -- The value moved: the client just recomputed, and it did so FOR the
-        -- level we are standing at now. This is the ONLY instant its number
-        -- is known to match our level -- measure the gap while it is true.
+        -- The value MOVED, which means the client recomputed just now, for
+        -- the level we are standing at. That is the only instant its number
+        -- is known to describe our level.
+        --
+        -- But the FIRST reading after a load is not a transition -- it is
+        -- merely the first time we looked, and the value may have been stale
+        -- for hours. Learning from it is how capExtraSub became 54 on
+        -- 2026-08-06 (a stale Lv75 total of 79 measured against Lv40's base
+        -- of 25). So: adopt it as the baseline, never learn from it.
+        local firstLook = (capWatch.max == nil);
         capWatch.max, capWatch.lvl, capWatch.suspect = mx, lvl, false;
-        if mx ~= nil and lvl ~= nil and lvl >= 1 then
-            local gap   = mx - setmodel.baseCapAtLevel(lvl);
-            local learn = {};
-            if lvl >= 75 then
-                learn.at75 = gap;
-                -- decompose only when the server has told us the merit half
-                if M.meritPts ~= nil and (gap - M.meritPts) >= 0 then
-                    learn.sub = gap - M.meritPts;
+        if not firstLook and mx ~= nil and lvl ~= nil and lvl >= 1 then
+            -- Only the sub-75 side is ever measured. At 75 the server tells
+            -- us the gap outright on 0x063, and a measurement there could not
+            -- be split into merits and bonus anyway.
+            if lvl < 75 then
+                local gap = mx - setmodel.baseCapAtLevel(lvl);
+                if gap >= 0 and M.capExtra.sub ~= gap then
+                    M.capExtra.sub = gap;
+                    if M.onCapLearn ~= nil then pcall(M.onCapLearn); end
                 end
-            else
-                -- below 75 merits do not apply, so the gap IS the learning
-                -- bonus -- no merit knowledge needed
-                learn.sub = gap;
             end
-            local moved = false;
-            for k, v in pairs(learn) do
-                if v >= 0 and M.capExtra[k] ~= v then M.capExtra[k] = v; moved = true; end
-            end
-            if moved and M.onCapLearn ~= nil then pcall(M.onCapLearn); end
         end
         return;
     end
