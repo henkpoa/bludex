@@ -481,11 +481,16 @@ function M.watchCap(mxIn, lvlIn)
         if lvl ~= nil and lvl >= 1 then
             local rest, moved = mx - setmodel.baseCapAtLevel(lvl), false;
             if lvl < 75 then
-                -- merits do not apply here, so what is left above the base IS
-                -- the learned bonus: 49 - 25 = 24
+                -- Merits do not apply here, so what is left above the base IS
+                -- the learned bonus, with no assumption in it at all: 49 - 25
+                -- = 24. This is the reading that SETTLES a fresh character --
+                -- until it lands, the split of 0x063's total rests on the
+                -- believed per-merit rate, and reconcile can now measure that
+                -- rate from this bonus and correct the merits with it.
                 if rest >= 0 and M.learnedBonus ~= rest then
                     M.learnedBonus = rest; moved = true;
                 end
+                if reconcile() then moved = true; end
             elseif M.learnedBonus ~= nil then
                 -- at 75 everything applies, so the merits are what remains
                 -- once the learned bonus is taken out: 79 - 45 - 24 = 10

@@ -182,6 +182,31 @@ check(blu.meritPts == 15 and blu.meritValue == 3,
 blu.learnedBonus, blu.meritPts, blu.wireTotal = nil, nil, nil;
 blu.meritCount, blu.meritValue, blu.meritValueProven = nil, 2, false;
 
+-- A FRESH CHARACTER: 0x063 sends 33 and 0x08C says 4 merits. The COUNT is
+-- reported, never inferred -- so the only assumption is the per-merit rate,
+-- and at Lv75 even a wrong rate cannot change the total (45 + 33 = 78 either
+-- way). The first sync settles it: below 75 the cap gives the learned bonus
+-- with no merits in it, and the rate follows.
+blu.resetCapWatch();
+blu.learnedBonus, blu.meritPts, blu.wireTotal = nil, nil, nil;
+blu.meritCount, blu.meritValue, blu.meritValueProven = nil, 2, false;
+blu.wireTotal = 33;
+blu.setMeritCount(4);
+check(blu.meritPts == 8 and blu.learnedBonus == 25, 'fresh char: 4 merits -> 8 + 25 bonus');
+check(not blu.meritValueProven, 'the rate is still only believed');
+check(blu.expectedCap(75) == 78, 'Lv75 total is 78 whatever the split');
+-- now a sync to 40 with a TRUE bonus of 21 (so the rate was really 3)
+blu.watchCap(78, 75);                     -- baseline first: a lone reading never learns
+blu.watchCap(46, 40);                     -- 46 - 25 base = 21 learned, no merits
+check(blu.learnedBonus == 21, 'a sub-75 reading gives the bonus with no assumption');
+check(blu.meritValue == 3 and blu.meritValueProven, 'and measures the real rate: (33-21)/4');
+check(blu.meritPts == 12, 'the merits are corrected to 12');
+check(blu.expectedCap(75) == 78, 'Lv75 still totals 78 -- the split moved, not the sum');
+check(blu.expectedCap(40) == 46, 'and Lv40 is now right, which is what the split is for');
+blu.resetCapWatch();
+blu.learnedBonus, blu.meritPts, blu.wireTotal = nil, nil, nil;
+blu.meritCount, blu.meritValue, blu.meritValueProven = nil, 2, false;
+
 -- THE CAP WATCH, driven directly (three field bugs have lived in here).
 -- The rule: the client's cap is trustworthy only while our level still
 -- matches the level it was computed at.
