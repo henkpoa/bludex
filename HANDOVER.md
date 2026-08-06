@@ -4,7 +4,7 @@
 **Repo:** https://github.com/henkpoa/bludex — public, `main` + `dev` (all work on `dev`,
 dev→main only on Henrik's explicit go; same law in dlac). Released at `4c91e41`+docs.
 **State:** everything below is **FIELD-CONFIRMED on CatsEyeXI** unless marked otherwise.
-`addon.version` is still **0.1.0** — a bump is pending Henrik's call.
+`addon.version` is **1.0.0** — the approved release, tagged `v1.0.0` on `main`.
 
 ---
 
@@ -67,7 +67,7 @@ dev→main only on Henrik's explicit go; same law in dlac). Released at `4c91e41
 1. **Calibrate `castLock`** against CEXI (apply, wait out the timer, cast — adjust the
    one number in `lib/blu.lua` if 60s is wrong).
 2. **Field-test the level-change Restore** with a real level sync (arm it on the Sets tab).
-3. **Version bump + release notes** when Henrik calls it (still 0.1.0).
+3. ~~Version bump + release notes~~ — done: approved, `1.0.0`, released `v1.0.0`.
 4. Data verify tail (unchanged from the night build): castTime for the 8 SoA spells,
    Carcharian Verve mpCost, which trait the SoA spells feed, spellType eyeball on the
    24 scriptless rows. Nothing blocks UI.

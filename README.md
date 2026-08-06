@@ -80,8 +80,13 @@ codex: one grammar everywhere.
 
 ## Install
 
-**Standalone:** drop this repository into `Ashita/addons/bludex/` and `/addon load bludex`.
-`/bludex` (or `/bdx`) toggles the window.
+**Standalone:** grab `bludex.zip` from the [latest release](https://github.com/henkpoa/bludex/releases/latest)
+and unzip it into `Ashita/addons/` — it already contains the correctly named `bludex/`
+folder. Then `/addon load bludex`; `/bludex` (or `/bdx`) toggles the window.
+
+(Cloning works too, as long as the folder ends up named exactly `bludex` — the module
+requires depend on it. GitHub's green *Code → Download ZIP* button does **not**: it
+names the folder `bludex-main`.)
 
 **Already running [dlac](https://github.com/henkpoa/dlac)?** You have Bludex — it ships
 inside dlac as the Job helper `jobhelpers/blu/bludex` (a Bludex row on the Job Helpers

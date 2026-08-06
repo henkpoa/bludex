@@ -8,7 +8,7 @@
 
 addon.name    = 'bludex';
 addon.author  = 'henkpoa';
-addon.version = '0.1.0';
+addon.version = '1.0.0';
 addon.desc    = 'Blue Magic codex + visual set planner (CatsEyeXI, level-75 cap).';
 addon.link    = 'https://github.com/henkpoa/bludex';
 
