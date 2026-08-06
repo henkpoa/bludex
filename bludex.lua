@@ -100,6 +100,9 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
         else
             msg('points raw: read failed (signature missing or pointer chain dead)');
         end
+        local qsent, qwhy, qbytes = blu.queryStatus();
+        msg(('0x102 query: %s (%s, %d bytes)'):format(
+            qsent and 'sent' or 'NOT SENT', qwhy, qbytes));
         local live = blu.currentSet();
         if #live == 20 then
             local n = 0;
@@ -142,10 +145,21 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
     end
 
     if args[2]:any('refresh') then
-        if blu.requestJobData() then
-            msg('Requested a job-data refresh from the server (0x061 + the 0x102 extended-job query) - the points header should fill within a second.');
+        local ok, qok = blu.requestJobData();
+        if ok then
+            msg('Sent the 0x061 player-info request.');
         else
-            msg('Could not send the refresh request.');
+            msg('Could not send the 0x061 player-info request.');
+        end
+        -- the query is the ONLY thing that refreshes the BLU point cap, so
+        -- it gets its own verdict: a silent failure here is exactly what a
+        -- stuck cap after a level sync looks like
+        local sent, why, bytes = blu.queryStatus();
+        if qok and sent then
+            msg(('Sent the 0x102 extended-job query (%d bytes) - the point cap should follow within a second.'):format(bytes));
+        else
+            msg(('Did NOT send the 0x102 extended-job query: %s'):format(why));
+            msg('That query is the only thing that refreshes the point cap - without it the cap stays as it was.');
         end
         return;
     end

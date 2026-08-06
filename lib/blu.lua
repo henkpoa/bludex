@@ -179,19 +179,43 @@ local nudge = { last = 0, tries = 0 };
 -- extended-job packet (0x044) -- the refresh opening the native Set Spells
 -- menu triggers, and the ONLY thing that recomputes the point cap after a
 -- level sync starts or ends (field 2026-08-06: 0x061 does not touch it).
+-- The last query attempt, so /bludex debug can say what actually happened.
+-- Field 2026-08-06: a stuck cap after a level sync ends looks IDENTICAL
+-- whether the query was never sent, was sent and dropped, or was answered
+-- and ignored -- the caller used to discard this result, so a half-failed
+-- refresh reported success. Never let this fail silently again.
+local lastQuery = { sent = false, why = 'not tried yet', bytes = 0 };
+
 local function requestBluRefresh()
-    if not M.onBlu() then return false; end
-    if ffi == nil then return false; end
-    local ok = pcall(function()
+    if not M.onBlu() then
+        lastQuery = { sent = false, why = 'not on BLU', bytes = 0 };
+        return false;
+    end
+    if not _fok or ffi == nil then
+        lastQuery = { sent = false, why = 'ffi unavailable', bytes = 0 };
+        return false;
+    end
+    local n = 0;
+    local ok, err = pcall(function()
         local eqex = ffi.new('bludex_equipex_c2s_t', {
             IdSize = 0x5302, JobId = 0x10, IsSubJob = M.isBluSub() and 1 or 0,
         });
         local packet = ffi.string(eqex, ffi.sizeof('bludex_equipex_c2s_t')):totable();
+        n = #packet;   -- 0xA4 = 164 expected; a short table means :totable() truncated
         AshitaCore:GetPacketManager():AddOutgoingPacket(0x102, packet);
     end);
+    lastQuery = { sent = ok, why = ok and 'ok' or tostring(err), bytes = n };
     return ok;
 end
 
+-- sent, why, bytes -- the outcome of the most recent 0x102 query attempt.
+function M.queryStatus()
+    return lastQuery.sent, lastQuery.why, lastQuery.bytes;
+end
+
+-- Returns TWO results: the 0x061 send and the 0x102 query. They fail
+-- independently and only the query refreshes the BLU point cap, so a caller
+-- reporting to the user must look at both.
 function M.requestJobData()
     local ok = pcall(function()
         -- full packet bytes incl. header: id 0x61, size 0x08 (byte1 = size/2)
@@ -200,8 +224,8 @@ function M.requestJobData()
     end);
     -- the 0x102 query rides along on BLU: 0x061 fills the general job data
     -- but only the extended-job answer refreshes the BLU point cap
-    requestBluRefresh();
-    return ok;
+    local qok = requestBluRefresh();
+    return ok, qok;
 end
 
 -- Call freely (the header does, every frame it shows 'reading...'): fires
