@@ -196,6 +196,11 @@ end
 function M.tick()
     local deps = M.deps;
     if deps == nil then return; end
+    -- PROOF OF LIFE for the level rules. Both of them ride the host's beat --
+    -- dlac's is gated on its own activity predicate -- and a rule that never
+    -- runs looks exactly like a rule that decided not to act. The Sets tab
+    -- reads this and says which of the two it is.
+    M.tickedAt = os.clock();
     -- the cap-staleness watch runs every frame whether or not anything
     -- renders: the client recomputes the cap on its own schedule (the native
     -- Set Spells menu), and we have to catch the moment it does
@@ -285,6 +290,14 @@ local function tabCtx(im, st, deps, embedded)
         -- meters can never disagree about what a level is worth
         rungBudget = function(level) return rungBudget(deps, level); end,
         slotMax = function() return deps.sets.slotMax(st.editingSet); end,
+        -- is the beat that drives the level rules actually reaching us?
+        watchAlive = function()
+            return M.tickedAt ~= nil and (os.clock() - M.tickedAt) < 5.0;
+        end,
+        -- arming Switch is a click, and a click may act: put the player on
+        -- the right build now rather than at the next band change. Silent
+        -- when they are already wearing it (bandSwitch checks the diff).
+        armSwitch = function() M.switchCheck = os.clock() + 0.5; end,
     };
 end
 

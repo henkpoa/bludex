@@ -447,8 +447,8 @@ local function slotGrid(ctx)
     -- WHICH BUILD this is. The set name lives in the box on the left; this is
     -- the one thing about it that changes what the editor allows.
     if set.level ~= nil then
-        kit.ctext(im, kit.COL.dim, ('Editing Lv.%s of "%s"  --  levels %s'):format(
-            set.level, set.name, bandText(ctx, set.level)));
+        kit.ctext(im, kit.COL.dim, ('Editing Lv.%s - levels %s'):format(
+            set.level, bandText(ctx, set.level)));
         kit.tip(im, ('The game gives the same %d slots and the same points\n'
             .. 'anywhere in Lv.%s, so one build serves the whole band.\n\n'
             .. 'Other levels of this set are under its name on the left.'):format(
@@ -683,6 +683,7 @@ local function slotGrid(ctx)
     end
     if kit.litButton(im, 'Switch', switch, lvW, 20) and not switch then
         setRule(false, true);
+        if ctx.armSwitch then ctx.armSwitch(); end   -- act on the click
     end
     kit.tip(im, 'When your level moves into a different BAND, the set you last\n'
         .. 'applied is re-applied as the build for the band you are now in --\n'
@@ -708,6 +709,40 @@ local function slotGrid(ctx)
         setRule(false, false);
     end
     kit.tip(im, 'Nothing is applied automatically - you click Apply.');
+
+    -- ONE LINE ON WHY NOTHING HAPPENED. An armed rule that stays quiet looks
+    -- identical whether the beat never reached it, it has no set to follow,
+    -- or it simply had nothing to do -- so say which, where the eye is.
+    local entry = st.activeSet and ctx.cfg.sets[st.activeSet] or nil;
+    local built = (entry ~= nil) and #ctx.sets.groupLevels(entry) or 0;
+    if (switch or auto) and ctx.watchAlive and ctx.watchAlive() == false then
+        kit.ctext(im, kit.COL.err, 'The level watch is not running');
+        kit.tip(im, 'The rule above is armed, but the per-frame beat that drives it\n'
+            .. 'is not arriving, so nothing will fire on a level change.\n'
+            .. 'In dlac the beat is gated on its own activity check; reloading\n'
+            .. 'the addon re-subscribes it.');
+    elseif switch then
+        local follow = ctx.cfg.lastAppliedSet;
+        if follow == nil or follow == '' then
+            kit.ctext(im, kit.COL.warn, 'Nothing to follow yet');
+            kit.tip(im, 'Switch follows the set you last APPLIED, by name -- not the\n'
+                .. 'one selected here. Apply one once and it starts following it.');
+        else
+            local hereRung = ctx.sets.rungFor(ctx.blu.effectiveLevel());
+            kit.ctext(im, kit.COL.dim, ('Following "%s"%s'):format(follow,
+                (hereRung ~= nil) and (' - Lv.' .. bandText(ctx, hereRung)) or ''));
+            kit.tip(im, 'The set Switch re-applies when your level crosses into\n'
+                .. 'another band, and the band you are standing in right now.');
+        end
+    elseif built > 0 then
+        -- the trap this line exists for: Restore was armed long before level
+        -- builds existed, and it will never look at one
+        kit.ctext(im, kit.COL.warn, 'Switch follows level builds');
+        kit.tip(im, 'This set has level builds, and Restore knows nothing about\n'
+            .. 'them: it only re-adds spells stripped from the last applied\n'
+            .. 'set. Switch is the rule that swaps builds when your level\n'
+            .. 'crosses into another band.');
+    end
 
     -- quick add
     if kit.isFn(im, 'Separator') then im.Separator(); end
@@ -784,9 +819,17 @@ function M.render(ctx)
     local gameRow = kit.measure(im, { 'Apply in game', 'Applying...' }, 100)
         + kit.measure(im, { 'Read current' }, 90)
         + kit.measure(im, { 'Clear' }, 50);
+    -- THREE choices on the level-change row now, and the row is measured for
+    -- all three (the field shot that caught this had 'Man' clipped clean off)
     local levelRow = kit.measure(im, { 'Level change:' }, 60)
-        + kit.measure(im, { 'Restore', 'Manual' }, 64) * 2;
-    MID_W = math.max(330, gameRow + 34, levelRow + 34);
+        + kit.measure(im, { 'Restore', 'Switch', 'Manual' }, 64) * 3;
+    -- the two full-width lines under it, so neither can clip either
+    local lines = kit.measure(im, {
+        'Editing Lv.31 - levels 31-40',
+        'Following "A saved set name" - Lv.31-40',
+        'The level watch is not running',
+    }, 0);
+    MID_W = math.max(330, gameRow + 34, levelRow + 34, lines + 24);
     if kit.isFn(im, 'BeginChild') and kit.isFn(im, 'EndChild') then
         if im.BeginChild('bdxsaved', { LEFT_W, 0 }, true) then savedList(ctx); end
         im.EndChild();
