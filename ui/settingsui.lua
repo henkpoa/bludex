@@ -83,8 +83,10 @@ function M.render(ctx)
         'From Assimilation, in the job group 2 merits.\n\n'
         .. '2 points per merit, 5 merits maximum -- so 10 points at most.\n'
         .. 'They count only at level 75: a level sync removes them.\n\n'
-        .. 'Worked out as cap - base level points - learned bonus, once the\n'
-        .. 'cap has been updated at level 75. Type a value to set it yourself.',
+        .. 'Read automatically WHEN YOU ZONE -- the server pushes your full\n'
+        .. 'merit list on every zone-in, and again whenever you raise or lower\n'
+        .. 'a merit. Nothing is requested; it simply arrives. It can also be\n'
+        .. 'worked out as cap - base - learned bonus at Lv75. Type to override.',
         mKnown and tostring(blu.meritPts) or 'not known yet',
         mKnown and kit.COL.ok or kit.COL.warn);
     edit(im, '##bdxmerits', blu.meritPts or 0, mKnown,

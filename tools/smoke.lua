@@ -128,6 +128,35 @@ check(blu.parseMeritBonus(miscdata(0x02, 0, 0)) == 0, '0x063: zero is a real rea
 check(blu.parseMeritBonus(miscdata(0x05, 31, 10)) == nil, '0x063: other MISCDATA types ignored');
 check(blu.parseMeritBonus('short') == nil, '0x063: short packet cannot over-read');
 
+-- the 0x08C merit read: the packet that actually reports Assimilation, and
+-- the one CatsEyeXI pushes in full at every zone-in.
+-- layout: u16 count, u16 pad, { u16 id, u8 next, u8 count } x count
+local function meritPacket(entries)
+    local b = { 0x8C, 0x50, 0, 0, #entries % 256, math.floor(#entries / 256), 0, 0 };
+    for _, e in ipairs(entries) do
+        b[#b + 1] = e[1] % 256; b[#b + 1] = math.floor(e[1] / 256);
+        b[#b + 1] = 0;          b[#b + 1] = e[2];
+    end
+    local s = '';
+    for _, v in ipairs(b) do s = s .. string.char(v); end
+    return s;
+end
+local ASSIM = blu.MERIT_ASSIMILATION;
+check(ASSIM == 3014, 'Assimilation is merits.sql 3014 (MCATEGORY_BLU_2 + 0x06)');
+check(blu.parseMeritCount(meritPacket({ { 66, 10 }, { ASSIM, 5 } })) == 5,
+    '0x08C: finds Assimilation among other merits');
+check(blu.parseMeritCount(meritPacket({ { 66, 10 } })) == nil,
+    '0x08C: nil when the packet has no Assimilation entry');
+check(blu.parseMeritCount(meritPacket({ { ASSIM + 1, 3 } })) == 0,
+    '0x08C: an ODD id is the removal flag -- back to zero');
+check(blu.parseMeritCount(meritPacket({ { ASSIM, 5 } }):sub(1, 10)) == nil,
+    '0x08C: a truncated entry cannot over-read');
+-- merit COUNT x2 = points, and one 0x063 then completes the pair
+blu.learnedBonus, blu.meritPts, blu.wireTotal = nil, nil, 34;
+check(blu.setMeritCount(5) and blu.meritPts == 10, 'five merits = 10 points');
+check(blu.learnedBonus == 24, '0x063 total 34 minus 10 merits leaves the 24 learned');
+blu.learnedBonus, blu.meritPts, blu.wireTotal = nil, nil, nil;
+
 -- THE BUDGET MODEL: cap = base + learnedBonus + merits, merits only at 75.
 -- Henrik's field numbers 2026-08-06: Lv40 read 49 (base 25 -> bonus 24) and
 -- Lv75 read 79 (base 45 -> merits = 79 - 45 - 24 = 10, his five merits).

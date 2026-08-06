@@ -219,10 +219,22 @@ end);
 -- and it arrives by itself -- at login, on zoning, and whenever merits change.
 -- Nothing is ever sent to ask for it. Standalone only: dlac's module contract
 -- has no packet hook, and the library falls back to measuring without it.
+-- Both budget packets arrive by themselves -- nothing is ever sent to ask.
+--   0x08C  the merit ALLOCATIONS, full list at every zone-in: Assimilation
+--   0x063  learned bonus + merits summed, a cross-check that completes
+--          whichever half is already known
+-- Standalone only; dlac's api=2 module contract has no packet hook.
 ashita.events.register('packet_in', 'bdx_packet_cb', function(e)
-    if e.id ~= 0x063 then return; end
-    local n = blu.parseMeritBonus(e.data);
-    if n ~= nil and blu.setWireTotal(n) then
+    local moved = false;
+    if e.id == 0x08C then
+        moved = blu.setMeritCount(blu.parseMeritCount(e.data));
+    elseif e.id == 0x063 then
+        local n = blu.parseMeritBonus(e.data);
+        moved = (n ~= nil) and blu.setWireTotal(n) or false;
+    else
+        return;
+    end
+    if moved then
         cfg.capLearnedBonus = blu.learnedBonus or -1;
         cfg.capMeritPoints  = blu.meritPts or -1;
         saveSettings();

@@ -277,6 +277,55 @@ function M.capLevel()
     return capWatch.lvl;
 end
 
+-- THE MERITS, READ ON ZONING (packet 0x08C, the approach dlac's meritwatch
+-- proved). This is the one that actually reports Assimilation: 0x063 gives
+-- the two summed and can never split them, while 0x08C carries the per-merit
+-- ALLOCATIONS, and CatsEyeXI pushes the full list at EVERY ZONE-IN (plus a
+-- single-entry update whenever a merit is raised or lowered). Nothing is
+-- requested -- the merit system is push-only.
+--
+--   u16 count; u16 pad; { u16 id; u8 next; u8 count } x count
+--
+-- Merit ids are even on the wire; an ODD id is the full-removal flag (id|1),
+-- meaning that merit is back to zero.
+M.MERIT_ASSIMILATION = 3014;   -- merits.sql 3014 = MCATEGORY_BLU_2 + 0x06
+M.meritValue         = 2;      -- CatsEyeXI pays 2 points per merit (stock: 1)
+
+-- Pure parser: 0x08C wire data (header included) -> the Assimilation merit
+-- COUNT, or nil when this packet carries no Assimilation entry. Bounds-
+-- checked per entry, so a short or legacy packet can never over-read.
+function M.parseMeritCount(data)
+    if type(data) ~= 'string' or #data < 0x0C then return nil; end
+    local n = (data:byte(0x04 + 1) or 0) + (data:byte(0x05 + 1) or 0) * 256;
+    local found = nil;
+    for i = 0, n - 1 do
+        local off = 0x08 + i * 4;
+        if off + 4 > #data then break; end
+        local id = (data:byte(off + 1) or 0) + (data:byte(off + 2) or 0) * 256;
+        local removed = (id % 2 == 1);
+        if removed then id = id - 1; end
+        if id == M.MERIT_ASSIMILATION then
+            found = removed and 0 or (data:byte(off + 4) or 0);
+        end
+    end
+    return found;
+end
+
+-- One 0x08C landed. Merit COUNTS are level-independent -- unlike 0x063's
+-- total, the server does not zero them under a sync -- so this is believed
+-- at any level. With the merits known, one 0x063 completes the set.
+function M.setMeritCount(count)
+    if count == nil then return false; end
+    local pts = count * M.meritValue;
+    if M.meritPts == pts then return false; end
+    M.meritPts = pts;
+    if M.learnedBonus == nil and M.wireTotal ~= nil
+       and (M.wireTotal - pts) >= 0 then
+        M.learnedBonus = M.wireTotal - pts;
+    end
+    return true;
+end
+
 -- The 0x063 reading (standalone only): learnedBonus + merits, summed.
 -- Kept purely as a CROSS-CHECK -- it can confirm the pair we track but can
 -- never be either of them. Believed only at 75+, where the server sends it.
