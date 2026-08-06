@@ -31,6 +31,12 @@ Bludex combines what `blucheck` and `blusets` did — and goes further:
   you how many stuck.
 - **Trait explorer** — every blue trait ladder (Dual Wield, Attack Bonus, …), which
   spells feed it, and what to add for the next tier.
+- **It knows which traits your jobs already give you** — a job trait and a blue trait
+  can be the same trait, and the server does not add them together or keep the better
+  one: it keeps the *job* one and throws the blue one away, whatever its tier. So on
+  BLU/DRG the weight you feed Accuracy Bonus buys nothing. Bludex says where each trait
+  actually comes from, marks the rungs your jobs have taken, and warns you in the spell
+  tooltip before the points are spent.
 
 ## A tour
 
@@ -108,8 +114,8 @@ land over the point budget, which is yours to trim.
 of its levels. The set you last *applied* is the one whose rule runs:
 
 - **Restore** — will equip spells as spell slots and points become available.
-- **Lvl Set Switch** — will equip your normal set with restore behaviour, unless a
-  level appropriate set has been defined, which will be equipped if present instead.
+- **Lvl Set Switch** — will behave as Restore, unless you have added a Level Set for
+  the range your level is currently set to.
 - **Manual** — all changes must be manually applied.
 
 Left alone it follows what you build: Restore while the set is flat, Lvl Set Switch

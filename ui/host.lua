@@ -395,49 +395,43 @@ local function renderBody(im, st, deps, embedded)
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
     end
     kit.ctext(im, kit.COL.head, 'BLUDEX');
-    -- WHICH RUNG is being edited, next to the numbers that come from it: the
-    -- meters below are that rung's ceilings, not the level you are standing at
+    -- ONE PAIR OF METERS, AND THEY DESCRIBE WHERE YOU ARE (Henrik 2026-08-07:
+    -- "only relevant is your current situation"). There used to be two -- the
+    -- editing build against its own band, plus a separate Sync line for what
+    -- the game held right now -- and between them they filled the header with
+    -- numbers for levels the player was not at.
+    --
+    -- These are the editing build against ITS band's allowance, which IS the
+    -- current situation whenever you are editing the build for the band you
+    -- stand in (the normal case: they are the same numbers). When they are
+    -- NOT -- planning a Lv.31 build while standing at 75 -- the level chip
+    -- says so rather than the meters quietly switching meaning.
     local elvl = st.editingSet.level;
+    local here = deps.sets.rungFor(deps.blu.effectiveLevel());
     if elvl ~= nil then
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        kit.ctext(im, kit.COL.accent, ('  Lv.%d'):format(elvl));
-        kit.tip(im, ('You are editing the Lv.%d build of "%s".\n'
-            .. 'It covers levels %d-%d -- the game gives the same slots and\n'
-            .. 'the same points anywhere in that band.\n\n'
+        local away = (here ~= nil and here ~= elvl);
+        kit.ctext(im, away and kit.COL.warn or kit.COL.accent,
+            away and ('  Lv.%d (you are %d)'):format(elvl, deps.blu.effectiveLevel())
+                or ('  Lv.%d'):format(elvl));
+        kit.tip(im, ('You are editing the Lv.%d build of "%s", for levels %d-%d.\n'
+            .. 'The points and slots beside this are what the game gives you\n'
+            .. 'there.%s\n\n'
             .. 'Pick another level under the set name in the Sets tab.'):format(
-            elvl, st.editingSet.name, elvl, deps.sets.bandTop(elvl)));
+            elvl, st.editingSet.name, elvl, deps.sets.bandTop(elvl),
+            away and ('\n\nYou are at Lv.%s right now, which is a different band --\n'
+                .. 'so these are plans for later, not your situation now.'):format(
+                tostring(deps.blu.effectiveLevel())) or ''));
     end
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    -- the header meters are the EDITING set against the budget -- the
-    -- planning numbers needed while adding from the codex. Live-vs-
-    -- planned shows per-slot in the Sets tab (dimming).
     local max = budgetMax(deps);
     kit.meter(im, '   Set:', deps.sets.usedPoints(st.editingSet, deps.book), max, ' pts');
     kit.tip(im, max ~= nil
-        and 'Points used by the set you are editing /\nthe total at that set\'s level (CatsEyeXI bonuses included).'
-        or 'Points used by the set you are editing.\nThe total appears when you are on BLU (or set budgetOverride).');
+        and 'Points this set uses / what the game gives you at its level\n(CatsEyeXI merit and learning bonuses included).'
+        or 'Points this set uses.\nThe total appears when you are on BLU (or set budgetOverride).');
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     kit.meter(im, '   Slots:', deps.sets.count(st.editingSet), deps.sets.slotMax(st.editingSet), '');
-    -- the level-sync line (Henrik 2026-08-06): the meters above stay the
-    -- PLAN (the editing set at full level); when the effective BLU level is
-    -- under the 75 cap this shows what the client holds RIGHT NOW -- the
-    -- sync-enabled spells' points against the synced budget, and those
-    -- spells against the synced slot count (the server's slot rule).
-    local ss = deps.blu.syncStats(deps.book);
-    if ss ~= nil and ss.level < 75 then
-        if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        -- the budget FOR THE SYNCED LEVEL, not the client's leftover from
-        -- full level (field 2026-08-06: this read "7 / 79 pts" at a Lv40 sync
-        -- whose real budget is 49, because points() had not recomputed)
-        local liveMax = deps.blu.budget();
-        kit.ctext(im, kit.COL.warn, ('   Sync Lv.%d: %d / %s pts  %d / %d slots'):format(
-            ss.level, ss.activePoints, liveMax and tostring(liveMax) or '?',
-            ss.active, ss.maxSlots));
-        kit.tip(im, ('Level sync: what is live RIGHT NOW at Lv.%d.\n'
-            .. 'The game disabled the rest of the set itself; everything\n'
-            .. 'returns when the sync ends. The Set/Slots meters keep\n'
-            .. 'showing the plan at full level.'):format(ss.level));
-    end
+    kit.tip(im, 'Spells in this set / the slots the game gives you at its level.');
     -- the cap the client holds can belong to a level we have left (the client
     -- only recomputes it when the native Set Spells menu opens). Say so
     -- rather than showing a confident wrong number -- and name the one action

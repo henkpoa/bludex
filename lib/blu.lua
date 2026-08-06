@@ -920,6 +920,9 @@ function M.effectiveLevel()
 end
 
 -- The level-sync view of the LIVE set: what the client holds right now.
+-- Part of the read surface, currently drawn by nothing: the header used to
+-- carry it as a second pair of meters beside the editing build's, and one
+-- pair that describes where you are said it better (Henrik 2026-08-07).
 -- Under a sync the client's set struct keeps only the spells the level
 -- still enables (field 2026-08-06), so this is simply the live set counted
 -- and costed, with the server's slot rule for the level. nil off BLU, when

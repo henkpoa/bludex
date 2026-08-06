@@ -236,10 +236,9 @@ M.RULES = {
     { key = 'restore', label = 'Restore',
       tip = 'Will equip spells as spell slots and points\nbecome available.' },
     { key = 'switch',  label = 'Lvl Set Switch',
-      tip = 'Will equip normal set with restore behaviour,\n'
-         .. 'unless a level appropriate set has been\n'
-         .. 'defined, which will be equipped if present\n'
-         .. 'instead.' },
+      tip = 'Will behave as Restore, unless you have added a\n'
+         .. 'Level Set for the range your level is currently\n'
+         .. 'set to.' },
     { key = 'manual',  label = 'Manual',
       tip = 'All changes must be manually applied.' },
 };
@@ -259,12 +258,10 @@ local function ruleRow(ctx, entry)
         if key == 'switch' and ctx.armSwitch then ctx.armSwitch(); end
     end
 
-    kit.helpLabel(im, 'Level change', 'What this set does on its own when your level\n'
-        .. 'moves -- a sync starting or ending, a level up.\n\n'
-        .. 'It belongs to the set, not to any one of its levels:\n'
-        .. 'the set you last APPLIED is the one whose rule runs.\n\n'
-        .. 'Left alone it follows what you build: Restore while\n'
-        .. 'the set is flat, Lvl Set Switch once it has levels.');
+    kit.helpLabel(im, 'Level change',
+        'Here you can set how your set behaves during level ups.\n\n'
+        .. 'Each set has its own, and the one that runs belongs to\n'
+        .. 'the set you last applied.');
     local w = LEFT_W - 20;
     if kit.isFn(im, 'SetNextItemWidth') then im.SetNextItemWidth(w); end
     if kit.isFn(im, 'BeginCombo') and kit.isFn(im, 'EndCombo') and kit.isFn(im, 'Selectable') then
@@ -771,17 +768,11 @@ local function slotGrid(ctx)
             set.level, slotMax));
     end
     kit.ctext(im, kit.COL.dim, ('Total MP %d'):format(ctx.sets.usedMP(st.editingSet, book)));
-    -- the level-sync line: the meters above are the PLAN; this is what the
-    -- client holds right now while synced under the cap (see host header)
-    local ss = ctx.blu.syncStats(book);
-    if ss ~= nil and ss.level < 75 then
-        local liveMax = ctx.blu.budget();      -- the synced level's budget
-        kit.ctext(im, kit.COL.warn, ('Sync Lv.%d: %d / %s pts, %d / %d slots'):format(
-            ss.level, ss.activePoints, liveMax and tostring(liveMax) or '?',
-            ss.active, ss.maxSlots));
-        kit.tip(im, 'What the level sync leaves live right now - the game\n'
-            .. 'disabled the rest itself and restores it when the sync ends.');
-    end
+    -- (the separate level-sync readout that used to sit here is gone, Henrik
+    -- 2026-08-07: it repeated the meters above in different words. The build
+    -- you edit for the band you are in IS your current situation, the grid
+    -- dims whatever the game has not got yet, and Apply lights green when
+    -- they differ -- three ways to see it was two too many.)
 
     -- game actions (widths measured -- 'Apply in gam' clipped in the field).
     -- The Apply button wears the diff state: green = the live set differs
@@ -897,12 +888,22 @@ local function statsPanel(ctx)
         kit.ctext(im, kit.COL.dim, 'no trait weight yet');
     end
     for _, ev in ipairs(evals) do
-        if ev.tier then
+        -- what the SET earns is not always what you GET: a job trait of the
+        -- same name discards the blue one (Traits tab has the full story)
+        local v = ctx.verdict and ctx.verdict(ev.cat, ev.weight) or nil;
+        if v ~= nil and v.deadWeight then
+            kit.ctext(im, kit.COL.err, ('%s: blocked by %s'):format(
+                ev.name, v.suppressed[1].job.code or 'your job'));
+            kit.tip(im, ('%s already grants %s. The server keeps the job trait and\n'
+                .. 'throws the blue one away whatever its tier, so the %d weight this\n'
+                .. 'set feeds the ladder buys nothing. See the Traits tab.'):format(
+                v.suppressed[1].job.name or 'Your job', ev.name, ev.weight));
+        elseif ev.tier then
             kit.ctext(im, kit.COL.ok, ('%s: %s'):format(ev.name, ev.tierText));
         else
             kit.ctext(im, kit.COL.dim, ('%s: below tier 1'):format(ev.name));
         end
-        if ev.nextPoints then
+        if ev.nextPoints and not (v and v.deadWeight) then
             kit.ctext(im, kit.COL.dim, ('   %d more weight -> %s'):format(
                 ev.nextPoints - ev.weight, ev.nextText or 'next tier'));
         end
