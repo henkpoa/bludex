@@ -4,7 +4,10 @@
 **Repo:** https://github.com/henkpoa/bludex — public, `main` + `dev` (all work on `dev`,
 dev→main only on Henrik's explicit go; same law in dlac). Released at `4c91e41`+docs.
 **State:** everything below is **FIELD-CONFIRMED on CatsEyeXI** unless marked otherwise.
-`addon.version` is **1.0.0** — the approved release, tagged `v1.0.0` on `main`.
+`addon.version` is **1.0.1** — tagged `v1.0.1` on `main`. The point budget is
+now MODELLED (`base(level) + learned bonus + Assimilation merits`, merits only
+at 75) rather than read from the client's cache, which only recomputes when the
+native Set Spells menu opens. See §7.
 
 ---
 
@@ -111,3 +114,40 @@ python bludex/tools/generate_spells.py     (regenerate data)
 ```
 
 Asset masters + icon-audit handover: `C:\Users\Henrik Johansson\OneDrive\Bilder\BLU\HANDOVER.md`.
+
+---
+
+## 7. The point budget (1.0.1)
+
+**The cap is client-side and cannot be fetched.** The server's `0x044` carries
+`Job`, `IsSubJob`, `SetSpells[20]` and 132 bytes it never writes — the total
+never crosses the wire. The client computes it and only recomputes when the
+native **Magic → Blue Magic → Set** menu opens: not on zoning, not on a level
+sync. A `0x102` "query" was tried (`4430c86`) and field-disproved; it also arms
+a 60s recast on every set spell, so it is never free. Do not go there again.
+
+So Bludex models it instead:
+
+```
+cap(level) = baseCapAtLevel(level) + learnedBonus + merits   (merits only at 75)
+```
+
+| part | where it comes from |
+|---|---|
+| base | `setmodel.baseCapAtLevel`, `clamp(((lvl-1)/10)*5+10, 0, 55)` — exact, from `blueutils.cpp` |
+| merits | Assimilation, job group 2. Count off packet `0x08C` at every zone-in; ×2 on CEXI. Only applies at Lv75 |
+| learned bonus | CEXI's award for spells learned (Boruko, Whitegate J-10, max 25). Applies at EVERY level |
+
+Two equations settle it, and neither needs the per-merit rate:
+`below 75: bonus = cap - base` (merits do not apply) — `at 75: merits = cap - base - bonus`.
+
+Shortcuts on top: `0x08C` gives the merit count on any zone; `0x063`'s
+`bluBonus` gives `bonus + merits` at Lv75 (CEXI folds the learned bonus in —
+it is NOT merits alone, which is the `133` bug of 2026-08-06). Both are
+standalone-only; the dlac flavor has no packet hook and derives everything from
+two cap readings instead.
+
+**The trap, three times over:** the cap is trivial to READ and often wrong.
+`watchCap` only trusts a reading it watched CHANGE (`verified`), never one
+merely found at load, and never the `nil → value` bounce of a zone handoff.
+`/bludex forget` (undocumented) wipes everything learned.
