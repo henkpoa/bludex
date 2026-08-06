@@ -155,6 +155,14 @@ check(blu.parseMeritCount(meritPacket({ { ASSIM, 5 } }):sub(1, 10)) == nil,
 blu.learnedBonus, blu.meritPts, blu.wireTotal = nil, nil, 34;
 check(blu.setMeritCount(5) and blu.meritPts == 10, 'five merits = 10 points');
 check(blu.learnedBonus == 24, '0x063 total 34 minus 10 merits leaves the 24 learned');
+-- A BORUKO VISIT COSTS A ZONE, NOT A MENU: with the merits known, a new
+-- wire total re-derives the learned bonus even though both were already set.
+blu.wireTotal = nil;                           -- (setWireTotal ignores repeats)
+check(blu.setMeritCount(5) == false, 'the same merit count is not a change');
+blu.wireTotal = 39;                            -- +5 collected from Boruko
+check(blu.setMeritCount(4) and blu.meritPts == 8, 'merits changed to 4 = 8 points');
+check(blu.learnedBonus == 31, 'a moved total re-derives the bonus (39 - 8), not a one-shot');
+blu.learnedBonus, blu.meritPts, blu.wireTotal = nil, nil, nil;
 blu.learnedBonus, blu.meritPts, blu.wireTotal = nil, nil, nil;
 
 -- THE CAP WATCH, driven directly (three field bugs have lived in here).

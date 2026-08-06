@@ -236,7 +236,10 @@ local function renderBody(im, st, deps, embedded)
     local ss = deps.blu.syncStats(deps.book);
     if ss ~= nil and ss.level < 75 then
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        local liveMax = deps.blu.points();
+        -- the budget FOR THE SYNCED LEVEL, not the client's leftover from
+        -- full level (field 2026-08-06: this read "7 / 79 pts" at a Lv40 sync
+        -- whose real budget is 49, because points() had not recomputed)
+        local liveMax = deps.blu.budget();
         kit.ctext(im, kit.COL.warn, ('   Sync Lv.%d: %d / %s pts  %d / %d slots'):format(
             ss.level, ss.activePoints, liveMax and tostring(liveMax) or '?',
             ss.active, ss.maxSlots));

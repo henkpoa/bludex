@@ -318,6 +318,27 @@ function M.parseMeritCount(data)
     return found;
 end
 
+-- Reconcile the three figures. The MERITS are authoritative -- 0x08C reports
+-- the allocations themselves -- and the wire total is bonus + merits, so the
+-- learned bonus is simply the remainder, RECOMPUTED every time either input
+-- moves. That is what makes a Boruko visit cost a zone rather than a trip to
+-- the set menu: collect the points, zone, and the new total arrives with the
+-- merits still known, so the bonus follows by subtraction.
+-- Returns true when something changed.
+local function reconcile()
+    if M.wireTotal == nil then return false; end
+    if M.meritPts ~= nil then
+        local b = M.wireTotal - M.meritPts;
+        if b >= 0 and M.learnedBonus ~= b then M.learnedBonus = b; return true; end
+        return false;
+    end
+    if M.learnedBonus ~= nil then
+        local m = M.wireTotal - M.learnedBonus;
+        if m >= 0 and M.meritPts ~= m then M.meritPts = m; return true; end
+    end
+    return false;
+end
+
 -- One 0x08C landed. Merit COUNTS are level-independent -- unlike 0x063's
 -- total, the server does not zero them under a sync -- so this is believed
 -- at any level. With the merits known, one 0x063 completes the set.
@@ -326,10 +347,7 @@ function M.setMeritCount(count)
     local pts = count * M.meritValue;
     if M.meritPts == pts then return false; end
     M.meritPts = pts;
-    if M.learnedBonus == nil and M.wireTotal ~= nil
-       and (M.wireTotal - pts) >= 0 then
-        M.learnedBonus = M.wireTotal - pts;
-    end
+    reconcile();
     return true;
 end
 
@@ -344,12 +362,7 @@ function M.setWireTotal(n)
     if lvl == nil or lvl < 75 then return false; end
     if M.wireTotal == n then return false; end
     M.wireTotal = n;
-    -- with one of the pair known, the other follows immediately
-    if M.learnedBonus ~= nil and M.meritPts == nil and (n - M.learnedBonus) >= 0 then
-        M.meritPts = n - M.learnedBonus;
-    elseif M.meritPts ~= nil and M.learnedBonus == nil and (n - M.meritPts) >= 0 then
-        M.learnedBonus = n - M.meritPts;
-    end
+    reconcile();
     return true;
 end
 
