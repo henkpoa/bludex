@@ -101,6 +101,10 @@ local TABS = { 'Codex', 'Sets', 'Traits' };
 function M.tick()
     local deps = M.deps;
     if deps == nil then return; end
+    -- the cap-staleness watch runs every frame whether or not anything
+    -- renders: the client recomputes the cap on its own schedule (the native
+    -- Set Spells menu), and we have to catch the moment it does
+    deps.blu.watchCap();
     local change = deps.blu.watchJobState();
     if change == 'down' then
         M.downCheck = os.clock() + 2.0;
@@ -216,6 +220,20 @@ local function renderBody(im, st, deps, embedded)
             .. 'The game disabled the rest of the set itself; everything\n'
             .. 'returns when the sync ends. The Set/Slots meters keep\n'
             .. 'showing the plan at full level.'):format(ss.level));
+    end
+    -- the cap the client holds can belong to a level we have left (the client
+    -- only recomputes it when the native Set Spells menu opens). Say so
+    -- rather than showing a confident wrong number -- and name the one action
+    -- that actually fixes it, because nothing Bludex can send does.
+    if deps.blu.capStale() then
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        kit.ctext(im, kit.COL.warn, '   cap stale');
+        kit.tip(im, ('The point total above was computed by the game at Lv.%s\n'
+            .. 'and it has not recomputed since your level changed.\n\n'
+            .. 'Open the native Set Spells menu once and it corrects itself.\n'
+            .. 'The cap never crosses the network, so Bludex cannot refresh\n'
+            .. 'it for you -- your set list and levels below stay accurate.'):format(
+            tostring(deps.blu.capLevel())));
     end
     if deps.blu.onBlu() and (deps.blu.points()) == nil then
         if kit.isFn(im, 'SameLine') then im.SameLine(); end

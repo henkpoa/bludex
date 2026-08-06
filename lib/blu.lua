@@ -179,53 +179,73 @@ local nudge = { last = 0, tries = 0 };
 -- extended-job packet (0x044) -- the refresh opening the native Set Spells
 -- menu triggers, and the ONLY thing that recomputes the point cap after a
 -- level sync starts or ends (field 2026-08-06: 0x061 does not touch it).
--- The last query attempt, so /bludex debug can say what actually happened.
--- Field 2026-08-06: a stuck cap after a level sync ends looks IDENTICAL
--- whether the query was never sent, was sent and dropped, or was answered
--- and ignored -- the caller used to discard this result, so a half-failed
--- refresh reported success. Never let this fail silently again.
-local lastQuery = { sent = false, why = 'not tried yet', bytes = 0 };
-
-local function requestBluRefresh()
-    if not M.onBlu() then
-        lastQuery = { sent = false, why = 'not on BLU', bytes = 0 };
-        return false;
-    end
-    if not _fok or ffi == nil then
-        lastQuery = { sent = false, why = 'ffi unavailable', bytes = 0 };
-        return false;
-    end
-    local n = 0;
-    local ok, err = pcall(function()
-        local eqex = ffi.new('bludex_equipex_c2s_t', {
-            IdSize = 0x5302, JobId = 0x10, IsSubJob = M.isBluSub() and 1 or 0,
-        });
-        local packet = ffi.string(eqex, ffi.sizeof('bludex_equipex_c2s_t')):totable();
-        n = #packet;   -- 0xA4 = 164 expected; a short table means :totable() truncated
-        AshitaCore:GetPacketManager():AddOutgoingPacket(0x102, packet);
-    end);
-    lastQuery = { sent = ok, why = ok and 'ok' or tostring(err), bytes = n };
-    return ok;
-end
-
--- sent, why, bytes -- the outcome of the most recent 0x102 query attempt.
-function M.queryStatus()
-    return lastQuery.sent, lastQuery.why, lastQuery.bytes;
-end
-
--- Returns TWO results: the 0x061 send and the 0x102 query. They fail
--- independently and only the query refreshes the BLU point cap, so a caller
--- reporting to the user must look at both.
+-- DO NOT add a 0x102 "query" here to chase the point cap. That was tried
+-- (4430c86) and DISPROVED in the field on 2026-08-06, twice over:
+--
+--   * The server's answer cannot carry the cap. GP_SERV_COMMAND_EXTENDED_JOB
+--     ::BLU writes Job, IsSubJob and SetSpells[20] and leaves its remaining
+--     132 bytes untouched -- the point cap NEVER crosses the wire. The
+--     client computes max/spent itself, so no packet can refresh them.
+--   * The packet is not free. The 0x102 handler ends with an unconditional
+--     "force recast on all currently-set blu spells" loop (60s each),
+--     whatever the packet asked for -- so a "harmless query" silently locks
+--     Blue Magic for a minute, and did so on every window open.
+--
+-- Probe capture (addons/bdxdiag): two injected 0x102 queries fired straight
+-- through a sync transition and the cap did not move; opening the native
+-- Set Spells menu moved it with NO packets on the wire at all.
+-- 0x061 stays: it genuinely does wake the stale-after-login structs.
 function M.requestJobData()
     local ok = pcall(function()
         -- full packet bytes incl. header: id 0x61, size 0x08 (byte1 = size/2)
         AshitaCore:GetPacketManager():AddOutgoingPacket(0x061,
             { 0x61, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 });
     end);
-    -- the 0x102 query rides along on BLU: 0x061 fills the general job data
-    -- but only the extended-job answer refreshes the BLU point cap
-    local qok = requestBluRefresh();
-    return ok, qok;
+    return ok;
+end
+
+-- ---------------------------------------------------------------------------
+-- THE CAP IS CLIENT-SIDE, AND ONLY THE NATIVE MENU RECOMPUTES IT.
+--
+-- Field 2026-08-06: synced 75 -> 40 and the struct held the level-75 numbers
+-- (max=79 spent=79) for seven seconds against a 3-spell set, until the native
+-- Set Spells menu was opened -- then both snapped to max=49 spent=7 at once.
+-- So after ANY level change the struct describes the PREVIOUS level until the
+-- player opens that menu. Nothing we can send changes it.
+--
+-- We cannot fix it, so we detect it and say so. The cap is trustworthy only
+-- while the level still matches the one it was computed at: remember the
+-- level each time the client recomputes, and suspect the cap whenever the
+-- current level has moved away from it. Returning to that level clears the
+-- suspicion by itself -- the untouched cap is correct there again, which is
+-- exactly the sync-down-and-back case.
+-- ---------------------------------------------------------------------------
+local capWatch = { max = nil, lvl = nil, suspect = false };
+
+-- true when a level change has happened and the client has not recomputed
+-- since: max (and spent) still belong to the level we left.
+function M.capStale()
+    return capWatch.suspect;
+end
+
+-- the level the current cap was computed for (nil until first seen)
+function M.capLevel()
+    return capWatch.lvl;
+end
+
+-- Call once per frame (host.tick does). Cheap: two reads and a compare.
+function M.watchCap()
+    if not M.onBlu() then capWatch.suspect = false; return; end
+    local mx = M.points();
+    local lvl = M.effectiveLevel();
+    if mx ~= capWatch.max then
+        -- the value moved: the client just recomputed, and it did so FOR the
+        -- level we are standing at now
+        capWatch.max, capWatch.lvl, capWatch.suspect = mx, lvl, false;
+        return;
+    end
+    if lvl == nil or capWatch.lvl == nil then return; end
+    capWatch.suspect = (lvl ~= capWatch.lvl);
 end
 
 -- Call freely (the header does, every frame it shows 'reading...'): fires
@@ -271,6 +291,12 @@ function M.watchJobState()
         return ('%d/%d'):format(main, sub), l;
     end);
     if not ok or jobs == nil then return nil; end
+    -- Level 0 is NOT a level change -- it is the client mid-handoff. Probe
+    -- capture 2026-08-06: one level sync produced 75 -> 0 -> 75 -> 40, three
+    -- "changes" where the player experienced one, each firing a refresh (and,
+    -- while the 0x102 query existed, a 60s Blue Magic recast). Treat an
+    -- unreadable level as no reading at all: hold the baseline and wait.
+    if lvl == nil or lvl <= 0 then return nil; end
     if watched == nil then watched = { jobs = jobs, lvl = lvl }; return nil; end
     if jobs == watched.jobs and lvl == watched.lvl then return nil; end
     local kind = 'jobs';
