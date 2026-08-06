@@ -732,6 +732,17 @@ fake.level = 75; tickNow();
 fake.level = 40; tickNow();
 check(fake.applied == nil, 'with no last-applied set there is nothing to follow');
 
+print('smoke: the codex show-filter');
+-- the resolver reads these BY INDEX, so the order is load-bearing: renaming
+-- or reordering them silently turns a filter into a no-op
+local spellsui = require('bludex\\ui\\spellsui');
+check(#spellsui.SHOW_CHOICES == 4
+    and spellsui.SHOW_CHOICES[1] == 'Learned'
+    and spellsui.SHOW_CHOICES[2] == 'Missing'
+    and spellsui.SHOW_CHOICES[3] == 'In the set'
+    and spellsui.SHOW_CHOICES[4] == 'Not in the set',
+    'the codex show-filter choices, in the order the resolver indexes them');
+
 print('smoke: dlac module adapter');
 local dm = require('bludex\\dlacmodule\\init');
 check(dm.api == 2 and type(dm.panel) == 'function' and type(dm.init) == 'function'

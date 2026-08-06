@@ -305,7 +305,28 @@ local function pushBodyTheme(im)
     im.PushStyleColor(24, { 0.16, 0.34, 0.62, 0.85 });     -- Header
     im.PushStyleColor(25, { 0.20, 0.42, 0.74, 0.85 });     -- HeaderHovered
     im.PushStyleColor(26, { 0.24, 0.48, 0.80, 1.00 });     -- HeaderActive
-    return 4;
+    -- THE RED IS THE DEFAULT THEME'S, AND IT LEAKS (field 2026-08-07: every
+    -- filter combo wore a red arrow). Anything the kit does not style itself
+    -- falls back to the host's theme, so the widget colors are set here once:
+    -- a combo's arrow is a BUTTON, its body is a FRAME, and both were still
+    -- Ashita's default red/grey while everything around them was blue.
+    --
+    -- The contrast that carries it: the FRAME sits a shade DARKER than the
+    -- panel it is on, the ARROW a good deal lighter -- so the box reads as
+    -- inset and the one part you click reads as raised, without a border and
+    -- without either of them competing with the blue-white text on top.
+    im.PushStyleColor(7,  { 0.10, 0.13, 0.20, 1.00 });     -- FrameBg
+    im.PushStyleColor(8,  { 0.13, 0.18, 0.28, 1.00 });     -- FrameBgHovered
+    im.PushStyleColor(9,  { 0.16, 0.22, 0.34, 1.00 });     -- FrameBgActive
+    im.PushStyleColor(21, { 0.16, 0.34, 0.62, 1.00 });     -- Button = combo arrow
+    im.PushStyleColor(22, { 0.20, 0.42, 0.74, 1.00 });     -- ButtonHovered
+    im.PushStyleColor(23, { 0.24, 0.48, 0.80, 1.00 });     -- ButtonActive
+    im.PushStyleColor(4,  { 0.05, 0.08, 0.14, 0.98 });     -- PopupBg: the open list
+    im.PushStyleColor(14, { 0.05, 0.07, 0.12, 0.60 });     -- ScrollbarBg
+    im.PushStyleColor(15, { 0.16, 0.34, 0.62, 0.90 });     -- ScrollbarGrab
+    im.PushStyleColor(16, { 0.20, 0.42, 0.74, 0.95 });     -- ScrollbarGrabHovered
+    im.PushStyleColor(17, { 0.24, 0.48, 0.80, 1.00 });     -- ScrollbarGrabActive
+    return 15;
 end
 
 local function pushWindowTheme(im)

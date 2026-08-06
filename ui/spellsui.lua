@@ -16,6 +16,11 @@ local scrules = require(ROOT .. 'lib\\skillchain');
 
 local M = {};
 
+-- The codex's "which spells" choices: two axes on one list, because they
+-- answer the same question. The last two are membership of the build being
+-- edited -- the same spells the rows draw green.
+M.SHOW_CHOICES = { 'Learned', 'Missing', 'In the set', 'Not in the set' };
+
 -- guarded PushID/PopID: a grid of ImageButtons re-uses texture handles as IDs,
 -- so every button gets an explicit ID pushed around it.
 local function pushId(im, id)
@@ -92,6 +97,9 @@ function M.tooltip(ctx, id, hovered)
     if hovered == false then return; end
     if hovered ~= true
         and not (kit.isFn(im, 'IsItemHovered') and im.IsItemHovered()) then return; end
+    -- the same dwell every other tooltip waits out (Settings: hover delay).
+    -- Keyed by spell so moving along a list restarts it row by row.
+    if not kit.hoverReady('bdxspell' .. tostring(id)) then return; end
     local s = book.spells[id];
     if s == nil then return; end
 
@@ -100,6 +108,9 @@ function M.tooltip(ctx, id, hovered)
     local function add(txt, col) rows[#rows + 1] = { txt, col }; end
     add(s.name, kit.COL.head);
     add(('%s - Lv.%s - %s'):format(s.category, s.level or '?', s.spellType or '?'), kit.COL.dim);
+    -- what it costs to CAST, next to what it costs to SET (field ask
+    -- 2026-08-07) -- the two numbers a spell is picked on
+    if s.mpCost then add(('%d MP'):format(s.mpCost), kit.COL.accent); end
     -- the client DAT's own description (it carries its own line breaks)
     local desc = book.description(id);
     if desc then add(desc, { 0.90, 0.90, 0.95, 1.00 }); end
@@ -671,8 +682,14 @@ function M.render(ctx)
     kit.combo(im, '##bdxtrait', f.trait, traitNames, 'All traits',
         comboW(traitNames, 'All traits'));
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    kit.combo(im, '##bdxlearn', f.learned, { 'Learned', 'Missing' }, 'All spells',
-        comboW({ 'Learned', 'Missing' }, 'All spells'));
+    -- which spells to show at all: what you know, and what you have set
+    -- (Henrik 2026-08-07 -- the codex colors them green, this lists them alone)
+    kit.combo(im, '##bdxlearn', f.learned, M.SHOW_CHOICES, 'All spells',
+        comboW(M.SHOW_CHOICES, 'All spells'));
+    kit.tip(im, 'Which spells the list shows.\n\n'
+        .. 'Learned / Missing is what you have learned in game.\n'
+        .. 'In the set / Not in the set is the build you are editing --\n'
+        .. 'the same spells the list draws in green.');
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     if kit.litButton(im, 'Reset', false, 60, 22) then
         f.text[1] = ''; f.category.value = nil; f.element.value = nil;
@@ -687,14 +704,27 @@ function M.render(ctx)
             if t.name == f.trait.value then traitCat = t.cat; break; end
         end
     end
-    local learned = nil;
+    local learned, inSet = nil, nil;
     if f.learned.value == 'Learned' then learned = true;
-    elseif f.learned.value == 'Missing' then learned = false; end
+    elseif f.learned.value == 'Missing' then learned = false;
+    elseif f.learned.value == M.SHOW_CHOICES[3] then inSet = true;
+    elseif f.learned.value == M.SHOW_CHOICES[4] then inSet = false; end
     local ids = book.filter({
         text = f.text[1], category = f.category.value, element = f.element.value,
         spellType = f.spellType.value, traitCat = traitCat, learned = learned,
         stat = f.stat.value,
     });
+    -- membership is the SET's business, not the book's: the book has no idea
+    -- which build is open, so the filter engine stays free of it
+    if inSet ~= nil then
+        local keep = {};
+        for _, id in ipairs(ids) do
+            if (ctx.sets.contains(ctx.state.editingSet, id) ~= nil) == inSet then
+                keep[#keep + 1] = id;
+            end
+        end
+        ids = keep;
+    end
 
     -- sort (in place -- book.filter returns a fresh array each call)
     local sortBy = f.sort.value;

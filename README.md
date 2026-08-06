@@ -39,7 +39,9 @@ Bludex combines what `blucheck` and `blusets` did — and goes further:
 ![The codex — Medium view, sorted by name, hovering Healing Breeze](docs/screenshots/codex.png)
 
 Every castable spell, filterable and sortable, at your chosen density (Medium 32px
-here). **Green names are in your current set**, dim names aren't learned yet. Hovering
+here). **Green names are in your current set**, dim names aren't learned yet — and the
+`All spells` filter narrows the list to just what you have learned, or just what is
+in the build you are editing (`In the set` / `Not in the set`). Hovering
 shows the tooltip: artwork, category/level/kind, MP cost, set cost, the spell's stat bonuses,
 its trait — and your set's live progress toward that trait's next rank (`0 / 2 - for
 rank 1`). Right-click adds or removes without opening anything. The header is always
