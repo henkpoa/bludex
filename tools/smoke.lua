@@ -317,6 +317,221 @@ blu.learnedBonus, blu.meritPts = nil, nil;
 check(book.traits.rules.assimilationPerMerit == 2, 'field: +2 per Assimilation merit');
 check(book.traits.rules.expectedTotalAt75 == 80, 'field: expected total 80');
 
+print('smoke: timeline chains (docs/timeline-sets-plan.md)');
+-- the bracket rule, and its agreement with the server's slot count at
+-- EVERY level -- the two must never drift (slots open AT 11/21/../71)
+check(sets.bracketFloor(1) == 1 and sets.bracketFloor(6) == 1
+    and sets.bracketFloor(7) == 11 and sets.bracketFloor(8) == 11
+    and sets.bracketFloor(9) == 21 and sets.bracketFloor(19) == 71
+    and sets.bracketFloor(20) == 71, 'bracketFloor: 1-6 open, pairs at x1 levels');
+local agree = true;
+for L = 1, 75 do
+    local open = 0;
+    for slot = 1, 20 do
+        if sets.bracketFloor(slot) <= L then open = open + 1; end
+    end
+    if open ~= sets.slotsAtLevel(L) then agree = false; end
+end
+check(agree, 'bracketFloor agrees with slotsAtLevel at every level 1-75');
+local br = sets.brackets();
+check(#br == 8 and #br[1].slots == 6 and br[2].floor == 11 and br[8].floor == 71,
+    'brackets(): 6 slots at 1, seven pairs after');
+
+-- a new set is v2; a v1 set upgrades by SORTED placement (the migration is
+-- the sorted apply layout made visible: lowest level in the lowest slot)
+local v2 = sets.new('V2');
+check(v2.builtFor == 75 and v2.chains ~= nil and #v2.chains[1] == 0,
+    'new sets carry builtFor 75 and empty chains');
+check(sets.upgrade(v2, book) == false or true, 'upgrade tolerates a v2 set');
+local v1 = { name = 'Old', ids = {} };
+for i = 1, 20 do v1.ids[i] = 0; end
+v1.ids[3] = 529;      -- Bludgeon 18
+v1.ids[9] = 603;      -- Wild Oats 4
+check(sets.upgrade(v1, book) == true, 'a flat set migrates');
+check(v1.chains[1][1].id == 603 and v1.chains[1][1].from == 4
+    and v1.chains[2][1].id == 529 and v1.chains[2][1].from == 18,
+    'migration sorts lowest level into the lowest slot, from = spell level');
+check(v1.ids[1] == 603 and v1.ids[2] == 529 and v1.ids[3] == 0,
+    'the ids mirror re-derives as the level-75 resolution');
+check(sets.isFlat(v1, book), 'a migrated set is flat (no timeline chrome)');
+
+-- the Wild Oats -> Bludgeon -> empty chain, Henrik's founding example
+local tl = sets.new('Leveling');
+check(sets.addEntry(tl, 1, 603, nil, book), 'Wild Oats joins slot 1 at its own level');
+local okB = sets.addEntry(tl, 1, 529, nil, book);
+check(okB, 'Bludgeon stacks on the same chain at 18');
+check(not sets.isFlat(tl, book), 'a stacked chain is not flat');
+local lo1, hi1 = sets.entryRange(tl, 1, 1);
+local lo2, hi2 = sets.entryRange(tl, 1, 2);
+check(lo1 == 4 and hi1 == 17 and lo2 == 18 and hi2 == 75,
+    'ranges: Wild Oats 4-17, Bludgeon 18-75');
+check(sets.resolveAtLevel(tl, 3, book)[1] == 0
+    and sets.resolveAtLevel(tl, 17, book)[1] == 603
+    and sets.resolveAtLevel(tl, 18, book)[1] == 529,
+    'resolve: nothing at 3, Wild Oats at 17, Bludgeon from 18');
+check(sets.addEntry(tl, 1, 0, 45, book), 'the slot goes deliberately empty at 45');
+local _, hi2b = sets.entryRange(tl, 1, 2);
+check(hi2b == 44 and sets.resolveAtLevel(tl, 44, book)[1] == 529
+    and sets.resolveAtLevel(tl, 45, book)[1] == 0,
+    'the empty marker ends Bludgeon at 44');
+check(sets.count(tl) == 2, 'count = spell entries, markers not counted');
+check(sets.contains(tl, 603) == 1, 'contains sees the RETIRED Wild Oats (assigned anywhere)');
+
+-- entry validation: the gates the picker shows as reasons
+check(select(2, sets.addEntry(tl, 1, 529, 18, book)) == 'another entry already activates at Lv.18',
+    'equal activation levels cannot coexist');
+check(select(2, sets.addEntry(tl, 2, 529, 10, book)) == 'cannot activate before its level (18)',
+    'a spell cannot activate before its own level');
+check(select(2, sets.addEntry(tl, 2, 0, 30, book)) == 'the slot is already empty',
+    'an empty marker needs a chain to end');
+check(select(2, sets.addEntry(tl, 1, 0, 50, book)) == 'already empty from Lv.45',
+    'empty on empty says so');
+check(select(2, sets.addEntry(tl, 1, 737, nil, book)) == 'Unbridled spells cannot be set',
+    'the unbridled gate holds for chain entries');
+
+-- the one-place-at-a-time rule and the EXTENSION GUARD (plan 2.4): the
+-- retired Wild Oats may return in another slot at 30 -- and from then on,
+-- removing Bludgeon would stretch slot 1's Wild Oats over 30+, so that
+-- removal is refused with the collision named, never silently absorbed
+check(sets.addEntry(tl, 2, 603, 30, book), 'Wild Oats re-added at 30 in another slot (ranges disjoint)');
+check(select(2, sets.addEntry(tl, 3, 603, 50, book)) == 'already active at Lv.30-75 in another slot',
+    'a third overlapping placement is refused');
+local okRm, whyRm = sets.removeEntry(tl, 1, 2, book);
+check(okRm == false and whyRm == 'Wild Oats would then be active twice (already Lv.30-75 elsewhere)',
+    'the extension guard: removing Bludgeon is refused while Wild Oats lives at 30');
+check(sets.removeEntry(tl, 2, 1, book), 'the 30+ placement removes cleanly');
+check(sets.removeEntry(tl, 1, 2, book), 'and now Bludgeon can go');
+check(sets.resolveAtLevel(tl, 30, book)[1] == 603 and sets.resolveAtLevel(tl, 45, book)[1] == 0,
+    'Wild Oats stretches to 44, the empty marker still ends the chain');
+
+-- the DEAD-ENTRY guard: a high-bracket slot floors every entry, and an
+-- insert may not shadow a neighbor into never existing
+local hb = sets.new('HighBracket');
+check(sets.addEntry(hb, 9, 603, nil, book), 'Wild Oats in a 21+ slot is legal');
+local lo9 = sets.entryRange(hb, 9, 1);
+check(lo9 == 21, 'but it activates at the slot floor, not its level');
+check(select(2, sets.addEntry(hb, 9, 529, nil, book)) == 'Wild Oats would never be active in this slot',
+    'an insert may not shadow a floored neighbor to death');
+check(sets.addEntry(hb, 10, 529, 21, book), 'Bludgeon at the floor of its own slot is fine');
+check(select(2, sets.addEntry(hb, 10, 603, nil, book)) == 'never active here (the slot unlocks at Lv.21)',
+    'a below-floor insert that never activates says why');
+
+-- removeId clears every placement; clearChain and removeSlot clear one
+sets.removeId(tl, 603);
+check(sets.contains(tl, 603) == nil, 'removeId clears every placement of the spell');
+sets.clearChain(hb, 9, book);
+check(#hb.chains[9] == 0 and sets.contains(hb, 603) == nil, 'clearChain empties one slot');
+
+-- the convenience add: a new chain in the lowest free slot (floors ascend,
+-- so the first free slot is the earliest-activating home)
+local qa = sets.new('Quick');
+check(sets.add(qa, 529, book, 80), 'add() lands the spell as a new chain');
+check(qa.chains[1][1].id == 529 and qa.chains[1][1].from == 18, 'in slot 1 at its own level');
+check(select(2, sets.add(qa, 529, book, 80)) == 'already in set', 'duplicates still refused');
+
+-- the BAND SWEEP (plan 2.6): whole-curve point validation with a stub
+-- book, so the arithmetic is pinned exactly
+local stub = { spells = {
+    [900] = { setPoints = 10, level = 1 },
+    [901] = { setPoints = 10, level = 15 },
+    [902] = { setPoints = 5,  level = 1 },
+}, learned = function() return true; end };
+local bandSet = sets.new('Bands');
+bandSet.chains[1] = { { id = 900, from = 1 } };
+bandSet.chains[2] = { { id = 902, from = 1 } };
+bandSet.chains[3] = { { id = 901, from = 15 } };
+sets.syncLegacyIds(bandSet, stub);
+local baseFn = function(L) return sets.baseCapAtLevel(L); end
+local bands = sets.bandViolations(bandSet, stub, baseFn);
+check(#bands == 2, 'two violation bands against the base rule');
+check(bands[1].lo == 1 and bands[1].hi == 10 and bands[1].over == 5,
+    'band 1: 15 pts vs 10 at levels 1-10');
+check(bands[2].lo == 15 and bands[2].hi == 30 and bands[2].over == 10,
+    'band 2: 25 pts vs 15/20 merges over 15-30 at its worst (10 over)');
+check(not bands[1].enforced and not bands[2].enforced,
+    'builtFor 75: nothing below it is enforced');
+check(#sets.enforcedViolations(bandSet, stub, baseFn) == 0,
+    'an endgame set with low-level noise blocks nothing');
+bandSet.builtFor = 1;
+local bands2 = sets.bandViolations(bandSet, stub, baseFn);
+check(bands2[1].enforced and bands2[2].enforced, 'builtFor 1 enforces the whole curve');
+check(#sets.enforcedViolations(bandSet, stub, baseFn) == 2, 'and both bands now block');
+check(sets.bandText(bands2[2]) == 'Between level 15 and 30, you are up to 10 point(s) above threshold',
+    'the band message is the plan\'s, with "up to" when the overage varies inside');
+check(sets.bandText(bands2[1]) == 'Between level 1 and 10, you are 5 point(s) above threshold',
+    'a constant band states its overage plainly');
+local prov = sets.bandViolations(bandSet, stub, function() return nil; end);
+check(prov[1].provisional and #sets.enforcedViolations(bandSet, stub, function() return nil; end) == 0,
+    'an unknown budget makes bands provisional -- warned, never blocking');
+-- the merit cliff: a maxed 75 set (79 pts) is over at EVERY level below 75
+-- (merits count only at 75) -- REAL math, but builtFor 75 keeps it all
+-- un-enforced: the false positive that shaped the builtFor rule. At
+-- builtFor 71 the 71-74 stretch becomes the set's own problem and blocks.
+local cliff = sets.new('Cliff');
+cliff.chains[1] = { { id = 900, from = 1 } };
+sets.syncLegacyIds(cliff, stub);
+local cliffFn = function(L)                     -- bonus 24 known, merits 10 at 75
+    local c = sets.baseCapAtLevel(L) + 24;
+    if L >= 75 then c = c + 10; end
+    return c;
+end
+stub.spells[900].setPoints = 79;
+local cbands = sets.bandViolations(cliff, stub, cliffFn);
+check(#cbands == 1 and cbands[1].lo == 1 and cbands[1].hi == 74
+    and cbands[1].over == 45 and cbands[1].overMin == 10 and not cbands[1].enforced,
+    'a maxed 75 set is over everywhere below 75 -- one un-enforced band');
+check(sets.bandText(cbands[1]) == 'Between level 1 and 74, you are up to 45 point(s) above threshold',
+    'a varying band says "up to" instead of overstating');
+check(#sets.enforcedViolations(cliff, stub, cliffFn) == 0,
+    'a maxed endgame set stays appliable (nothing at/above builtFor 75)');
+cliff.builtFor = 71;
+local cbands2 = sets.bandViolations(cliff, stub, cliffFn);
+check(#cbands2 == 2 and cbands2[2].lo == 71 and cbands2[2].hi == 74
+    and cbands2[2].over == 10 and cbands2[2].enforced,
+    'builtFor 71 splits the band at the boundary and enforces the merit cliff');
+check(#sets.enforcedViolations(cliff, stub, cliffFn) == 1,
+    'a set that claims 71-75 really must fit at 71-74');
+stub.spells[900].setPoints = 10;
+
+-- equality, cloning, backups
+local eqA = sets.new('Eq');
+sets.addEntry(eqA, 1, 603, nil, book);
+local eqB = sets.clone(eqA, 'Eq');
+check(sets.equal(eqA, eqB), 'a clone is equal');
+sets.addEntry(eqB, 1, 529, nil, book);
+check(not sets.equal(eqA, eqB), 'an added entry breaks equality');
+eqB.chains[1][2] = nil;
+sets.syncLegacyIds(eqB, book);
+eqB.builtFor = 40;
+check(not sets.equal(eqA, eqB), 'builtFor is authorship (compared)');
+eqB.builtFor = 75;
+check(sets.equal(eqA, eqB), 'and back');
+for i = 1, 7 do
+    sets.pushBackup(eqA, eqB, 1000 + i);
+end
+check(#eqA.backups == sets.BACKUP_CAP and eqA.backups[1].ts == 1007,
+    'backups cap at 5, newest first');
+local rb = sets.new('RB');
+sets.addEntry(rb, 1, 603, nil, book);
+sets.pushBackup(rb, rb, 1);
+sets.addEntry(rb, 1, 529, nil, book);
+check(sets.restoreBackup(rb, 1, book, 2), 'restore returns true');
+check(#rb.chains[1] == 1 and rb.chains[1][1].id == 603, 'restore brings the old chain back');
+check(rb.backups[1].ts == 2 and #rb.backups[1].chains[1] == 2,
+    'and the pre-restore state was banked first (restore is undoable)');
+local cl = sets.clone(rb, 'CL');
+cl.chains[1][1].from = 10;
+check(rb.chains[1][1].from == 4, 'clone is deep (chains detached)');
+
+-- fromIds (Read current / blusets import) and the legacy resolve fallback
+local fi = sets.fromIds('Imported', { [1] = 529, [2] = 603 }, book);
+check(fi.chains[1][1].id == 603 and fi.chains[2][1].id == 529,
+    'fromIds sorts like the migration');
+local legacy = { name = 'L', ids = { [1] = 529 } };
+check(sets.resolveAtLevel(legacy, 75, book)[1] == 529
+    and sets.resolveAtLevel(legacy, 17, book)[1] == 0,
+    'an un-upgraded set still resolves (built on the fly)');
+
 print('smoke: sorted apply layout');
 local slIds = { 623, 513, 0, 719 };   -- Head Butt, Sandspin, empty, Searing Tempest
 local sl = sets.sortedLayout(slIds, book);
