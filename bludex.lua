@@ -30,7 +30,29 @@ local host   = require('bludex\\ui\\host');
 
 local cfg = settings.load(config.defaults());
 
+-- Where the settings library routes a load or save is decided by its own
+-- login state: the character's folder while logged in, a shared 'defaults'
+-- profile otherwise (title screen, character select). Nothing character-
+-- owned may be read or written through the defaults profile -- a save made
+-- there LOOKS saved and is thrown away at the next login -- so the save,
+-- the commands and the render all gate on this.
+local function loggedIn()
+    return settings.logged_in == true;
+end
+
+-- The character the settings library is currently serving, as its folder
+-- tag; nil while logged off. The host compares tags to tell a relog (keep
+-- the working state) from a character switch (drop it).
+local function charTag()
+    if loggedIn() and (settings.server_id or 0) ~= 0
+        and type(settings.name) == 'string' and #settings.name > 0 then
+        return ('%s_%d'):format(settings.name, settings.server_id);
+    end
+    return nil;
+end
+
 local function saveSettings()
+    if not loggedIn() then return; end
     settings.save();
 end
 
@@ -38,15 +60,20 @@ host.init({
     im = imgui, book = book, blu = blu, sets = sets,
     cfg = cfg, save = saveSettings,
 });
+host.noteChar(charTag());
 blu.delay = cfg.applyDelay or 1.1;
 blu.mode  = cfg.applyMode or 'safe';
 
+-- The library swaps the whole settings table at every login and logout
+-- (and so on any character switch). Everything holding the old table must
+-- rebind, and per-character state must not cross characters -- the host
+-- owns that logic (host.onSettingsSwap).
 settings.register('settings', 'bdx_settings_update', function(s)
     if s ~= nil then
         cfg = s;
-        host.deps.cfg = cfg;
         blu.delay = cfg.applyDelay or 1.1;
         blu.mode  = cfg.applyMode or 'safe';
+        host.onSettingsSwap(cfg, charTag());
     end
 end);
 
@@ -66,6 +93,11 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
     local args = e.command:args();
     if #args == 0 or not args[1]:any('/bludex', '/bdx') then return; end
     e.blocked = true;
+
+    if not loggedIn() then
+        msg('Asleep while no character is logged in: settings are per character, so nothing can be shown -- and a save made now would be lost at login.');
+        return;
+    end
 
     if #args == 1 then
         host.toggle();
@@ -259,9 +291,15 @@ ashita.events.register('packet_in', 'bdx_packet_cb', function(e)
 end);
 
 ashita.events.register('d3d_present', 'bdx_present_cb', function()
+    -- Logged off, the settings library serves the shared defaults profile:
+    -- the window would show -- and save into -- data belonging to no
+    -- character (with the Save button lit green against the empty defaults,
+    -- inviting exactly the click that loses work). It sleeps instead; the
+    -- working state is kept for the character coming back.
+    if not loggedIn() then return; end
     host.render();
 end);
 
 ashita.events.register('unload', 'bdx_unload_cb', function()
-    settings.save();
+    saveSettings();
 end);

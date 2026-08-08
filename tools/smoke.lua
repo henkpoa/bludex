@@ -395,4 +395,74 @@ check(#sl == 2 and sl[1].name == 'Solo DD' and sl[1].ids[7] == 700
 check(dm._codec.decodeSets('')[1] == nil and dm._codec.decodeIds(nil)[20] == 0,
     'codec tolerates empty and nil');
 
+print('smoke: settings lifecycle (logoff / relog / character switch)');
+-- The Ashita settings library swaps the WHOLE settings table at every
+-- login and logout: the shared defaults profile while logged off, the
+-- character's own file at login. host.onSettingsSwap is the addon's answer;
+-- these drive the three arms it has to get right. (ui/host is headless-safe
+-- to require -- every imgui touch is guarded -- and none of this renders.)
+local host   = require('bludex\\ui\\host');
+local config = require('bludex\\lib\\config');
+local function mkcfg(t)
+    local c = config.defaults();
+    for k, v in pairs(t or {}) do c[k] = v; end
+    return c;
+end
+local function entry(name, id)
+    local e = sets.new(name);
+    e.ids[1] = id;
+    return e;
+end
+blu.forgetBudget();
+-- A COLD START: addons load at the title screen, so init can only adopt the
+-- defaults profile. The character's real file arrives with the first login,
+-- THROUGH THE SWAP -- before the swap adopted it, every fresh game start
+-- came up with an empty editor and an unseeded budget, which from the chair
+-- reads as 'my save did not survive the log off'.
+host.init({ im = {}, book = book, blu = blu, sets = sets, cfg = mkcfg(),
+    save = function() end });
+host.noteChar(nil);
+check(host.state.activeSet == nil, 'cold start: nothing to select in the defaults profile');
+local aCfg = mkcfg({ activeSetName = 'Solo', capLearnedBonus = 24, capMeritPoints = 10 });
+aCfg.sets = { entry('Farm', 623), entry('Solo', 700) };
+host.onSettingsSwap(aCfg, 'Aludra_101');
+check(host.deps.cfg == aCfg, 'first login: the swapped-in table is the one saves serialize');
+check(host.state.activeSet == 2 and host.state.editingSet.name == 'Solo'
+    and host.state.editingSet.ids[1] == 700,
+    'first login restores the remembered active set from the character file');
+check(blu.learnedBonus == 24 and blu.meritPts == 10,
+    'first login seeds the budget halves from the character file');
+-- LOG OFF: the defaults profile swaps in. The working state stays put (the
+-- same character usually returns; the standalone gates rendering meanwhile).
+host.state.editingSet.ids[3] = 623;                 -- an unsaved edit
+host.onSettingsSwap(mkcfg(), nil);
+check(host.deps.cfg ~= aCfg, 'logoff: cfg rebinds to the defaults profile');
+check(host.state.editingSet.ids[3] == 623, 'logoff keeps the working state');
+-- THE SAME CHARACTER RETURNS: their file reloads into a fresh table; the
+-- selection and the unsaved edits are still theirs to keep.
+local aCfg2 = mkcfg({ activeSetName = 'Solo', capLearnedBonus = 24, capMeritPoints = 10 });
+aCfg2.sets = { entry('Farm', 623), entry('Solo', 700) };
+host.onSettingsSwap(aCfg2, 'Aludra_101');
+check(host.deps.cfg == aCfg2, 'relog: cfg rebinds to the reloaded file');
+check(host.state.activeSet == 2 and host.state.editingSet.ids[3] == 623,
+    'relog keeps the selection and the unsaved edits');
+check(blu.learnedBonus == 24 and blu.meritPts == 10, 'relog keeps the seeded budget');
+-- A DIFFERENT CHARACTER: everything the previous one owned is dropped.
+-- Keeping it is how their editing set overwrote the new character\'s saved
+-- set, and how their budget figures were saved into the new character\'s
+-- file by the first 0x08C of the session.
+host.state.tab = 'Sets';
+local bCfg = mkcfg();
+bCfg.sets = { entry('Tank', 594) };
+host.onSettingsSwap(mkcfg(), nil);                  -- the logoff between them
+host.onSettingsSwap(bCfg, 'Belias_101');
+check(host.deps.cfg == bCfg, 'switch: cfg rebinds');
+check(host.state.activeSet == nil and sets.count(host.state.editingSet) == 0,
+    'switch drops the previous character\'s selection and editing set');
+check(blu.learnedBonus == nil and blu.meritPts == nil and blu.wireTotal == nil,
+    'switch forgets the previous character\'s budget instead of inheriting it');
+check(host.state.tab == 'Sets', 'switch keeps pure view state (the active tab)');
+check(type(blu.resetJobWatch) == 'function', 'the job watch has its lifecycle seam');
+blu.forgetBudget();
+
 print('smoke: all green');
