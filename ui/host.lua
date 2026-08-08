@@ -187,16 +187,13 @@ end
 
 local TABS = { 'Codex', 'Sets', 'Traits', 'Settings' };
 
--- The job/level watch and auto-restore, run once per frame whether or not
--- anything renders: a level change invalidates the BLU structs like a fresh
--- login (refresh fires inside the watch). BY DIRECTION (Henrik 2026-08-06):
---   level UP / job change -- if the setting is on, spells the change
---     stripped from the last-applied set are re-added (two delayed checks
---     so the 0x061 answer has landed; quiet when nothing is missing);
---   level DOWN (sync down, delevel) -- NOTHING is sent: the client disables
---     over-level spells itself and re-enables them when the level returns,
---     and the level-sorted layout keeps the survivors in the low slots.
---     One delayed chat line reports what the sync disabled, nothing more.
+-- The job/level watch and the RE-PLAN check, run once per frame whether or
+-- not anything renders: a level change invalidates the BLU structs like a
+-- fresh login (refresh fires inside the watch), and the timeline may plan
+-- different spells for the new level (plan 2.7-2.8: the adds-only law is
+-- repealed -- a re-plan may unset). The check is debounced: a level sync
+-- bounces through several readings (75 -> 0 -> 75 -> 40 in one capture),
+-- so nothing is decided until the level has sat still for a few seconds.
 -- The standalone render calls this itself; an EMBEDDING host (dlac's BLU
 -- helper) calls it directly every frame, even while its panel is hidden.
 function M.tick()
@@ -207,30 +204,17 @@ function M.tick()
     -- Set Spells menu), and we have to catch the moment it does
     deps.blu.watchCap();
     local change = deps.blu.watchJobState();
-    if change == 'down' then
-        M.downCheck = os.clock() + 2.0;
-        M.restoreChecks = nil;             -- a pending restore is moot now
-    elseif change ~= nil then
-        local now = os.clock();
-        M.restoreChecks = { now + 2.0, now + 8.0 };
-        M.downCheck = nil;
+    if change ~= nil then
+        M.replanCheck = os.clock() + 3.0;
+        M.downCheck = (change == 'down') and (os.clock() + 2.0) or nil;
     end
     if M.downCheck ~= nil and os.clock() >= M.downCheck then
         M.downCheck = nil;
         deps.blu.reportLevelDown(deps.book);
     end
-    if M.restoreChecks ~= nil then
-        local due = M.restoreChecks[1];
-        if due ~= nil and os.clock() >= due then
-            table.remove(M.restoreChecks, 1);
-            if #M.restoreChecks == 0 then M.restoreChecks = nil; end
-            if deps.cfg.autoRestore == true then
-                local last = deps.cfg.lastApplied;
-                if last ~= nil and last.ids ~= nil then
-                    deps.blu.restoreMissing(last.ids, deps.book);
-                end
-            end
-        end
+    if M.replanCheck ~= nil and os.clock() >= M.replanCheck then
+        M.replanCheck = nil;
+        M.checkReplan();
     end
 end
 
@@ -267,18 +251,51 @@ local function tabCtx(im, st, deps, embedded)
     };
 end
 
--- Does the LIVE in-game set differ from the editing set's SORTED layout
--- (slot-wise -- what applyDiff would send)? So a right-spells-wrong-order
--- set lights Apply green, and one click re-sorts it. true / false, nil
--- when the live set is unreadable.
-local function applyDirty(deps, st)
+-- After a SETTLED level change: does the timeline plan different spells for
+-- the new level than what is live? Auto applies the plan (this may unset);
+-- Manual arms the nudge -- header glow, the float, one chat line. THE
+-- QUIET-FLAT RULE: when the plan for the level would only REMOVE spells
+-- (nothing new comes in -- the flat-set-under-sync case), nothing fires:
+-- the client's own disable already handles it better than packets would,
+-- and re-adding on sync-end costs a cast lock the player never asked for.
+function M.checkReplan()
+    local deps, st = M.deps, M.state;
+    if deps == nil or st == nil then return; end
+    if not deps.blu.onBlu() or deps.blu.applying then return; end
+    local ctx = tabCtx(deps.im, st, deps, false);
+    local state, lvl = setsui.applyState(ctx);
+    if state ~= 'dirty' then st.replanPending = nil; return; end
     local live = deps.blu.currentSet();
-    if #live ~= 20 then return nil; end
-    local T = deps.sets.sortedLayout(st.editingSet.ids, deps.book);
+    local liveHas = {};
     for i = 1, 20 do
-        if (live[i] or 0) ~= T[i] then return true; end
+        if (live[i] or 0) ~= 0 then liveHas[live[i]] = true; end
     end
-    return false;
+    local plan = deps.sets.resolveAtLevel(st.editingSet, lvl, deps.book);
+    local adds = 0;
+    for i = 1, 20 do
+        local id = plan[i] or 0;
+        if id ~= 0 and not liveHas[id] and deps.book.spells[id] ~= nil
+            and deps.book.learned(id) then
+            adds = adds + 1;
+        end
+    end
+    if adds == 0 then st.replanPending = nil; return; end
+    if deps.cfg.replan == 'auto' then
+        st.replanPending = nil;
+        setsui.applyEditing(ctx);
+        return;
+    end
+    if st.replanPending ~= nil and st.replanPending.level == lvl then return; end
+    st.replanPending = { level = lvl, adds = adds };
+    deps.blu.announce(('Level %d: the set plans %d spell change(s) for this level - Apply when ready, or /bdx replan.'):format(lvl, adds));
+end
+
+-- Apply the plan for the CURRENT level from outside the window (the /bdx
+-- replan command and the nudge float's button).
+function M.replanNow()
+    local deps, st = M.deps, M.state;
+    if deps == nil or st == nil then return; end
+    setsui.applyEditing(tabCtx(deps.im, st, deps, false));
 end
 
 -- header + tab row + the active tab: everything between Begin and End,
@@ -396,10 +413,13 @@ local function renderBody(im, st, deps, embedded)
 
     -- set actions on the header line, every tab (Henrik 2026-08-04): Save
     -- and Apply light GREEN when they have work, Revert discards the unsaved
-    -- changes. One definition each -- setsui owns the verbs.
+    -- changes. One definition each -- setsui owns the verbs, including the
+    -- consolidated live-vs-plan compare (applyState).
     local ctx = tabCtx(im, st, deps, embedded);
     local unsaved = setsui.unsaved(ctx);
-    local dirty = applyDirty(deps, st);
+    local astate, alevel = setsui.applyState(ctx);
+    -- the manual-replan nudge self-clears the moment live matches a plan
+    if st.replanPending ~= nil and astate ~= 'dirty' then st.replanPending = nil; end
     local bw = kit.measure(im, { 'Save', 'Apply', 'Revert', 'Applying...' }, 48);
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     if kit.litButton(im, 'Save', false, bw, 22, unsaved and kit.PAL.go or kit.PAL.off) then
@@ -411,23 +431,47 @@ local function renderBody(im, st, deps, embedded)
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     local applyPal = nil;
     if not deps.blu.applying then
-        if dirty == true then applyPal = kit.PAL.go;
-        elseif dirty == false then applyPal = kit.PAL.off; end
+        if astate == 'dirty' then applyPal = kit.PAL.go;
+        elseif astate ~= nil then applyPal = kit.PAL.off; end
     end
     if kit.litButton(im, deps.blu.applying and 'Applying...' or 'Apply', false, bw, 22, applyPal) then
-        if dirty == false then
+        if astate == 'clean' then
             st.applyNote = 'Already up to date - nothing to apply.';
         else
             setsui.applyEditing(ctx);
         end
     end
-    kit.tip(im, 'Apply the editing set in game - only the changed slots are sent.');
+    kit.tip(im, astate == 'planned'
+        and ('The live set matches your Lv.%d plan (applied ahead of a sync),\nso Apply is quiet. Clicking it applies the plan for your CURRENT\nlevel instead, replacing the preemptive setup.'):format(alevel or 0)
+        or 'Apply the editing set in game - the timeline resolved for your\ncurrent level, only the changed slots sent.');
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     if kit.litButton(im, 'Revert', false, bw, 22, unsaved and nil or kit.PAL.off) then
         if unsaved then setsui.revertEditing(ctx); end
     end
     kit.tip(im, unsaved and 'Discard the unsaved changes - back to the saved set.'
         or 'No unsaved changes to revert.');
+
+    -- the over-budget badge (plan 2.6): an ENFORCED band violation shows
+    -- wherever the eye is, and Apply is blocked while it stands. Save is
+    -- never blocked -- the badge, not a lost edit, is the protection.
+    local viols = deps.sets.enforcedViolations(st.editingSet, deps.book, setsui.budgetFn(ctx));
+    if #viols > 0 then
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        kit.ctext(im, kit.COL.err, ('   over budget %d-%d'):format(viols[1].lo, viols[1].hi));
+        local lines = {};
+        for _, b in ipairs(viols) do lines[#lines + 1] = deps.sets.bandText(b); end
+        lines[#lines + 1] = '';
+        lines[#lines + 1] = 'Apply is blocked until the set fits its whole built-for range.';
+        lines[#lines + 1] = 'Saving still works - the set just carries this badge.';
+        kit.tip(im, table.concat(lines, '\n'));
+    end
+    -- the manual-replan nudge, where the eye is (the float shows it while
+    -- the window is closed)
+    if st.replanPending ~= nil then
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        kit.ctext(im, kit.COL.warn, ('   plan changed for Lv.%d'):format(st.replanPending.level));
+        kit.tip(im, 'Your level changed and the timeline plans different spells for\nit. Apply sends them; this note clears itself if the live set\ncomes to match the plan.');
+    end
 
     -- the cast lock countdown: changing set spells locks Blue Magic casting
     -- for about a minute (the game's rule) -- count it down where the eye is
@@ -492,6 +536,40 @@ local function renderWindow(im, st, deps)
     if pushed > 0 then im.PopStyleColor(pushed); end
 end
 
+-- The nudge float (plan 2.8, Henrik's ask 2026-08-08): while the main
+-- window is CLOSED and a manual re-plan waits, a small window with the one
+-- fact and the one button. It never acts by itself -- Apply or Dismiss.
+-- (While the window is open, the header carries the same note instead.)
+local function renderNudge(im, st, deps)
+    if st.replanPending == nil or deps.blu.applying then return; end
+    if not (kit.isFn(im, 'Begin') and kit.isFn(im, 'End')) then return; end
+    local pushed = pushWindowTheme(im);
+    if kit.isFn(im, 'SetNextWindowSizeConstraints') then
+        pcall(im.SetNextWindowSizeConstraints, { 250, 60 }, { 460, 200 });
+    end
+    local visible = false;
+    local ok = pcall(function()
+        visible = im.Begin('Bludex - level change##bdxnudge');
+    end);
+    if ok and visible then
+        kit.ctext(im, kit.COL.warn,
+            ('Plan changed for Lv.%d (%d spell change(s))'):format(
+                st.replanPending.level, st.replanPending.adds or 0));
+        local w = kit.measure(im, { 'Apply', 'Dismiss' }, 70);
+        if kit.litButton(im, 'Apply', false, w, 22, kit.PAL.go) then
+            M.replanNow();
+        end
+        kit.tip(im, 'Send the plan for this level now (the usual cast lock follows).');
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        if kit.litButton(im, 'Dismiss', false, w, 22) then
+            st.replanPending = nil;
+        end
+        kit.tip(im, 'Ignore it - the note returns on the next level change.');
+    end
+    if ok then im.End(); end
+    if pushed > 0 then im.PopStyleColor(pushed); end
+end
+
 -- the standalone flavor (the bludex addon's own d3d_present hook)
 function M.render()
     local st = M.state;
@@ -499,7 +577,10 @@ function M.render()
     local deps = M.deps;
     if deps == nil then return; end
     M.tick();
-    if not st.open[1] then return; end
+    if not st.open[1] then
+        renderNudge(deps.im, st, deps);
+        return;
+    end
     renderWindow(deps.im, st, deps);
 end
 
@@ -526,7 +607,12 @@ function M.renderWindowFloat()
     local deps = M.deps;
     if deps == nil or deps.im == nil then return; end
     deps.floatWindow = true;
-    if not st.open[1] then return; end
+    if not st.open[1] then
+        -- the float surface is the one place this flavor may open a window,
+        -- so the level-change nudge rides it while the main window sleeps
+        renderNudge(deps.im, st, deps);
+        return;
+    end
     renderWindow(deps.im, st, deps);
 end
 

@@ -717,6 +717,130 @@ check(host.state.tab == 'Sets', 'switch keeps pure view state (the active tab)')
 check(type(blu.resetJobWatch) == 'function', 'the job watch has its lifecycle seam');
 blu.forgetBudget();
 
+print('smoke: timeline apply verbs (applyState / applyEditing / checkReplan)');
+-- setsui owns the verbs; a stubbed game layer drives them headless.
+local setsuiM = require('bludex\\ui\\setsui');
+local stubLive = { lvl = 20, live = nil, applied = nil };
+local _cur, _eff, _can, _onb, _diff, _ann =
+    blu.currentSet, blu.effectiveLevel, blu.canApply, blu.onBlu, blu.applyDiff, blu.announce;
+blu.currentSet = function() return stubLive.live or {}; end
+blu.effectiveLevel = function() return stubLive.lvl; end
+blu.canApply = function() return true; end
+blu.onBlu = function() return true; end
+blu.applyDiff = function(ids) stubLive.applied = ids; return true; end
+local said = nil;
+blu.announce = function(s) said = s; end
+local function live20(t)
+    local out = {};
+    for i = 1, 20 do out[i] = t[i] or 0; end
+    return out;
+end
+
+local plan = sets.new('Plan');
+check(sets.addEntry(plan, 1, 603, nil, book)
+    and sets.addEntry(plan, 1, 529, nil, book), 'verb fixture builds');
+local vcfg = mkcfg();
+local vst = { editingSet = plan, activeSet = nil, applyNote = nil };
+local vctx = { im = {}, book = book, blu = blu, sets = sets, cfg = vcfg,
+    save = function() end, state = vst,
+    budgetMax = function() return 80; end };
+
+-- the consolidated three-state compare
+stubLive.live = live20({ [1] = 529 });
+check(setsuiM.applyState(vctx) == 'clean', 'applyState: live == the plan for the live level');
+stubLive.live = live20({});
+check(setsuiM.applyState(vctx) == 'dirty', 'applyState: an empty live set is dirty');
+stubLive.live = nil;
+check(setsuiM.applyState(vctx) == nil, 'applyState: an unreadable live set answers nil');
+
+-- the preemptive apply (plan 2.9): send the Lv.4 plan while standing at 20,
+-- and be recognized afterwards instead of glowing dirty
+setsuiM.applyEditing(vctx, 4);
+check(stubLive.applied ~= nil and stubLive.applied[1] == 603
+    and stubLive.applied[2] == 0, 'Apply for Lv.4 sends the Wild Oats plan');
+check(vcfg.lastApplied.level == 4, 'lastApplied remembers the level the plan was FOR');
+stubLive.live = live20({ [1] = 603 });
+local vs, vl = setsuiM.applyState(vctx);
+check(vs == 'planned' and vl == 4, 'applyState: live matches the Lv.4 plan -> planned, not dirty');
+stubLive.applied = nil;
+setsuiM.applyEditing(vctx);
+check(stubLive.applied ~= nil and stubLive.applied[1] == 529 and vcfg.lastApplied.level == 20,
+    'a plain Apply resolves at the live level');
+
+-- the band block (plan 2.6): a known budget, a leveling builtFor, and a
+-- low bracket stuffed past it -- Apply refuses with the band message;
+-- builtFor 75 un-enforces the same bands and Apply works again
+blu.learnedBonus, blu.meritPts = 0, 0;
+plan.builtFor = 1;
+local lowIds = {};
+for _, id in ipairs(book.filter({})) do
+    local sp = book.spells[id];
+    if sp.level ~= nil and sp.level <= 10 and sp.setPoints ~= nil and id ~= 603 then
+        lowIds[#lowIds + 1] = id;
+    end
+end
+-- dearest first, and only into the six level-1 slots -- the 11+ slots'
+-- floors would keep anything there out of the level-10 resolution
+table.sort(lowIds, function(a, b)
+    return (book.spells[a].setPoints or 0) > (book.spells[b].setPoints or 0);
+end);
+local slotN = 2;
+while slotN <= 6
+    and sets.usedPoints(sets.resolveAtLevel(plan, 10, book), book) <= 10 and #lowIds > 0 do
+    check(sets.addEntry(plan, slotN, table.remove(lowIds, 1), nil, book),
+        'fixture: low spell joins its own chain');
+    slotN = slotN + 1;
+end
+check(sets.usedPoints(sets.resolveAtLevel(plan, 10, book), book) > 10,
+    'fixture: the low bracket overflows a 10-point budget');
+stubLive.live = live20({});
+stubLive.applied = nil;
+vst.applyNote = nil;
+setsuiM.applyEditing(vctx);
+check(stubLive.applied == nil and type(vst.applyNote) == 'string'
+    and vst.applyNote:find('Cannot apply: ', 1, true) == 1
+    and vst.applyNote:find('above threshold', 1, true) ~= nil,
+    'an enforced band blocks Apply with the band message');
+plan.builtFor = 75;
+setsuiM.applyEditing(vctx);
+check(stubLive.applied ~= nil, 'builtFor 75 un-enforces the low bands; Apply works again');
+blu.learnedBonus, blu.meritPts = nil, nil;
+
+-- the level-change watcher: nudge on new spells, silence on removals-only
+-- (the flat-set-under-sync case), auto mode applies by itself
+local plan2 = sets.new('Watch');
+sets.addEntry(plan2, 1, 603, nil, book);
+sets.addEntry(plan2, 1, 529, nil, book);
+host.onSettingsSwap(vcfg, 'Verb_101');
+host.state.editingSet = plan2;
+stubLive.lvl = 3;
+stubLive.live = live20({});
+said = nil;
+host.checkReplan();
+check(host.state.replanPending == nil, 'nothing activates at Lv.3 -> clean, no nudge');
+stubLive.lvl = 4;
+host.checkReplan();
+check(host.state.replanPending ~= nil and host.state.replanPending.level == 4
+    and type(said) == 'string' and said:find('Level 4', 1, true) ~= nil,
+    'a level with new spells arms the nudge and says one line');
+stubLive.lvl = 20;
+stubLive.live = live20({ [1] = 529, [2] = 623 });   -- plan(20) plus an extra
+host.state.replanPending = { level = 99 };
+host.checkReplan();
+check(host.state.replanPending == nil,
+    'a removals-only diff stays quiet (the client\'s own disable handles it)');
+vcfg.replan = 'auto';
+stubLive.live = live20({});
+stubLive.applied = nil;
+host.checkReplan();
+check(stubLive.applied ~= nil and stubLive.applied[1] == 529
+    and vcfg.lastApplied.level == 20, 'replan=auto applies the plan for the settled level');
+vcfg.replan = 'manual';
+
+blu.currentSet, blu.effectiveLevel, blu.canApply, blu.onBlu, blu.applyDiff, blu.announce =
+    _cur, _eff, _can, _onb, _diff, _ann;
+blu.learnedBonus, blu.meritPts = nil, nil;
+
 print('smoke: dlac adapter store lifecycle');
 -- dlac loads modules BEFORE login, and its store serves declared defaults
 -- until the character directory exists. The adapter's decoded bridge must

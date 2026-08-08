@@ -24,12 +24,35 @@ local MID_W   = 330;
 -- the window header's Save / Apply / Revert (host.renderBody)
 -- ---------------------------------------------------------------------------
 
--- Save the editing set into the saved list (the active entry, or a new one).
+-- The budget for ANY level -- the band sweep's oracle. The model (base +
+-- learned bonus, + merits only at 75) is the one source that can answer at
+-- an arbitrary level; the client's live cap only ever describes the level
+-- it was computed at. The level-75 settings override fills in when the
+-- model has no learned bonus yet -- at 75 only, where its number means
+-- what it says. nil = unknown (bandViolations then marks PROVISIONAL).
+function M.budgetFn(ctx)
+    return function(L)
+        local c = ctx.blu.expectedCap(L);
+        if c ~= nil then return c; end
+        if L >= 75 and ctx.cfg.budgetOverride and ctx.cfg.budgetOverride > 0 then
+            return ctx.cfg.budgetOverride;
+        end
+        return nil;
+    end;
+end
+
+-- Save the editing set into the saved list (the active entry, or a new
+-- one). Overwriting a DIFFERENT saved state banks it on the set's backup
+-- ring first (cap 5, newest first) -- the save is undoable.
 function M.saveEditing(ctx)
     local st, cfg = ctx.state, ctx.cfg;
     local copy = ctx.sets.clone(st.editingSet, st.editingSet.name);
     copy.name = st.editingSet.name;
     if st.activeSet and cfg.sets[st.activeSet] then
+        local old = cfg.sets[st.activeSet];
+        if not ctx.sets.equal(old, copy) then
+            ctx.sets.pushBackup(copy, old, os.time());
+        end
         cfg.sets[st.activeSet] = copy;
     else
         table.insert(cfg.sets, copy);
@@ -55,9 +78,14 @@ function M.revertEditing(ctx)
     st.addNote = nil;
 end
 
--- Apply the editing set in game (diff), snapshotting the auto-restore
--- target. Says WHY when it cannot.
-function M.applyEditing(ctx)
+-- Apply the editing set in game: the timeline RESOLVED for a level --
+-- forLevel when given (the preemptive 'Apply for Lv.N'), else the live
+-- effective level. Hard-blocked while an ENFORCED band violation exists
+-- (at/above the set's builtFor, budget actually known -- plan 2.6); the
+-- block message is the band message. Snapshots what was sent and the
+-- level it was FOR, so the dirty compare can recognize a preemptive
+-- apply instead of glowing green against it.
+function M.applyEditing(ctx, forLevel)
     local st = ctx.state;
     if ctx.blu.applying then return; end
     if not ctx.blu.canApply() then
@@ -66,28 +94,65 @@ function M.applyEditing(ctx)
             or 'Cannot apply: BLU is not your main or sub job.';
         return;
     end
-    if ctx.blu.applyDiff(st.editingSet.ids, ctx.book) then
+    local viol = ctx.sets.enforcedViolations(st.editingSet, ctx.book, M.budgetFn(ctx));
+    if #viol > 0 then
+        st.applyNote = ('Cannot apply: %s.'):format(ctx.sets.bandText(viol[1]));
+        return;
+    end
+    local lvl = forLevel or ctx.blu.effectiveLevel() or 75;
+    local ids = ctx.sets.resolveAtLevel(st.editingSet, lvl, ctx.book);
+    if ctx.blu.applyDiff(ids, ctx.book) then
         local snap = {};
-        for k = 1, 20 do snap[k] = st.editingSet.ids[k] or 0; end
-        ctx.cfg.lastApplied = { ids = snap };
+        for k = 1, 20 do snap[k] = ids[k] or 0; end
+        ctx.cfg.lastApplied = { ids = snap, level = lvl };
+        st.replanPending = nil;
         if ctx.save then ctx.save(); end
-        st.applyNote = 'Applying the changes, lowest level first - watch the chat log.';
+        st.applyNote = forLevel
+            and ('Applying the plan for Lv.%d - watch the chat log.'):format(lvl)
+            or 'Applying the changes, lowest level first - watch the chat log.';
     end
 end
 
 -- Does the editing set differ from its SAVED copy? Drives the header's
 -- green Save and the Revert. With no active saved set, any content counts.
+-- Chains, builtFor and the name are authorship; backups are not.
 function M.unsaved(ctx)
     local st, cfg = ctx.state, ctx.cfg;
     local saved = st.activeSet and cfg.sets[st.activeSet] or nil;
     if saved == nil then
         return ctx.sets.count(st.editingSet) > 0;
     end
-    if tostring(saved.name) ~= tostring(st.editingSet.name) then return true; end
-    for i = 1, 20 do
-        if (saved.ids[i] or 0) ~= (st.editingSet.ids[i] or 0) then return true; end
+    return not ctx.sets.equal(saved, st.editingSet);
+end
+
+-- The ONE live-vs-plan compare (formerly duplicated in host.renderBody and
+-- the Sets tab, now consolidated -- plan 5). Against the SORTED layout of
+-- the resolution, so right-spells-wrong-order still counts as pending.
+-- Returns state, level:
+--   'clean'   live matches the plan for the LIVE level
+--   'planned' live matches the plan applied FOR another level (the
+--             preemptive apply) -- level names it
+--   'dirty'   live differs from both
+--   nil       the live set is unreadable
+function M.applyState(ctx)
+    local live = ctx.blu.currentSet();
+    if #live ~= 20 then return nil; end
+    local st = ctx.state;
+    local lvl = ctx.blu.effectiveLevel() or 75;
+    local function matches(atLevel)
+        local T = ctx.sets.sortedLayout(
+            ctx.sets.resolveAtLevel(st.editingSet, atLevel, ctx.book), ctx.book);
+        for i = 1, 20 do
+            if (live[i] or 0) ~= T[i] then return false; end
+        end
+        return true;
     end
-    return false;
+    if matches(lvl) then return 'clean', lvl; end
+    local la = ctx.cfg.lastApplied;
+    if la ~= nil and la.level ~= nil and la.level ~= lvl and matches(la.level) then
+        return 'planned', la.level;
+    end
+    return 'dirty', lvl;
 end
 
 -- ---------------------------------------------------------------------------

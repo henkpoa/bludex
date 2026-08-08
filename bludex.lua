@@ -108,7 +108,8 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
         msg('/bludex (or /bdx) - toggle the window.');
         msg('/bludex list - list saved sets.');
         msg('/bludex import [name] - import blusets spell lists as saved sets.');
-        msg('/bludex apply <name> - apply a saved set (only the changed slots).');
+        msg('/bludex apply <name> - apply a saved set (its plan for your current level).');
+        msg('/bludex replan - apply the editing set\'s plan for your current level.');
         msg('/bludex reset - unset every spell.');
         msg('/bludex refresh - re-request job data (wakes a stuck points read).');
         msg('/bludex delay <0.2-5> - seconds between set-spell packets.');
@@ -234,12 +235,20 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
             msg('No saved set by that name. /bludex list shows them.');
             return;
         end
-        if blu.applyDiff(entry.ids, book) then
+        -- the timeline resolved for the level we stand at, like the button
+        local lvl = blu.effectiveLevel() or 75;
+        local ids = sets.resolveAtLevel(entry, lvl, book);
+        if blu.applyDiff(ids, book) then
             local snap = {};
-            for i = 1, 20 do snap[i] = entry.ids[i] or 0; end
-            cfg.lastApplied = { ids = snap };
+            for i = 1, 20 do snap[i] = ids[i] or 0; end
+            cfg.lastApplied = { ids = snap, level = lvl };
             saveSettings();
         end
+        return;
+    end
+
+    if args[2]:any('replan') then
+        host.replanNow();
         return;
     end
 

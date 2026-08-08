@@ -612,6 +612,12 @@ local function msg(s)
     print(chat.header('bludex'):append(chat.message(s)));
 end
 
+-- the one chat voice, exported: the host's level-change watcher speaks
+-- through it so every bludex line wears the same header
+function M.announce(s)
+    msg(s);
+end
+
 -- The CAST LOCK: setting or unsetting any spell locks Blue Magic casting
 -- for about a minute (the game's own rule). Every 0x102 we send restamps
 -- the clock, so the countdown runs from the LAST packet of an apply.
@@ -737,45 +743,6 @@ local function byLevel(ids, book)
         end);
     end
     return out;
-end
-
--- Position-independent plan against the live set: targets are matched by
--- spell IDENTITY, not slot. Since the sorted slot-wise plan took over the
--- apply path (2026-08-04), this serves ONLY the adds-only restore -- a
--- level-change restore must put spells back without reshuffling the set.
--- Missing spells are paired lowest-level-first with the lowest open slots.
--- Returns nil when the live set is unreadable.
-local function planDiff(ids, book, removeExtras)
-    local live = M.currentSet();
-    if #live ~= 20 then return nil; end
-    local want = {};
-    for slot = 1, 20 do
-        local id = ids[slot] or 0;
-        if id ~= 0 and M.hasSpell(id) then want[id] = true; end
-    end
-    local liveIds, removes, empties = {}, {}, {};
-    for slot = 1, 20 do
-        local id = live[slot] or 0;
-        if id == 0 then
-            empties[#empties + 1] = slot;
-        elseif want[id] or not removeExtras then
-            liveIds[id] = true;
-        else
-            removes[#removes + 1] = slot;
-            empties[#empties + 1] = slot;   -- open once the unset lands
-        end
-    end
-    local missing, kept = {}, 0;
-    for id in pairs(want) do
-        if liveIds[id] then kept = kept + 1; else missing[#missing + 1] = id; end
-    end
-    missing = byLevel(missing, book);
-    local adds, noSlot = {}, 0;
-    for i, id in ipairs(missing) do
-        if empties[i] then adds[#adds + 1] = { slot = empties[i], id = id };
-        else noSlot = noSlot + 1; end
-    end
-    return { removes = removes, adds = adds, kept = kept, noSlot = noSlot };
 end
 
 -- Apply a whole set (array of 20 real ids / 0s): reset, then set each spell
@@ -961,40 +928,9 @@ function M.reportLevelDown(book)
         free > 0 and (', %d slots free'):format(free) or ''));
 end
 
--- The auto-restore path: put back whatever a level change stripped from the
--- last-applied set. ADDS ONLY -- never unsets, so anything set by hand in
--- the native menu survives. Quiet when nothing is missing (this fires after
--- every level change). Ends by re-reading the live set and reporting how
--- many actually stuck -- a still-synced level rejects the tail server-side.
-function M.restoreMissing(ids, book, onDone)
-    if not M.canApply() or M.applying then return false; end
-    local plan = planDiff(ids, book, false);
-    if plan == nil or #plan.adds == 0 then return false; end
-    local delay = stepDelay();
-    M.applying = true;
-    msg(('Level change: restoring %d spell(s), lowest level first.'):format(#plan.adds));
-    ashita.tasks.once(1, function()
-        for _, e in ipairs(plan.adds) do
-            M.setSlot(e.slot, e.id);
-            coroutine.sleep(delay);
-        end
-        coroutine.sleep(0.5);
-        local liveNow, after = {}, M.currentSet();
-        if #after == 20 then
-            for i = 1, 20 do if after[i] ~= 0 then liveNow[after[i]] = true; end end
-        end
-        local stuck = 0;
-        for _, e in ipairs(plan.adds) do if liveNow[e.id] then stuck = stuck + 1; end end
-        M.applying = false;
-        if #after == 20 and stuck < #plan.adds then
-            msg(('Restored %d of %d - the rest need a higher level (or a free slot). Spells castable in ~%ds.'):format(
-                stuck, #plan.adds, M.castLock));
-        else
-            msg(('Restored %d spell(s). Spells castable in ~%ds.'):format(#plan.adds, M.castLock));
-        end
-        if onDone then pcall(onDone); end
-    end);
-    return true;
-end
+-- (The pre-timeline adds-only restore -- planDiff + restoreMissing -- is
+-- RETIRED, 2026-08-08: the timeline's re-plan replaced it, and with it the
+-- guarantee that hand-set native-menu spells survive a level change. That
+-- repeal is deliberate and recorded: docs/timeline-sets-plan.md 2.7.)
 
 return M;
