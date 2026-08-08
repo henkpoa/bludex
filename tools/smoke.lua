@@ -465,4 +465,64 @@ check(host.state.tab == 'Sets', 'switch keeps pure view state (the active tab)')
 check(type(blu.resetJobWatch) == 'function', 'the job watch has its lifecycle seam');
 blu.forgetBudget();
 
+print('smoke: dlac adapter store lifecycle');
+-- dlac loads modules BEFORE login, and its store serves declared defaults
+-- until the character directory exists. The adapter's decoded bridge must
+-- FOLLOW the store: init's snapshot alone meant the first save of a session
+-- wrote an empty set list over the character's real file.
+local disk = {};                       -- the stub store's backing 'files'
+local storeDir = nil;                  -- nil = pre-login
+local stubStore = {
+    get = function(k)
+        local f = storeDir and disk[storeDir] or nil;
+        local v = nil;
+        if f ~= nil then v = f[k]; end
+        if v == nil then return dm.config.defaults[k]; end
+        return v;
+    end,
+    set = function(k, v)
+        if storeDir == nil then return false; end
+        disk[storeDir] = disk[storeDir] or {};
+        disk[storeDir][k] = v;
+        return true;
+    end,
+    path = function()
+        if storeDir == nil then return nil; end
+        return storeDir .. 'jobhelper-bludex.lua';
+    end,
+};
+local function ids20(firstId)
+    local t = {}; for i = 1, 20 do t[i] = 0; end
+    t[1] = firstId;
+    return t;
+end
+dm._forceLib({ host = host, book = book, blu = blu, sets = sets });
+dm.init({ cfg = stubStore, say = { err = function() end } });
+check(#host.deps.cfg.sets == 0, 'pre-login init: the bridge holds the declared defaults');
+-- character A logs in: their file already has a set the bridge must adopt
+disk['A\\'] = {
+    sets = dm._codec.encodeSets({ { name = 'Solo', ids = ids20(700) } }),
+    activeSetName = 'Solo', capLearnedBonus = 24, capMeritPoints = 10,
+};
+storeDir = 'A\\';
+dm._syncStore();
+check(#host.deps.cfg.sets == 1 and host.deps.cfg.sets[1].name == 'Solo',
+    'first login: the bridge re-decodes the character file');
+check(host.state.editingSet.name == 'Solo' and host.state.editingSet.ids[1] == 700,
+    'and the host adopts it (the active set is restored)');
+check(blu.learnedBonus == 24 and blu.meritPts == 10,
+    'the budget halves now persist through the dlac store too');
+-- a save now round-trips the real list, not the empty init snapshot
+host.deps.save();
+check(dm._codec.decodeSets(disk['A\\'].sets)[1].name == 'Solo',
+    'a save after login keeps the character file (no empty-snapshot clobber)');
+-- character B: their own file (none yet) -- nothing of A may leak
+storeDir = 'B\\';
+dm._syncStore();
+check(#host.deps.cfg.sets == 0 and host.state.activeSet == nil,
+    'character switch: B starts from their own file, not A\'s bridge');
+check(blu.learnedBonus == nil and blu.meritPts == nil,
+    'and A\'s budget is not inherited');
+blu.forgetBudget();
+
 print('smoke: all green');
