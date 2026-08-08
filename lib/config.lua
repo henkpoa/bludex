@@ -20,16 +20,28 @@ end
 -- mutates what it is given.
 function M.defaults()
     return TT{
-        sets = TT{ },             -- { { name = s, ids = {20 real ids} }, ... }
+        -- Saved sets, TIMELINE shape (setsModelVer 2, docs/timeline-sets-plan.md):
+        -- { name, builtFor, chains = {20 x { {id, from}, ... }}, ids = {20},
+        --   backups = {<=5} } -- ids is the derived level-75 mirror; a stored
+        -- v1 entry ({ name, ids }) is upgraded in place by host.adoptCfg.
+        sets = TT{ },
         budgetOverride = 0,       -- shown when the live budget is unavailable
         applyDelay = 1.1,         -- seconds between set-spell packets
         applyMode = 'safe',       -- 'safe' (client-paced) | 'fast' (injected)
-        autoRestore = false,      -- re-add spells stripped by level changes
-        lastApplied = TT{ },      -- { ids = {20} } -- the auto-restore target
+        replan = 'manual',        -- level change: 'auto' re-applies the plan
+                                  -- for the new level (may UNSET); 'manual'
+                                  -- nudges and waits for the click
+        autoRestore = false,      -- RETIRED (pre-timeline adds-only restore);
+                                  -- kept one release so old files read clean
+        lastApplied = TT{ },      -- { ids = {20}, level = n } -- what the last
+                                  -- apply sent, and the level it was FOR
         activeSetName = '',       -- last selected saved set, reloaded at startup
         codexDensity = 'normal',  -- codex list size: 'big'|'medium'|'normal'|'compact'
         traitsDensity = 'normal', -- traits spell-row size, same four choices
-        setsLayout = 'grid',      -- Sets slots as 'grid' (5x4 cells) | 'list' (named rows)
+        setsLayout = 'grid',      -- RETIRED (the grid is gone); kept one release
+        -- Set model version: 2 = timeline chains. Bumped when the stored
+        -- meaning changes; adoptCfg migrates older shapes in place.
+        setsModelVer = 2,
         -- The point budget: cap = base(level) + learnedBonus + merits, with
         -- merits counting only at level 75. Bumped when the meaning changes,
         -- so readings taken under older rules are discarded, not reused.

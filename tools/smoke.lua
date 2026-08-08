@@ -610,6 +610,36 @@ check(#sl == 2 and sl[1].name == 'Solo DD' and sl[1].ids[7] == 700
 check(dm._codec.decodeSets('')[1] == nil and dm._codec.decodeIds(nil)[20] == 0,
     'codec tolerates empty and nil');
 
+-- the TIMELINE grammar (sets2/sets2bak, plan 7): lossless round-trip of
+-- chains, builtFor and backups -- and the legacy key stays a usable flat
+-- mirror, because the OLD decoder zeroes unknown tokens (changing the old
+-- grammar in place would silently EMPTY every set on an older module)
+local tset = sets.new('Level Up');
+check(sets.addEntry(tset, 1, 603, nil, book)
+    and sets.addEntry(tset, 1, 529, nil, book)
+    and sets.addEntry(tset, 1, 0, 45, book), 'codec fixture builds');
+tset.builtFor = 1;
+sets.pushBackup(tset, tset, 12345);
+local dec = dm._codec.decodeSets2(dm._codec.encodeSets2({ tset }));
+check(#dec == 1 and dec[1].builtFor == 1, 'sets2: builtFor survives');
+check(#dec[1].chains[1] == 3 and dec[1].chains[1][2].id == 529
+    and dec[1].chains[1][2].from == 18 and dec[1].chains[1][3].id == 0
+    and dec[1].chains[1][3].from == 45,
+    'sets2: the chain survives, empty marker included');
+check(#dec[1].chains[2] == 0 and dec[1].chains[20] ~= nil,
+    'sets2: empty chains keep their places (the split keeps empty tokens)');
+dm._codec.attachBackups(dec, dm._codec.encodeBackups({ tset }));
+check(dec[1].backups ~= nil and dec[1].backups[1].ts == 12345
+    and #dec[1].backups[1].chains[1] == 3, 'sets2bak: backups reattach by name');
+sets.upgrade(dec[1], book);
+check(sets.equal(dec[1], tset), 'the round-tripped set equals the original');
+check(dm._codec.decodeSets2('')[1] == nil and dm._codec.decodeSets2('#v2')[1] == nil,
+    'sets2 decode tolerates empty and header-only');
+local eg = sets.fromIds('EG', { 529, 603 }, book);
+local oldRead = dm._codec.decodeSets(dm._codec.encodeSets({ eg }));
+check(oldRead[1].ids[1] == 603 and oldRead[1].ids[2] == 529,
+    'the legacy key carries the flat level-75 mirror for older modules');
+
 print('smoke: settings lifecycle (logoff / relog / character switch)');
 -- The Ashita settings library swaps the WHOLE settings table at every
 -- login and logout: the shared defaults profile while logged off, the
@@ -647,6 +677,13 @@ check(host.state.activeSet == 2 and host.state.editingSet.name == 'Solo'
     'first login restores the remembered active set from the character file');
 check(blu.learnedBonus == 24 and blu.meritPts == 10,
     'first login seeds the budget halves from the character file');
+-- the timeline migration rides the same adopt: flat entries gain chains
+check(aCfg.sets[1].chains ~= nil and aCfg.sets[1].chains[1][1] ~= nil
+    and aCfg.sets[1].chains[1][1].id == 623 and aCfg.sets[1].builtFor == 75,
+    'adopt migrates stored flat sets to chains (builtFor 75)');
+check(aCfg.setsModelVer == 2, 'and stamps setsModelVer 2');
+check(aCfg.replan == 'manual', 'the retired autoRestore maps to replan=manual');
+check(host.state.editingSet.chains ~= nil, 'the editing clone speaks chains too');
 -- LOG OFF: the defaults profile swaps in. The working state stays put (the
 -- same character usually returns; the standalone gates rendering meanwhile).
 host.state.editingSet.ids[3] = 623;                 -- an unsaved edit
@@ -725,12 +762,18 @@ check(#host.deps.cfg.sets == 1 and host.deps.cfg.sets[1].name == 'Solo',
     'first login: the bridge re-decodes the character file');
 check(host.state.editingSet.name == 'Solo' and host.state.editingSet.ids[1] == 700,
     'and the host adopts it (the active set is restored)');
+check(host.deps.cfg.sets[1].chains ~= nil,
+    'a legacy dlac store migrates to chains through the same adopt');
 check(blu.learnedBonus == 24 and blu.meritPts == 10,
     'the budget halves now persist through the dlac store too');
--- a save now round-trips the real list, not the empty init snapshot
+-- a save now round-trips the real list, not the empty init snapshot --
+-- and writes BOTH grammars: sets2 as the truth, sets as the flat mirror
 host.deps.save();
 check(dm._codec.decodeSets(disk['A\\'].sets)[1].name == 'Solo',
     'a save after login keeps the character file (no empty-snapshot clobber)');
+check(dm._codec.decodeSets2(disk['A\\'].sets2)[1] ~= nil
+    and dm._codec.decodeSets2(disk['A\\'].sets2)[1].chains[1][1].id == 700,
+    'the save writes the timeline grammar alongside the legacy key');
 -- character B: their own file (none yet) -- nothing of A may leak
 storeDir = 'B\\';
 dm._syncStore();
@@ -738,6 +781,14 @@ check(#host.deps.cfg.sets == 0 and host.state.activeSet == nil,
     'character switch: B starts from their own file, not A\'s bridge');
 check(blu.learnedBonus == nil and blu.meritPts == nil,
     'and A\'s budget is not inherited');
+-- back to A: this login must decode the TIMELINE grammar (sets2 written by
+-- the save above outranks the legacy key)
+storeDir = 'A\\';
+dm._syncStore();
+check(host.deps.cfg.sets[1].chains ~= nil and host.deps.cfg.sets[1].chains[1][1].id == 700,
+    'a return to A decodes the timeline grammar directly');
+check(host.state.editingSet.name == 'Solo',
+    'and the active set restores from it as before');
 blu.forgetBudget();
 
 print('smoke: all green');

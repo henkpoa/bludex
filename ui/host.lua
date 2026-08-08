@@ -64,6 +64,24 @@ local function adoptCfg(deps)
         deps.cfg.capLearnedBonus, deps.cfg.capMeritPoints = -1, -1;
         if deps.save then deps.save(); end
     end
+    -- the timeline migration (setsModelVer 2): every stored flat set gains
+    -- chains -- sorted placement, one entry per spell at its own level,
+    -- builtFor 75 so nothing existing turns red. Runs at init AND on every
+    -- swap, so both flavors and every store shape funnel through here.
+    local migrated = false;
+    for _, entry in ipairs(deps.cfg.sets) do
+        if deps.sets.upgrade(entry, deps.book) then migrated = true; end
+    end
+    if migrated or (deps.cfg.setsModelVer or 0) < 2 then
+        deps.cfg.setsModelVer = 2;
+        if deps.save then deps.save(); end
+    end
+    -- the replan setting replaces the retired adds-only autoRestore; the
+    -- meaning changed (auto may now UNSET), so everyone starts at 'manual'
+    -- whatever the old toggle said
+    if deps.cfg.replan ~= 'auto' and deps.cfg.replan ~= 'manual' then
+        deps.cfg.replan = 'manual';
+    end
     local function known(v) if v ~= nil and v >= 0 then return v; end return nil; end
     deps.blu.learnedBonus = known(deps.cfg.capLearnedBonus);
     deps.blu.meritPts     = known(deps.cfg.capMeritPoints);

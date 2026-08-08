@@ -140,11 +140,16 @@ function M.upgrade(set, book)
         if (set.ids and set.ids[i] or 0) ~= 0 then idCount = idCount + 1; end
     end
     if hasChains and (chainCount > 0 or idCount == 0) then
-        -- already v2; just make sure the shape is complete
+        -- already v2; just make sure the shape is complete (a store decode
+        -- arrives without the ids mirror -- re-derive it here)
         local changed = false;
         if set.builtFor == nil then set.builtFor = 75; changed = true; end
         for i = 1, 20 do
             if set.chains[i] == nil then set.chains[i] = {}; changed = true; end
+        end
+        if set.ids == nil then
+            M.syncLegacyIds(set, book);
+            changed = true;
         end
         return changed;
     end
