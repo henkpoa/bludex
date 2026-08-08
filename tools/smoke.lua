@@ -342,7 +342,7 @@ check(#br == 8 and #br[1].slots == 6 and br[2].floor == 11 and br[8].floor == 71
 local v2 = sets.new('V2');
 check(v2.builtFor == 75 and v2.chains ~= nil and #v2.chains[1] == 0,
     'new sets carry builtFor 75 and empty chains');
-check(sets.upgrade(v2, book) == false or true, 'upgrade tolerates a v2 set');
+check(sets.upgrade(v2, book) == false, 'upgrade is a no-op on a fresh v2 set');
 local v1 = { name = 'Old', ids = {} };
 for i = 1, 20 do v1.ids[i] = 0; end
 v1.ids[3] = 529;      -- Bludgeon 18
@@ -419,6 +419,12 @@ check(select(2, sets.addEntry(hb, 10, 603, nil, book)) == 'never active here (th
 -- removeId clears every placement; clearChain and removeSlot clear one
 sets.removeId(tl, 603);
 check(sets.contains(tl, 603) == nil, 'removeId clears every placement of the spell');
+local rmm = sets.new('RM');
+check(sets.addEntry(rmm, 1, 529, nil, book) and sets.addEntry(rmm, 1, 603, 30, book),
+    'mirror fixture builds (Bludgeon 18-29, Wild Oats 30-75)');
+sets.removeId(rmm, 603);
+check(rmm.ids[1] == 529,
+    'removeId re-derives the mirror: the exposed predecessor returns at 75 (review)');
 sets.clearChain(hb, 9, book);
 check(#hb.chains[9] == 0 and sets.contains(hb, 603) == nil, 'clearChain empties one slot');
 
@@ -639,6 +645,20 @@ local eg = sets.fromIds('EG', { 529, 603 }, book);
 local oldRead = dm._codec.decodeSets(dm._codec.encodeSets({ eg }));
 check(oldRead[1].ids[1] == 603 and oldRead[1].ids[2] == 529,
     'the legacy key carries the flat level-75 mirror for older modules');
+-- decode tolerance sharpened by review 2026-08-08: a corrupt builtFor
+-- clamps (0 would enforce everything, 200 nothing), an out-of-order chain
+-- re-sorts (resolveAtLevel breaks at the first later entry), and duplicate
+-- names hand the ring to the FIRST set (the activeSetName rule)
+local oo = dm._codec.decodeSets2('#v2\nOO\t0\t529@18,603@4');
+check(oo[1].builtFor == 75, 'a corrupt builtFor clamps to 75');
+check(oo[1].chains[1][1].from == 4 and oo[1].chains[1][2].from == 18,
+    'an out-of-order stored chain re-sorts on decode');
+local dupA, dupB = sets.new('D'), sets.new('D');
+local dup = { dupA, dupB };
+dm._codec.attachBackups(dup,
+    'D\t5\t75\t' .. dm._codec.encodeChains(sets.new('D').chains));
+check(dupA.backups ~= nil and dupB.backups == nil,
+    'duplicate names: the first set gets the ring');
 
 print('smoke: settings lifecycle (logoff / relog / character switch)');
 -- The Ashita settings library swaps the WHOLE settings table at every
@@ -836,6 +856,27 @@ host.checkReplan();
 check(stubLive.applied ~= nil and stubLive.applied[1] == 529
     and vcfg.lastApplied.level == 20, 'replan=auto applies the plan for the settled level');
 vcfg.replan = 'manual';
+
+-- the backup ring DEEPENS through consecutive saves (review 2026-08-08:
+-- cloning the editing set's selection-time ring reset the depth to one)
+local rcfg = mkcfg();
+local rst = { editingSet = nil, activeSet = 1, applyNote = nil };
+local rctx = { state = rst, cfg = rcfg, sets = sets, book = book, blu = blu,
+    save = function() end };
+local ring0 = sets.new('Ring');
+sets.addEntry(ring0, 1, 603, nil, book);
+rcfg.sets = { ring0 };
+rst.editingSet = sets.clone(ring0, 'Ring');
+sets.addEntry(rst.editingSet, 1, 529, nil, book);
+setsuiM.saveEditing(rctx);
+check(#(rcfg.sets[1].backups or {}) == 1, 'the first save-over banks the original');
+rst.editingSet = sets.clone(rcfg.sets[1], 'Ring');
+sets.addEntry(rst.editingSet, 1, 0, 45, book);
+setsuiM.saveEditing(rctx);
+check(#(rcfg.sets[1].backups or {}) == 2,
+    'the second save-over deepens the ring to two');
+check(#rcfg.sets[1].backups[1].chains[1] == 2 and #rcfg.sets[1].backups[2].chains[1] == 1,
+    'newest first: backup 1 is the two-entry state, backup 2 the original');
 
 blu.currentSet, blu.effectiveLevel, blu.canApply, blu.onBlu, blu.applyDiff, blu.announce =
     _cur, _eff, _can, _onb, _diff, _ann;

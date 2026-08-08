@@ -271,9 +271,15 @@ end
 function M.checkReplan()
     local deps, st = M.deps, M.state;
     if deps == nil or st == nil then return; end
-    if not deps.blu.onBlu() or deps.blu.applying then return; end
+    -- off BLU the nudge is moot -- clear it, or a job change leaves a
+    -- stale float with a button that can never work (review 2026-08-08)
+    if not deps.blu.onBlu() then st.replanPending = nil; return; end
+    if deps.blu.applying then return; end
     local ctx = tabCtx(deps.im, st, deps, false);
     local state, lvl = setsui.applyState(ctx);
+    -- nil = the live set is unreadable (zoning): decide NOTHING on it --
+    -- neither arming a nudge nor dropping a legitimate pending one
+    if state == nil then return; end
     if state ~= 'dirty' then st.replanPending = nil; return; end
     local live = deps.blu.currentSet();
     local liveHas = {};
@@ -328,10 +334,16 @@ local function renderBody(im, st, deps, embedded)
     local max = budgetMax(deps);
     kit.meter(im, '   Set:', deps.sets.usedPoints(st.editingSet, deps.book), max, ' pts');
     kit.tip(im, max ~= nil
-        and 'Points used by the set you are editing /\nyour total from the game client (CatsEyeXI bonuses included).'
-        or 'Points used by the set you are editing.\nThe total appears when you are on BLU (or set budgetOverride).');
+        and 'Points used by the set you are editing (its level-75 plan) /\nyour total from the game client (CatsEyeXI bonuses included).'
+        or 'Points used by the set you are editing (its level-75 plan).\nThe total appears when you are on BLU (or set budgetOverride).');
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    kit.meter(im, '   Slots:', deps.sets.count(st.editingSet), 20, '');
+    -- SLOTS the level-75 plan occupies (the ids mirror), NOT chain entries:
+    -- a Wild Oats -> Bludgeon stack is one slot, not two (review 2026-08-08)
+    local slots75 = 0;
+    for i = 1, 20 do
+        if ((st.editingSet.ids or {})[i] or 0) ~= 0 then slots75 = slots75 + 1; end
+    end
+    kit.meter(im, '   Slots:', slots75, 20, '');
     -- the level-sync line (Henrik 2026-08-06): the meters above stay the
     -- PLAN (the editing set at full level); when the effective BLU level is
     -- under the 75 cap this shows what the client holds RIGHT NOW -- the
@@ -428,8 +440,12 @@ local function renderBody(im, st, deps, embedded)
     local ctx = tabCtx(im, st, deps, embedded);
     local unsaved = setsui.unsaved(ctx);
     local astate, alevel = setsui.applyState(ctx);
-    -- the manual-replan nudge self-clears the moment live matches a plan
-    if st.replanPending ~= nil and astate ~= 'dirty' then st.replanPending = nil; end
+    -- the manual-replan nudge self-clears the moment live MATCHES a plan --
+    -- an unreadable live set (astate nil, zoning) proves nothing and must
+    -- not drop a legitimate nudge (review 2026-08-08)
+    if st.replanPending ~= nil and (astate == 'clean' or astate == 'planned') then
+        st.replanPending = nil;
+    end
     local bw = kit.measure(im, { 'Save', 'Apply', 'Revert', 'Applying...' }, 48);
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     if kit.litButton(im, 'Save', false, bw, 22, unsaved and kit.PAL.go or kit.PAL.off) then

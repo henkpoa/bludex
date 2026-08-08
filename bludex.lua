@@ -235,6 +235,18 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
             msg('No saved set by that name. /bludex list shows them.');
             return;
         end
+        -- the same hard block the UI Apply wears (plan 2.6) -- the command
+        -- must not be the back door around the band sweep
+        local viol = sets.enforcedViolations(entry, book, function(L)
+            local c = blu.expectedCap(L);
+            if c ~= nil then return c; end
+            if L >= 75 and (cfg.budgetOverride or 0) > 0 then return cfg.budgetOverride; end
+            return nil;
+        end);
+        if #viol > 0 then
+            msg(('Cannot apply %s: %s.'):format(entry.name, sets.bandText(viol[1])));
+            return;
+        end
         -- the timeline resolved for the level we stand at, like the button
         local lvl = blu.effectiveLevel() or 75;
         local ids = sets.resolveAtLevel(entry, lvl, book);

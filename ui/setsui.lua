@@ -58,6 +58,11 @@ function M.saveEditing(ctx)
     copy.name = st.editingSet.name;
     if st.activeSet and cfg.sets[st.activeSet] then
         local old = cfg.sets[st.activeSet];
+        -- the RING LIVES ON THE SAVED ENTRY: the editing clone's ring is a
+        -- snapshot from selection time, so adopting it here would reset the
+        -- ring to depth one on every save (review 2026-08-08). Carry the
+        -- entry's own ring forward, then bank the state being replaced.
+        copy.backups = old.backups;
         if not ctx.sets.equal(old, copy) then
             ctx.sets.pushBackup(copy, old, os.time());
         end
@@ -96,15 +101,22 @@ end
 function M.applyEditing(ctx, forLevel)
     local st = ctx.state;
     if ctx.blu.applying then return; end
+    -- refusals ALSO speak in chat: the nudge float, /bdx replan and the
+    -- auto re-plan all land here with no window to show applyNote in
+    -- (review 2026-08-08 -- a refused click must never be silent)
+    local function refuse(note)
+        st.applyNote = note;
+        if ctx.blu.announce then pcall(ctx.blu.announce, note); end
+    end
     if not ctx.blu.canApply() then
-        st.applyNote = ctx.blu.onBlu()
+        refuse(ctx.blu.onBlu()
             and 'Cannot apply: the client memory signatures did not resolve.'
-            or 'Cannot apply: BLU is not your main or sub job.';
+            or 'Cannot apply: BLU is not your main or sub job.');
         return;
     end
     local viol = ctx.sets.enforcedViolations(st.editingSet, ctx.book, M.budgetFn(ctx));
     if #viol > 0 then
-        st.applyNote = ('Cannot apply: %s.'):format(ctx.sets.bandText(viol[1]));
+        refuse(('Cannot apply: %s.'):format(ctx.sets.bandText(viol[1])));
         return;
     end
     local lvl = forLevel or ctx.blu.effectiveLevel() or 75;
@@ -185,10 +197,24 @@ end
 -- ---------------------------------------------------------------------------
 -- saved sets (left column): select, badge, backups, name, built-for
 -- ---------------------------------------------------------------------------
+-- saved-row badges, refreshed at most once a second: a band sweep per set
+-- per frame is pure GC churn inside a render hook (review 2026-08-08) --
+-- sets only change on explicit edits, and a one-second-stale badge is fine
+local badgeCache = { at = -10, viols = {} };
+
 local function savedList(ctx)
     local im, st, cfg = ctx.im, ctx.state, ctx.cfg;
     kit.header(im, 'Saved sets');
-    local budgetFn = M.budgetFn(ctx);
+    local now = os.clock();
+    if now - badgeCache.at > 1.0 then
+        badgeCache.at = now;
+        badgeCache.viols = {};
+        local budgetFn = M.budgetFn(ctx);
+        for i, entry in ipairs(cfg.sets) do
+            local v = ctx.sets.enforcedViolations(entry, ctx.book, budgetFn);
+            if #v > 0 then badgeCache.viols[i] = v[1]; end
+        end
+    end
     if kit.isFn(im, 'Selectable') then
         for i, entry in ipairs(cfg.sets) do
             local label = ('%s (%d)##bdxset%d'):format(entry.name, ctx.sets.count(entry), i);
@@ -212,11 +238,10 @@ local function savedList(ctx)
             end
             -- the badge (plan 2.6): a saved set carrying an enforced band
             -- violation says so on its row; it saves fine, it cannot apply
-            local viols = ctx.sets.enforcedViolations(entry, ctx.book, budgetFn);
-            if #viols > 0 then
+            if badgeCache.viols[i] ~= nil then
                 if kit.isFn(im, 'SameLine') then im.SameLine(); end
                 kit.ctext(im, kit.COL.err, '!');
-                kit.tip(im, ctx.sets.bandText(viols[1])
+                kit.tip(im, ctx.sets.bandText(badgeCache.viols[i])
                     .. '.\nApply is blocked for this set until it fits its built-for range.');
             end
             -- the backup ring, inline under the row (no popup: the embedded

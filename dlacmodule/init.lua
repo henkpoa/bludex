@@ -152,6 +152,10 @@ function codec.decodeChains(s)
                     chains[i][#chains[i] + 1] = { id = id, from = from };
                 end
             end
+            -- restore the ascending-activation invariant every consumer
+            -- assumes (resolveAtLevel breaks at the first later entry) --
+            -- a hand-edited or corrupted line must not misresolve silently
+            table.sort(chains[i], function(a, b) return a.from < b.from; end);
         end
     end
     return chains;
@@ -173,9 +177,14 @@ function codec.decodeSets2(s)
         if line:sub(1, 1) ~= '#' then
             local name, bf, chains = line:match('^(.-)\t(%d+)\t(.*)$');
             if name ~= nil and name ~= '' then
+                -- clamp builtFor into 1-75: a corrupt 0 would enforce every
+                -- band and a corrupt 200 would enforce none -- tolerance
+                -- means neither flip, not garbage-in-semantics-out
+                local n = tonumber(bf) or 75;
+                if n < 1 or n > 75 then n = 75; end
                 out[#out + 1] = {
                     name = name,
-                    builtFor = tonumber(bf) or 75,
+                    builtFor = n,
                     chains = codec.decodeChains(chains),
                 };
             end
@@ -199,15 +208,32 @@ function codec.encodeBackups(list)
     return table.concat(recs, '\n');
 end
 
+-- the ring depth mirrors setmodel.BACKUP_CAP; read it from the vendored
+-- library when it is loaded (the headless codec tests run before that and
+-- fall back to the same number)
+local function backupCap()
+    if lib ~= nil and lib.sets ~= nil and lib.sets.BACKUP_CAP ~= nil then
+        return lib.sets.BACKUP_CAP;
+    end
+    return 5;
+end
+
 function codec.attachBackups(list, s)
     local byName = {};
-    for _, e in ipairs(list or {}) do byName[tostring(e.name)] = e; end
+    -- FIRST match wins on a duplicate name -- the same rule activeSetName
+    -- resolution uses -- so a name collision cannot silently move every
+    -- backup onto the later set
+    for _, e in ipairs(list or {}) do
+        local key = tostring(e.name);
+        if byName[key] == nil then byName[key] = e; end
+    end
+    local cap = backupCap();
     for line in tostring(s or ''):gmatch('[^\n]+') do
         local name, ts, bf, chains = line:match('^(.-)\t(%d+)\t(%d+)\t(.*)$');
         local e = name ~= nil and byName[name] or nil;
         if e ~= nil then
             e.backups = e.backups or {};
-            if #e.backups < 5 then
+            if #e.backups < cap then
                 e.backups[#e.backups + 1] = {
                     ts = tonumber(ts) or 0,
                     name = name,

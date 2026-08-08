@@ -593,8 +593,10 @@ function M.removeId(set, id)
             end
             normalizeChain(chain);
         end
-        -- mirror sync without book: drop the id from the flat mirror too
-        for i = 1, 20 do if set.ids[i] == id then set.ids[i] = 0; end end
+        -- a removal can EXPOSE a predecessor at 75, so the mirror must be
+        -- re-derived, not just zeroed (resolveAtLevel needs no book when
+        -- chains exist)
+        M.syncLegacyIds(set, nil);
         return;
     end
     local i = M.contains(set, id);
