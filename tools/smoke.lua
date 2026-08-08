@@ -317,6 +317,38 @@ blu.learnedBonus, blu.meritPts = nil, nil;
 check(book.traits.rules.assimilationPerMerit == 2, 'field: +2 per Assimilation merit');
 check(book.traits.rules.expectedTotalAt75 == 80, 'field: expected total 80');
 
+print('smoke: SoA burst spell traits (bg-wiki 2026-08-08)');
+-- Henrik's call: the wiki is authoritative for everything but the level;
+-- traits, MP etc. are the same on CatsEyeXI. Each spell feeds weight 8.
+check(book.spells[719].trait.category == 8 and book.spells[719].trait.weight == 8,
+    'Searing Tempest feeds Attack Bonus at weight 8');
+check(book.spells[720].trait.category == 6, 'Spectral Floe feeds Magic Atk. Bonus');
+check(book.spells[721].trait.category == 16, 'Anvil Lightning feeds Accuracy Bonus');
+check(book.spells[722].trait.category == 11, 'Entomb feeds Defense Bonus');
+check(book.spells[725].trait.category == 29, 'Blinding Fulgor feeds Magic Eva. Bonus');
+check(book.spells[726].trait.category == 13, 'Scouring Spate feeds Magic Def. Bonus');
+check(book.spells[727].trait.category == 18, 'Silent Storm feeds Evasion Bonus');
+check(book.spells[728].trait.category == 30, 'Tenebral Crush feeds Magic Acc. Bonus');
+check(book.traits.categories[29] ~= nil and book.traits.categories[29].name == 'Magic Eva. Bonus'
+    and book.traits.categories[29].tiers[1].points == 8
+    and book.traits.categories[29].traitId == 126,
+    'the Magic Eva. Bonus addendum ladder exists (trait.h 126, tier at 8)');
+check(book.traits.categories[30] ~= nil and book.traits.categories[30].traitId == 125,
+    'the Magic Acc. Bonus addendum ladder exists (trait.h 125)');
+local soa = sets.new('SoA');
+check(sets.add(soa, 720, book, 99), 'Spectral Floe joins a set');
+local mab = nil;
+for _, ev in ipairs(sets.traitEval(soa, book)) do
+    if ev.cat == 6 then mab = ev; end
+end
+check(mab ~= nil and mab.tier ~= nil,
+    'one SoA spell activates its trait outright (weight 8 clears the tier)');
+local hasFloe = false;
+for _, id in ipairs(book.filter({ traitCat = 6 })) do
+    if id == 720 then hasFloe = true; end
+end
+check(hasFloe, 'the trait filter finds Spectral Floe under Magic Atk. Bonus');
+
 print('smoke: timeline chains (docs/timeline-sets-plan.md)');
 -- the bracket rule, and its agreement with the server's slot count at
 -- EVERY level -- the two must never drift (slots open AT 11/21/../71)

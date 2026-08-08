@@ -1,8 +1,9 @@
 # Timeline Sets — design + implementation plan
 
 **Date:** 2026-08-08 (design settled with Henrik over the full Q&A round; this doc is the
-record and the build order). **Status: approved design, not yet built.** Nothing in this
-plan is field-proven until the checklist in §9 says so.
+record and the build order). **Status: BUILT (same day, maintainer session — see
+HANDOVER.md), smoke-green, ZERO field time.** Nothing here is field-proven until the
+checklist in §9 says so.
 
 ## 1. What we are building, in one paragraph
 
