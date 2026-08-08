@@ -200,6 +200,37 @@ function M.measure(im, labels, minW)
     return w;
 end
 
+-- Guarded integer slider over an array buffer ({ value }, InputText-style).
+-- Returns true when the value changed. Falls back to a -/+ button pair with
+-- the value between them when SliderInt is absent (the kit law: degrade to
+-- something usable, never to an error).
+function M.sliderInt(im, id, buf, minV, maxV, width)
+    if isFn(im, 'SliderInt') then
+        if width and isFn(im, 'SetNextItemWidth') then pcall(im.SetNextItemWidth, width); end
+        local ok, changed = pcall(im.SliderInt, id, buf, minV, maxV);
+        if ok then
+            if type(buf[1]) == 'number' then
+                if buf[1] < minV then buf[1] = minV; end
+                if buf[1] > maxV then buf[1] = maxV; end
+            end
+            return changed == true;
+        end
+    end
+    local changed = false;
+    if M.litButton(im, '-##dn' .. id, false, 22, 18) then
+        buf[1] = math.max(minV, (tonumber(buf[1]) or minV) - 1);
+        changed = true;
+    end
+    if isFn(im, 'SameLine') then im.SameLine(); end
+    M.ctext(im, M.COL.accent, tostring(buf[1] or minV));
+    if isFn(im, 'SameLine') then im.SameLine(); end
+    if M.litButton(im, '+##up' .. id, false, 22, 18) then
+        buf[1] = math.min(maxV, (tonumber(buf[1]) or minV) + 1);
+        changed = true;
+    end
+    return changed;
+end
+
 -- Simple guarded combo over a list of string choices. `state` is a table with
 -- .value; returns true if changed. Includes an 'All' entry when allLabel set.
 function M.combo(im, id, state, choices, allLabel, width)

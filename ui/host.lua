@@ -36,13 +36,23 @@ local function freshState(sets)
         addNote = nil,
         applyNote = nil,
         nameBuf = { '' },
-        addBuf = { '' },
+        builtForBuf = { '' },
         openCat = {},
         filters = {
             text = { '' },
             category = {}, element = {}, spellType = {}, trait = {}, learned = {},
             sort = {}, stat = {},
         },
+        -- the timeline planner's working state (all per-character: the
+        -- preview level and the assign target belong to whoever edits)
+        preview = { value = nil },     -- slider; nil = follow the live level
+        rightTab = 'Stats',            -- right column: 'Stats' | 'Assign'
+        assignSlot = nil,              -- the slot the Assign pane targets
+        assignLevel = { '' },          -- activation override ('' = spell level)
+        assignFilter = { text = { '' }, category = {} },
+        readConfirm = nil,             -- Read-current two-step deadline
+        backupsFor = nil,              -- saved-set index with backups shown
+        replanPending = nil,           -- { level, adds } -- the manual nudge
     };
 end
 
@@ -122,7 +132,7 @@ local function resetCharState()
         M.state.filters, M.state.openCat, M.state.scWeapon =
             old.filters, old.openCat, old.scWeapon;
     end
-    M.downCheck, M.restoreChecks = nil, nil;
+    M.downCheck, M.replanCheck = nil, nil;
 end
 
 -- Which character the adopted cfg belongs to ('Name_serverid'; nil = logged

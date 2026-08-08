@@ -3,10 +3,11 @@
     current editing set feeds it, and which spells to add for the next tier
     (the "I want more Dual Wield" answer).
 
-    The spell rows speak the codex grammar (2026-08-04): icon+name rows in the
-    chosen View density (own setting, cfg.traitsDensity), left-click opens the
-    Spell Info window, right-click toggles the spell in/out of the editing
-    set, hover shows the rich tooltip. In-set rows draw green, unlearned red.
+    The spell rows speak the codex grammar (2026-08-04, reference-only since
+    the timeline, 2026-08-08): icon+name rows in the chosen View density
+    (own setting, cfg.traitsDensity), left-click opens the Spell Info
+    window, hover shows the rich tooltip. In-set rows draw green, unlearned
+    red. Assignment lives in the Sets tab's Assign pane.
 ]]--
 
 local ROOT = (...):sub(1, -#('ui\\traitsui') - 1);   -- relocatable require base
@@ -86,31 +87,22 @@ function M.render(ctx)
                     pcall(im.Indent, 14);
                     indented = true;
                 end
+                -- reference rows, like the codex (Henrik 2026-08-08): the
+                -- [in set] tag and the green tint report; assignment lives
+                -- in the Sets tab alone
                 for _, id in ipairs(book.byTrait[cat] or {}) do
                     local s = book.spells[id];
                     local inSet = ctx.sets.contains(set, id) ~= nil;
                     local label = ('%s  w%d / %spts  Lv.%s%s'):format(
                         s.name, s.trait.weight, s.setPoints or '?', s.level or '?',
                         inSet and '  [in set]' or '');
-                    local lclick, rclick, hov = spellsui.listRow(ctx, id, iconSz, nameW,
+                    local lclick, _, hov = spellsui.listRow(ctx, id, iconSz, nameW,
                         st.selectedId == id, showIcon,
                         { label = label, dimColor = kit.COL.err });
                     if lclick then
                         st.selectedId = id;
                         st.detailOpen[1] = true;
                         st.detailFocus = true;
-                    end
-                    if rclick then
-                        if inSet then
-                            ctx.sets.removeId(set, id);
-                            st.addNote = ('Removed %s.'):format(s.name);
-                            if ctx.save then ctx.save(); end
-                        else
-                            local ok2, why = ctx.sets.add(set, id, book, ctx.budgetMax());
-                            st.addNote = ok2 and ('Added %s.'):format(s.name)
-                                or ('Cannot add %s: %s.'):format(s.name, why);
-                            if ok2 and ctx.save then ctx.save(); end
-                        end
                     end
                     spellsui.tooltip(ctx, id, hov);
                 end

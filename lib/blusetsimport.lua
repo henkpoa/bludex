@@ -1,12 +1,17 @@
 --[[
     bludex/lib/blusetsimport.lua -- one-way import of `blusets` spell lists
     (config/addons/blusets/<name>.txt -- one spell name per line, blank line
-    = empty slot) into bludex saved sets { name, ids = {20 real ids} }.
+    = empty slot) into bludex saved sets. Imports land as TIMELINE sets
+    (setmodel.fromIds: flat one-entry chains, sorted placement) so a
+    mid-session import never waits on the next adopt to be usable.
 
     parse() is pure given the book; everything touching AshitaCore or the
     filesystem is guarded, so the module loads headless (smoke test).
     A name collision SKIPS the file -- imports never clobber a bludex set.
 ]]--
+
+local ROOT = (...):sub(1, -#('lib\\blusetsimport') - 1);
+local setmodel = require(ROOT .. 'lib\\setmodel');
 
 local M = {};
 
@@ -93,7 +98,7 @@ function M.importAll(cfg, book, only)
                 local lines = readLines(f.path);
                 if lines ~= nil then
                     local ids, unknown = M.parse(lines, book);
-                    table.insert(cfg.sets, { name = f.name, ids = ids });
+                    table.insert(cfg.sets, setmodel.fromIds(f.name, ids, book));
                     have[book.norm(f.name)] = true;
                     res.imported[#res.imported + 1] = f.name;
                     for _, u in ipairs(unknown) do
