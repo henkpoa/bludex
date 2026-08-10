@@ -1344,6 +1344,40 @@ function M.sortedLayout(ids, book)
     return T;
 end
 
+-- WHAT A LEVEL WILL REFUSE of a plan (Henrik 2026-08-10, sixth round). Two
+-- ways a spell bounces off the game: it is over the level's own ceiling, or
+-- it landed past the slots that level has. Measured against sortedLayout,
+-- which is what an apply actually sends -- low spells first, so the refusals
+-- are always the tail.
+--
+-- Returns ids{}, need -- `need` is the level at which ALL of them would fit
+-- (the highest bar among them), nil when nothing is refused. That is the
+-- level worth waiting for, and the one a sync-end check compares against.
+function M.refusedAtLevel(ids, level, book)
+    local layout = M.sortedLayout(ids, book);
+    local slots = M.slotsAtLevel(level);
+    local out, need = {}, nil;
+    for i = 1, 20 do
+        local id = layout[i] or 0;
+        if id ~= 0 then
+            local s = book.spells[id];
+            local bar = nil;
+            -- the level ceiling first: a spell too high for here needs its
+            -- OWN level, which is a higher bar than its slot's floor
+            if s ~= nil and s.level ~= nil and s.level > level then
+                bar = s.level;
+            elseif i > slots then
+                bar = M.bracketFloor(i);
+            end
+            if bar ~= nil then
+                out[#out + 1] = id;
+                if need == nil or bar > need then need = bar; end
+            end
+        end
+    end
+    return out, need;
+end
+
 -- THE STORED ARRAY IN THE SAME ORDER (Henrik 2026-08-10, fifth round:
 -- "always sort the spells in level order... so people know what spells will
 -- be gotten in what order if you level sync down"). sortedLayout has always

@@ -86,6 +86,16 @@ kinds, amended in place through the rounds), `docs/timeline-sets-plan.md`
    let the client's cap answer for ANY level, though it only ever describes
    `capWatch.lvl`, the level it was read at. That is how a synced 75 was
    told its budget was 49.
+   **THE SYNC PROMISE** rides on top: `setmodel.refusedAtLevel` names what a
+   level will bounce (over its ceiling, or past its slots — measured against
+   `sortedLayout`, which is what an apply sends) and the level that would
+   take it all. `applyEditing` banks that as `cfg.pendingSync`, says one
+   chat line, and `host.finishPending` — on the same `restoreChecks` drain,
+   BEFORE `restoreNow` — comes back for it. Unconditional: it is the rest of
+   an apply you commanded, not a level RULE acting for you. It drops itself
+   if the live set holds anything outside the banked plan (you moved on),
+   and clears to `{}` rather than nil, because the settings lib merges its
+   defaults over a missing key.
 
 1. **The CEXI trait law** (field fact over the base-LSB code reading —
    `lib/traitsource.lua`'s header records the reversal): a job trait GIVES

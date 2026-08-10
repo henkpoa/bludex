@@ -1243,6 +1243,35 @@ setsuiM.applyEditing(vctx);
 check(stubLive.applied ~= nil, 'builtFor 75 un-enforces the low bands; Apply works again');
 blu.learnedBonus, blu.meritPts = nil, nil;
 
+-- APPLYING UNDER A SYNC BANKS WHAT THE LEVEL REFUSED (Henrik 2026-08-10,
+-- sixth round). In a function so its locals get their own budget.
+(function()
+    local flat = sets.new('Synced apply', 'flat');
+    sets.add(flat, 623, book, 999);            -- Head Butt, Lv.12
+    sets.add(flat, 513, book, 999);            -- Venom Shell, Lv.42
+    vst.editingSet = flat;
+    vst.applyNote = nil;
+    vcfg.pendingSync = nil;
+    stubLive.lvl, stubLive.live, said = 20, live20({}), nil;
+    setsuiM.applyEditing(vctx);
+    check(vcfg.pendingSync ~= nil and vcfg.pendingSync.count == 1
+        and vcfg.pendingSync.need == 42,
+        'an apply at Lv.20 banks the one spell Lv.20 cannot hold');
+    check(type(said) == 'string' and said:find('Lv.42', 1, true) ~= nil,
+        'and says so in chat rather than failing silently');
+    check(type(vst.applyNote) == 'string' and vst.applyNote ~= '',
+        'the note survives the usual post-apply clear');
+    -- the same set applied at a level that CAN hold it retires the promise
+    stubLive.lvl = 75;
+    setsuiM.applyEditing(vctx);
+    check((vcfg.pendingSync or {}).ids == nil, 'a clean apply leaves no promise behind');
+    -- 'Apply for Lv.N' is judged at the level you are STANDING at, not the
+    -- level the plan was sent for -- a Lv.4 plan sent at 75 refuses nothing
+    setsuiM.applyEditing(vctx, 4);
+    check((vcfg.pendingSync or {}).ids == nil, 'a preemptive apply at full level banks nothing');
+    vst.editingSet = plan;
+end)();
+
 -- the level-change watcher: nudge on new spells, silence on removals-only
 -- (the flat-set-under-sync case), auto mode applies by itself
 local plan2 = sets.new('Watch');
@@ -1823,6 +1852,51 @@ fake.level = 75; tickNow();
 fake.level = 40; tickNow();
 check(fake.applied == nil,
     'a followed build-less set derives Restore -- Switch never fires for it');
+
+-- THE TAIL A SYNC REFUSED (Henrik 2026-08-10, sixth round: "make it notice
+-- and offer that automatically"). In a function so its locals get their own
+-- budget -- the main chunk is near Lua's 200-local ceiling.
+print('smoke: the sync promise (what the level refused, set when it returns)');
+(function()
+    -- what Lv.20 will bounce off a plan of Head Butt (12) and Venom Shell (42)
+    local refused, need = sets.refusedAtLevel(flat20, 20, book);
+    check(#refused == 1 and refused[1] == 513 and need == 42,
+        'refusedAtLevel names the over-level spell and the level it needs');
+    check(#(sets.refusedAtLevel(flat20, 75, book)) == 0,
+        'and refuses nothing at a level that can hold it all');
+    -- a plan deeper than the level has SLOTS is refused too, by its slot's
+    -- own floor -- Lv.1 has six, so a seventh spell waits for Lv.11
+    local wide = {};
+    for i = 1, 20 do wide[i] = 0; end
+    for i, id in ipairs({ 549, 603, 623, 529, 513, 515, 517 }) do wide[i] = id; end
+    check(select(2, sets.refusedAtLevel(wide, 1, book)) ~= nil,
+        'a plan past the level\'s slot count is refused as well');
+
+    -- and the watcher comes back for it. Standing at 40, promised at 42.
+    -- No set is followed, so the level RULES stand down entirely and what
+    -- fires here can only be the promise.
+    fcfg.lastAppliedSet = '';
+    fake.level, fake.applied, fake.restored = 40, nil, nil;
+    fake.live = sets.sortedLayout({ [1] = 623 }, book);   -- only the low one is on
+    fcfg.pendingSync = { ids = flat20, need = 42, count = 1 };
+    host.restoreChecks = { 0 }; host.tick();
+    check(fake.restored == nil and (fcfg.pendingSync or {}).ids ~= nil,
+        'below the level it needs, the promise waits and says nothing');
+    fake.level = 75;
+    host.restoreChecks = { 0 }; host.tick();
+    check(fake.restored ~= nil and fake.restored[2] == 513,
+        'at the level it needs, it sets the refused spell by itself');
+    check((fcfg.pendingSync or {}).ids == nil, 'and the promise is spent, not repeated');
+
+    -- MOVED ON? The promise is dropped, never allowed to clobber the set you
+    -- are actually wearing now.
+    fake.restored = nil;
+    fake.live = sets.sortedLayout({ [1] = 549 }, book);   -- some other set
+    fcfg.pendingSync = { ids = flat20, need = 42, count = 1 };
+    host.restoreChecks = { 0 }; host.tick();
+    check(fake.restored == nil and (fcfg.pendingSync or {}).ids == nil,
+        'a set you have moved away from retires the promise instead');
+end)();
 
 print('smoke: the Sets tab renders (the chooser and all three kinds)');
 -- the same law as the Traits tab render: an unknown Lua name is a silent

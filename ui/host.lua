@@ -339,6 +339,47 @@ local function restoreNow(deps)
     if ids ~= nil then deps.blu.restoreMissing(ids, deps.book); end
 end
 
+-- THE TAIL A SYNC REFUSED (Henrik 2026-08-10, sixth round: "make it notice
+-- and offer that automatically"). Applying a level-75 plan while synced down
+-- gets the over-level spells bounced by the game -- silently, and the only
+-- cure was remembering to Apply again once the sync ended. applyEditing
+-- banks what was refused and the level it needs; this comes back for it.
+--
+-- Unconditional by design: this is not one of the level RULES deciding to
+-- act on your behalf, it is finishing the apply you already commanded. It
+-- still refuses to act on a set you have since moved away from -- the live
+-- spells must all belong to the banked plan, or the promise is dropped
+-- rather than allowed to clobber whatever you are wearing now.
+local function finishPending(deps)
+    local p = deps.cfg.pendingSync;
+    if p == nil or type(p.ids) ~= 'table' then return; end
+    local lvl = deps.blu.effectiveLevel();
+    if lvl == nil then return; end
+    if p.need ~= nil and lvl < p.need then return; end      -- not there yet
+    local function drop()
+        -- EMPTY, never nil: the settings lib merges its defaults over a
+        -- missing key on load, so a hole would read back as whatever the
+        -- default says. An empty table says "nothing pending" in both.
+        deps.cfg.pendingSync = {};
+        if deps.save then deps.save(); end
+    end
+    local live = deps.blu.currentSet();
+    if #live ~= 20 then return; end                          -- unreadable; keep waiting
+    local plan = {};
+    for i = 1, 20 do
+        local id = p.ids[i] or 0;
+        if id ~= 0 then plan[id] = true; end
+    end
+    for i = 1, 20 do
+        local id = live[i] or 0;
+        if id ~= 0 and not plan[id] then return drop(); end  -- another set is on
+    end
+    drop();
+    deps.blu.announce(('Back at Lv.%d - setting the %d spell(s) the sync refused.'):format(
+        lvl, p.count or 0));
+    deps.blu.restoreMissing(p.ids, deps.book);
+end
+
 -- The job/level watch and the settled checks, run once per frame whether or
 -- not anything renders: a level change invalidates the BLU structs like a
 -- fresh login (refresh fires inside the watch). Every check is debounced: a
@@ -408,6 +449,10 @@ function M.tick()
         if due ~= nil and os.clock() >= due then
             table.remove(M.restoreChecks, 1);
             if #M.restoreChecks == 0 then M.restoreChecks = nil; end
+            -- the sync promise runs FIRST and on its own terms: it is the
+            -- rest of an apply you commanded, not a rule acting for you.
+            -- Both are adds-only, so the order costs nothing either way.
+            pcall(finishPending, deps);
             pcall(restoreNow, deps);
         end
     end
@@ -640,6 +685,20 @@ local function renderBody(im, st, deps, embedded)
         .. (synced and ('\n\nIn brackets: spells live RIGHT NOW / the %d slots the\n'
             .. 'game gives at Lv.%d. The rest of the set is still yours --\n'
             .. 'it returns with the level.'):format(synced.maxSlots, synced.level) or ''));
+    -- THE PROMISE, visible while it is outstanding (Henrik 2026-08-10,
+    -- sixth round): spells the sync refused, and the level they are waiting
+    -- for. It clears itself the moment the watcher sets them.
+    local pend = deps.cfg.pendingSync;
+    if pend ~= nil and (pend.count or 0) > 0 then
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        kit.ctext(im, kit.COL.warn, ('   %d waiting for Lv.%d'):format(
+            pend.count, pend.need or 75));
+        kit.tip(im, ('%d spell(s) of this set could not go in at your level.\n'
+            .. 'Bludex sets them by itself once you are Lv.%d -- nothing to\n'
+            .. 'remember, and no need to Apply again.\n\n'
+            .. 'Applying anything else retires the promise.'):format(
+            pend.count, pend.need or 75));
+    end
     -- the set picker (Henrik 2026-08-10): every saved set one click away,
     -- and a second menu for WHICH build when the set has level builds
     setsui.headerPicker(ctx);

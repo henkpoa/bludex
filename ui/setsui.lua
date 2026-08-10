@@ -187,6 +187,25 @@ function M.applyEditing(ctx, forLevel)
         local snap = {};
         for k = 1, 20 do snap[k] = ids[k] or 0; end
         ctx.cfg.lastApplied = { ids = snap, level = lvl };
+        -- WHAT THIS LEVEL WILL REFUSE, and a promise to come back for it
+        -- (Henrik 2026-08-10, sixth round). Applying a 75 plan under a sync
+        -- gets the tail bounced by the game; that used to be silent, and
+        -- the only cure was remembering to Apply again once the sync ended.
+        -- Bank it and the level watcher finishes the job. Measured at the
+        -- LIVE level whatever level the plan was sent for -- 'Apply for
+        -- Lv.41' at 75 is refused nothing.
+        local liveLvl = ctx.blu.effectiveLevel();
+        ctx.cfg.pendingSync = {};         -- a new apply retires any old tail
+        if liveLvl ~= nil then
+            local refused, need = ctx.sets.refusedAtLevel(snap, liveLvl, ctx.book);
+            if #refused > 0 and need ~= nil then
+                ctx.cfg.pendingSync = { ids = snap, need = need, count = #refused };
+                local line = ('Lv.%d cannot hold %d of these spells - Bludex will set them\nwhen you reach Lv.%d.'):format(
+                    liveLvl, #refused, need);
+                st.applyNote = (line:gsub('\n', ' '));
+                if ctx.blu.announce then pcall(ctx.blu.announce, (line:gsub('\n', ' '))); end
+            end
+        end
         -- WHICH SET this came from, by name: the level-change watcher obeys
         -- the FOLLOWED set's kind and rule. Only a SAVED set has a name to
         -- follow -- an unsaved draft leaves nothing, and says so by clearing.
@@ -196,8 +215,9 @@ function M.applyEditing(ctx, forLevel)
         if ctx.save then ctx.save(); end
         -- no success note (Henrik 2026-08-10, from the field: "the green
         -- button says it all") -- the chat log narrates the apply itself,
-        -- and this line only ever restated it. Refusals still speak above.
-        st.applyNote = nil;
+        -- and this line only ever restated it. Refusals still speak above,
+        -- and so does the sync promise set just now.
+        if (ctx.cfg.pendingSync or {}).ids == nil then st.applyNote = nil; end
     end
 end
 

@@ -43,6 +43,13 @@ function M.defaults()
                                   -- draft): the FOLLOWED set -- the one
                                   -- whose kind and rule the level-change
                                   -- watcher obeys (docs/set-types-plan.md 5)
+        pendingSync = TT{ },      -- { ids = {20}, need = n, count = n } --
+                                  -- the tail an apply made UNDER A SYNC had
+                                  -- refused by the game, and the level that
+                                  -- would take it. host.finishPending comes
+                                  -- back for it and clears this; applying
+                                  -- anything else retires it. Persisted, so
+                                  -- the promise survives a reload mid-sync.
         activeSetName = '',       -- last selected saved set, reloaded at startup
         tooltipDelay = 0.5,       -- seconds the cursor must rest before a tooltip
         codexDensity = 'normal',  -- codex list size: 'big'|'medium'|'normal'|'compact'
