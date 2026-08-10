@@ -39,6 +39,10 @@ function M.defaults()
                                   -- kept one release so old files read clean
         lastApplied = TT{ },      -- { ids = {20}, level = n } -- what the last
                                   -- apply sent, and the level it was FOR
+        lastAppliedSet = '',      -- and its set BY NAME ('' = an unsaved
+                                  -- draft): the FOLLOWED set -- the one
+                                  -- whose kind and rule the level-change
+                                  -- watcher obeys (docs/set-types-plan.md 5)
         activeSetName = '',       -- last selected saved set, reloaded at startup
         tooltipDelay = 0.5,       -- seconds the cursor must rest before a tooltip
         codexDensity = 'normal',  -- codex list size: 'big'|'medium'|'normal'|'compact'

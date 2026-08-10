@@ -184,6 +184,11 @@ function M.applyEditing(ctx, forLevel)
         local snap = {};
         for k = 1, 20 do snap[k] = ids[k] or 0; end
         ctx.cfg.lastApplied = { ids = snap, level = lvl };
+        -- WHICH SET this came from, by name: the level-change watcher obeys
+        -- the FOLLOWED set's kind and rule. Only a SAVED set has a name to
+        -- follow -- an unsaved draft leaves nothing, and says so by clearing.
+        local entry = st.activeSet and ctx.cfg.sets[st.activeSet] or nil;
+        ctx.cfg.lastAppliedSet = (entry ~= nil) and entry.name or '';
         st.replanPending = nil;
         if ctx.save then ctx.save(); end
         st.applyNote = forLevel
@@ -383,6 +388,97 @@ local function rungRow(ctx, index, entry, level, here)
         end
     end
     kit.tip(im, table.concat(lines, '\n'));
+end
+
+-- WHAT THIS SET DOES WHEN YOUR LEVEL MOVES. A property of the SET (Henrik
+-- 2026-08-07: "Level Change should NOT be a setting for a Level Set, it
+-- should only be on a set") -- so it lives here beside the name, not in
+-- the editor, which shows whichever build you happen to have open. The
+-- wording is Henrik's, kept verbatim. Order is his too.
+M.RULES = {
+    { key = 'restore', label = 'Restore',
+      tip = 'Will equip spells as spell slots and points\nbecome available.' },
+    { key = 'switch',  label = 'Lvl Set Switch',
+      tip = 'Will behave as Restore, unless you have added a\n'
+         .. 'Level Set for the range your level is currently\n'
+         .. 'set to.' },
+    { key = 'manual',  label = 'Manual',
+      tip = 'All changes must be manually applied.' },
+};
+
+local function ruleRow(ctx, entry)
+    local im = ctx.im;
+    local rule = ctx.sets.ruleOf(entry);
+    local shown = M.RULES[1];
+    for _, r in ipairs(M.RULES) do if r.key == rule then shown = r; end end
+    local function pick(key)
+        if key == rule then return; end
+        ctx.sets.setRule(entry, key);
+        if ctx.save then ctx.save(); end
+        -- picking the level rule may put you on the right build right now,
+        -- rather than at the next band change (bandSwitch stays silent when
+        -- you are already wearing it)
+        if key == 'switch' and ctx.armSwitch then ctx.armSwitch(); end
+    end
+
+    kit.helpLabel(im, 'Level change',
+        'Here you can set how your set behaves during level ups.\n\n'
+        .. 'Each set has its own, and the one that runs belongs to\n'
+        .. 'the set you last applied.');
+    local w = LEFT_W - 20;
+    if kit.isFn(im, 'SetNextItemWidth') then im.SetNextItemWidth(w); end
+    if kit.isFn(im, 'BeginCombo') and kit.isFn(im, 'EndCombo') and kit.isFn(im, 'Selectable') then
+        local opened = false;
+        pcall(function() opened = im.BeginCombo('##bdxlvlrule', kit.esc(shown.label)); end);
+        if opened then
+            for _, r in ipairs(M.RULES) do
+                local okSel, hit = pcall(im.Selectable, kit.esc(r.label), r.key == rule);
+                if okSel and hit then pick(r.key); end
+                kit.tip(im, r.tip);              -- every choice explains itself
+            end
+            im.EndCombo();
+        else
+            kit.tip(im, shown.tip);
+        end
+    else
+        -- no combo in this binding: the same three as a lit row
+        local labels = {};
+        for i, r in ipairs(M.RULES) do labels[i] = r.label; end
+        local lvW = kit.measure(im, labels, 60);
+        for i, r in ipairs(M.RULES) do
+            if kit.litButton(im, r.label, r.key == rule, lvW, 20) then pick(r.key); end
+            kit.tip(im, r.tip);
+            if i < #M.RULES and kit.isFn(im, 'SameLine') then im.SameLine(); end
+        end
+    end
+
+    -- ONE LINE ON WHY NOTHING HAPPENED. A rule that stays quiet looks the
+    -- same whether the beat never reached it, it has no set to follow, or it
+    -- simply had nothing to do -- so say which, where the eye is.
+    if rule == 'manual' then return; end
+    if ctx.watchAlive and ctx.watchAlive() == false then
+        kit.ctext(im, kit.COL.err, 'The level watch is not running');
+        kit.tip(im, 'This rule needs a per-frame beat that is not arriving, so\n'
+            .. 'nothing will fire on a level change. In dlac the beat is gated\n'
+            .. 'on its own activity check; reloading the addon re-subscribes it.');
+        return;
+    end
+    local follow = ctx.cfg.lastAppliedSet;
+    if follow == nil or follow == '' then
+        kit.ctext(im, kit.COL.warn, 'Nothing applied yet');
+        kit.tip(im, 'The rule runs for the set you last APPLIED, by name -- not\n'
+            .. 'the one selected here. Apply one once and it takes over.');
+    elseif follow ~= entry.name then
+        kit.ctext(im, kit.COL.dim, ('"%s" is applied'):format(follow));
+        kit.tip(im, ('The rule that runs right now is the one on "%s" -- the set\n'
+            .. 'you last applied. This one takes over when you apply it.'):format(follow));
+    else
+        local hereRung = ctx.sets.rungFor(ctx.blu.effectiveLevel());
+        kit.ctext(im, kit.COL.dim, ('Applied%s'):format(
+            (hereRung ~= nil) and (' - Lv.' .. bandText(ctx, hereRung)) or ''));
+        kit.tip(im, 'This set is the one being followed, and the band you are\n'
+            .. 'standing in right now.');
+    end
 end
 
 -- The Levels section under the name box, LEVELS sets only. Only the bands
@@ -641,6 +737,11 @@ local function savedList(ctx)
             end
         end
     elseif ekind == 'levels' then
+        -- everything else about the SET, in order: what it does on a level
+        -- change, then the levels it has. Both belong to the set, not to
+        -- the build open in the editor.
+        local entry = st.activeSet and cfg.sets[st.activeSet] or nil;
+        if entry ~= nil then ruleRow(ctx, entry); end
         levelsSection(ctx);
     end
 end

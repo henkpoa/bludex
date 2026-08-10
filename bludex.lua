@@ -266,6 +266,7 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
             local snap = {};
             for i = 1, 20 do snap[i] = ids[i] or 0; end
             cfg.lastApplied = { ids = snap, level = lvl };
+            cfg.lastAppliedSet = entry.name;   -- the watcher follows this set
             saveSettings();
         end
         return;

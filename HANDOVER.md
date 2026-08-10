@@ -50,10 +50,23 @@ ceilings and `blu.rungCap` restored, the dlac `sets3` grammar (truth;
 sets2 = timeline-only; legacy stays the tolerant mirror, levels lines
 included). Suite-proven end to end incl. real stub renders of the chooser
 and all three editors (364 checks) — **field round owed on all of it**.
-Still queued: (c) the LEVELS-KIND LEVEL-CHANGE WATCHER (plan §5.1 — the
-old restore/switch rules stay parked; `replan` is gated to timeline sets),
-(d) the job-traits field round, (e) the timeline field checklist below
-(§0), which now runs once per kind.
+(c) ~~the LEVELS-KIND LEVEL-CHANGE WATCHER~~ — **BUILT, third slice same
+day** (plan §5): ONE LAW — the behavior belongs to the set you last
+APPLIED (`cfg.lastAppliedSet` is back, every apply path records it, an
+unsaved draft clears it). A followed levels set arms ITS rule (the
+per-set combo under the name box, Henrik's wording verbatim; `ruleOf`
+derives restore-while-flat / switch-with-levels): Switch equips a band's
+own build outright on a crossing (diff-checked, silent when worn, its
+line replaces the down report), everything else restores adds-only
+(`blu.restoreMissing` + `planDiff` un-retired). Level DOWN sends nothing.
+The timeline `replan` check STANDS DOWN while a levels rule is armed —
+never two writers on one change. The quiet-why line (watch alive /
+nothing applied / another set followed) sits under the rule combo.
+Driven end to end against a stub client (`smoke: the level-change rule`,
+21 checks) — **this is the packet-sending feature: its field round is
+the one that matters most**. Still queued: (d) the job-traits field
+round, (e) the field checklist below (§0), once per kind, plus one live
+band-crossing under Lvl Set Switch.
 
 ---
 

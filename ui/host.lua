@@ -147,6 +147,7 @@ local function resetCharState()
             old.filters, old.openCat, old.scWeapon;
     end
     M.downCheck, M.replanCheck = nil, nil;
+    M.switchCheck, M.restoreChecks, M.lastRung = nil, nil, nil;
 end
 
 -- Which character the adopted cfg belongs to ('Name_serverid'; nil = logged
@@ -225,30 +226,177 @@ end
 
 local TABS = { 'Codex', 'Sets', 'Traits', 'Settings' };
 
--- The job/level watch and the RE-PLAN check, run once per frame whether or
+-- ---------------------------------------------------------------------------
+-- THE LEVEL-CHANGE WATCHERS (docs/set-types-plan.md 5, the levels slice of
+-- 2026-08-10). ONE LAW: the behavior belongs to the set you last APPLIED --
+-- cfg.lastAppliedSet, by name. A followed LEVELS set arms ITS rule
+-- (restore / switch, setmodel.ruleOf); everything else leaves the timeline
+-- re-plan check in charge, and never both on one change.
+-- ---------------------------------------------------------------------------
+
+-- THE SET BEING FOLLOWED: the one last APPLIED, by name. Never what happens
+-- to be selected in the UI -- the rule is about what you are wearing.
+local function followedSet(deps)
+    local name = deps.cfg.lastAppliedSet;
+    if name == nil or name == '' then return nil; end
+    for _, e in ipairs(deps.cfg.sets) do
+        if e.name == name then return e; end
+    end
+    return nil;
+end
+
+-- The ARMED rule: the followed set's, and only when that set is the LEVELS
+-- kind -- a flat set plans the same spells at every level, and a timeline
+-- set re-plans (checkReplan). 'manual' = nothing armed.
+local function armedRule(deps)
+    local entry = followedSet(deps);
+    if entry == nil or deps.sets.kindOf(entry) ~= 'levels' then
+        return 'manual', nil;
+    end
+    return deps.sets.ruleOf(entry), entry;
+end
+
+-- The band's OWN build, when it has one worth wearing. nil means this level
+-- has no build of its own -- and then Lvl Set Switch behaves as Restore
+-- does, on the set's base build (Henrik's wording: "will equip normal set
+-- with restore behaviour, unless a level appropriate set has been defined").
+local function bandBuild(deps, entry)
+    local rung = deps.sets.rungFor(deps.blu.effectiveLevel());
+    if entry == nil or rung == nil then return nil; end
+    local b = deps.sets.groupBuild(entry, rung);
+    if b == nil or deps.sets.countIds(b.ids) == 0 then return nil; end
+    return b;
+end
+
+-- THE BAND SWITCH (Henrik 2026-08-06, from the field: "I walked out now,
+-- and I still have my level 31 set equipped"). A level build serves ITS
+-- band and no other, so crossing into a band that HAS one means the set you
+-- are wearing is the wrong build of itself: equip that band's build
+-- outright.
+--
+-- A band with no build of its own is not this rule's business -- the
+-- restore path below covers it, adds-only, exactly as before.
+--
+-- Deliberately quiet when it has nothing to do: a band change that does not
+-- move a spell must not cost the game's 60s Blue Magic cast lock, so the
+-- diff is checked here rather than left to applyDiff's chat line.
+local function bandSwitch(deps)
+    if deps.blu.applying or not deps.blu.canApply() then return; end
+    local rule, entry = armedRule(deps);
+    if rule ~= 'switch' then return; end
+    local build = bandBuild(deps, entry);
+    if build == nil then return; end
+    local ids = build.ids;
+    local live = deps.blu.currentSet();
+    if #live ~= 20 then return; end
+    local T = deps.sets.sortedLayout(ids, deps.book);
+    local same = true;
+    for i = 1, 20 do
+        if (live[i] or 0) ~= T[i] then same = false; break; end
+    end
+    if same then return; end
+    deps.blu.announce(('Level %s: equipping the Lv.%d build of "%s".'):format(
+        tostring(deps.blu.effectiveLevel()), build.level, entry.name));
+    if deps.blu.applyDiff(ids, deps.book) then
+        local snap = {};
+        for i = 1, 20 do snap[i] = ids[i] or 0; end
+        deps.cfg.lastApplied = { ids = snap,
+            level = deps.blu.effectiveLevel() or 75 };
+        if deps.save then deps.save(); end
+    end
+end
+
+-- THE RESTORE PATH: put back what a level change stripped, adds-only,
+-- never removing anything. Under Lvl Set Switch it works from the followed
+-- set -- its build for this band if there is one, otherwise its base build
+-- (resolveAtLevel carries groupPick) -- rather than from the raw
+-- last-applied snapshot, which may be some other band's build entirely.
+local function restoreNow(deps)
+    local rule, entry = armedRule(deps);
+    if rule == 'manual' then return; end
+    local ids = nil;
+    if rule == 'switch' and entry ~= nil then
+        ids = deps.sets.resolveAtLevel(entry, deps.blu.effectiveLevel(), deps.book);
+        if deps.sets.countIds(ids) == 0 then ids = nil; end
+    end
+    if ids == nil then
+        local last = deps.cfg.lastApplied;
+        ids = (last ~= nil) and last.ids or nil;
+    end
+    if ids ~= nil then deps.blu.restoreMissing(ids, deps.book); end
+end
+
+-- The job/level watch and the settled checks, run once per frame whether or
 -- not anything renders: a level change invalidates the BLU structs like a
--- fresh login (refresh fires inside the watch), and the timeline may plan
--- different spells for the new level (plan 2.7-2.8: the adds-only law is
--- repealed -- a re-plan may unset). The check is debounced: a level sync
--- bounces through several readings (75 -> 0 -> 75 -> 40 in one capture),
--- so nothing is decided until the level has sat still for a few seconds.
+-- fresh login (refresh fires inside the watch). Every check is debounced: a
+-- level sync bounces through several readings (75 -> 0 -> 75 -> 40 in one
+-- capture), so nothing is decided until the level has sat still. What runs
+-- when it settles is decided by the FOLLOWED set (armedRule above):
+--   levels kind, Switch  -- crossing into a band with its own build equips
+--     it outright (bandSwitch); other moves restore, adds-only;
+--   levels kind, Restore -- spells the change stripped are re-added, quiet
+--     when nothing is missing; level DOWN sends NOTHING (the client
+--     disables and re-enables over-level spells itself);
+--   anything else        -- the timeline re-plan check (checkReplan), which
+--     stands down while a levels rule is armed.
 -- The standalone render calls this itself; an EMBEDDING host (dlac's BLU
 -- helper) calls it directly every frame, even while its panel is hidden.
 function M.tick()
     local deps = M.deps;
     if deps == nil then return; end
+    -- PROOF OF LIFE for the level rules. They ride the host's beat --
+    -- dlac's is gated on its own activity predicate -- and a rule that
+    -- never runs looks exactly like a rule that decided not to act. The
+    -- Sets tab reads this and says which of the two it is.
+    M.tickedAt = os.clock();
     -- the cap-staleness watch runs every frame whether or not anything
     -- renders: the client recomputes the cap on its own schedule (the native
     -- Set Spells menu), and we have to catch the moment it does
     deps.blu.watchCap();
+    -- the BAND watch: cheap, every frame, and independent of watchJobState
+    -- -- what matters here is not that the level moved but that it crossed
+    -- into a band with a different build. An unreadable level (nil:
+    -- mid-handoff, off BLU) is not a change; it holds the last band until
+    -- one reads again.
+    local rung = deps.sets.rungFor(deps.blu.effectiveLevel());
+    if rung ~= nil then
+        if M.lastRung == nil then
+            M.lastRung = rung;
+        elseif rung ~= M.lastRung then
+            M.lastRung = rung;
+            M.switchCheck = os.clock() + 3.0;
+        end
+    end
+    if M.switchCheck ~= nil and os.clock() >= M.switchCheck then
+        M.switchCheck = nil;
+        pcall(bandSwitch, deps);
+    end
     local change = deps.blu.watchJobState();
     if change ~= nil then
         M.replanCheck = os.clock() + 3.0;
         M.downCheck = (change == 'down') and (os.clock() + 2.0) or nil;
+        -- the adds-only restore rides level UP / job change only, with two
+        -- delayed checks so the 0x061 answer has landed; a level DOWN sends
+        -- nothing (the client's own disable covers it)
+        M.restoreChecks = (change ~= 'down')
+            and { os.clock() + 2.0, os.clock() + 6.0 } or nil;
     end
     if M.downCheck ~= nil and os.clock() >= M.downCheck then
         M.downCheck = nil;
-        deps.blu.reportLevelDown(deps.book);
+        -- when a band build is about to be equipped outright its own line
+        -- says so, and the what-the-sync-disabled report would be noise
+        local rule, entry = armedRule(deps);
+        if not (rule == 'switch' and bandBuild(deps, entry) ~= nil) then
+            deps.blu.reportLevelDown(deps.book);
+        end
+    end
+    if M.restoreChecks ~= nil then
+        local due = M.restoreChecks[1];
+        if due ~= nil and os.clock() >= due then
+            table.remove(M.restoreChecks, 1);
+            if #M.restoreChecks == 0 then M.restoreChecks = nil; end
+            pcall(restoreNow, deps);
+        end
     end
     if M.replanCheck ~= nil and os.clock() >= M.replanCheck then
         M.replanCheck = nil;
@@ -338,6 +486,16 @@ local function tabCtx(im, st, deps, embedded)
         -- the codex then routes Spell Info there instead of its in-panel pane
         floatWindow = deps.floatWindow == true,
         budgetMax = function() return budgetMax(deps); end,
+        -- the level-rule surface (levels sets): is the beat that drives the
+        -- rules actually reaching us, and which set is being followed?
+        watchAlive = function()
+            return M.tickedAt ~= nil and (os.clock() - M.tickedAt) < 5.0;
+        end,
+        followedName = function() return deps.cfg.lastAppliedSet or ''; end,
+        -- arming Switch is a click, and a click may act: put the player on
+        -- the right build now rather than at the next band change. Silent
+        -- when they are already wearing it (bandSwitch checks the diff).
+        armSwitch = function() M.switchCheck = os.clock() + 0.5; end,
     };
 end
 
@@ -355,10 +513,16 @@ function M.checkReplan()
     -- stale float with a button that can never work (review 2026-08-08)
     if not deps.blu.onBlu() then st.replanPending = nil; return; end
     -- the re-plan is TIMELINE behavior (docs/set-types-plan.md 5): a flat
-    -- set plans the same spells at every level, and the levels kind gets
-    -- its own watcher in its own slice -- it is the one that sends packets
-    -- on its own, and it returns deliberately, not as a side effect
+    -- set plans the same spells at every level, and the levels kind has
+    -- its own watchers (bandSwitch / restoreNow above)
     if deps.sets.kindOf(st.editingSet) ~= 'timeline' then
+        st.replanPending = nil;
+        return;
+    end
+    -- NEVER TWO WRITERS ON ONE CHANGE: while the followed set is a levels
+    -- set with an armed rule, that rule owns the level change and the
+    -- re-plan stands down -- whatever happens to be open in the editor
+    if (armedRule(deps)) ~= 'manual' then
         st.replanPending = nil;
         return;
     end

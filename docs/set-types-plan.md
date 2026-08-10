@@ -48,9 +48,9 @@ which system they are speaking to:
 The whole group API returns from history (`163b102`): `LEVELS/rungFor/bandTop/
 slotMax/countIds/normalizeGroup/groupBuild/groupIds/groupPut/groupAdd/
 groupRemove/groupFree/groupLevels/groupTop/groupPick/copyInto/draft/usableFrom`,
-plus `blu.rungCap`. `ruleOf/setRule` return too but nothing arms them yet
-(§5). Band-sweep enforcement (`bandViolations/enforcedViolations`) is
-timeline math and answers `{}` for the other kinds.
+plus `blu.rungCap`. `ruleOf/setRule` return too, armed by the watcher (§5).
+Band-sweep enforcement (`bandViolations/enforcedViolations`) is timeline
+math and answers `{}` for the other kinds.
 
 ## 3. Creation — the chooser, and the setting
 
@@ -84,21 +84,45 @@ new set of another kind is the escape hatch.
     modules still read something usable. Backups stay timeline-only
     (`sets2bak`), as today.
 
-## 5. What this slice does NOT do (the next ones)
+## 5. The level-change watcher (built in the second slice, same day)
 
-1. **Level-change automation for `levels` sets** — the old per-set rule
-   (`restore`/`switch`) and its watcher stay parked; the global `replan`
-   check stays gated to timeline sets. This is the one feature that sends
-   packets on its own, Henrik's most-cautioned area — it gets its own slice
-   with the old smoke sections resurrected against the kind model.
-2. Kind conversion in place.
-3. Backups for flat/levels sets.
+The old per-set rule returns, kind-gated. ONE LAW: **the level-change
+behavior belongs to the set you last APPLIED** (`cfg.lastAppliedSet`, by
+name — every successful apply of a saved set records it; an unsaved draft
+clears it). When the level settles:
 
-## 6. Proof
+* followed set is the **levels kind** → its rule runs (`ruleOf`, derived
+  restore-while-flat / switch-with-levels, a stored pick standing):
+  **Switch** equips the band's own build outright on a band crossing
+  (diff-checked — a change that moves nothing sends nothing, and its own
+  chat line replaces the level-down report); everywhere a band has no
+  build, and under **Restore**, the adds-only `blu.restoreMissing` path
+  puts back what the change stripped (back from its 2026-08-08
+  retirement). A level DOWN sends nothing — the client's own disable
+  covers it.
+* anything else → the timeline re-plan check, exactly as before — and it
+  **stands down** while a levels rule is armed: never two writers on one
+  level change.
+
+The rule is picked per set from the combo under the name box (Henrik's
+wording verbatim), and the quiet-why line beneath it says which of the
+three silences is happening: the beat not arriving (`watchAlive`), nothing
+applied yet, or another set being the followed one.
+
+## 6. Still not in this slice
+
+1. Kind conversion in place.
+2. Backups for flat/levels sets.
+
+## 7. Proof
 
 Smoke: the old `level builds` sections return (they test the group API,
 which is back verbatim), plus a `set kinds` section: kindOf inference,
 per-kind new/clone/equal, per-kind resolveAtLevel semantics (flat verbatim;
 levels band-else-base; timeline chains), the v3 adopt stamping, and the
-sets3 codec round-trip. Field: the checklist grows one line per kind —
-create via the chooser, build, apply, relog, see it come back.
+sets3 codec round-trip. The watcher is driven end to end against a stub
+client (`smoke: the level-change rule`): the band switch and its silences,
+the adds-only restore, the down-report suppression, the re-plan stand-down,
+and the kind gate. Field: the checklist grows one line per kind — create
+via the chooser, build, apply, relog, see it come back — plus one live
+band-crossing under Lvl Set Switch, the packet-sending case.

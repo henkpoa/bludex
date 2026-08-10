@@ -397,6 +397,7 @@ local function loadCfg(S)
         sets           = setsList,
         lastApplied    = lastApplied,
         activeSetName  = S.cfg.get('activeSetName'),
+        lastAppliedSet = S.cfg.get('lastAppliedSet'),
         newSetKind     = S.cfg.get('newSetKind'),
         tooltipDelay   = S.cfg.get('tooltipDelay'),
         codexDensity   = S.cfg.get('codexDensity'),
@@ -438,6 +439,7 @@ local function saveCfg()
         Sref.cfg.set('lastApplied',
             (la and la.ids) and codec.encodeIds(la.ids) or '');
         Sref.cfg.set('activeSetName', tostring(cfg.activeSetName or ''));
+        Sref.cfg.set('lastAppliedSet', tostring(cfg.lastAppliedSet or ''));
         Sref.cfg.set('newSetKind', tostring(cfg.newSetKind or 'flat'));
         Sref.cfg.set('tooltipDelay', tonumber(cfg.tooltipDelay) or 0.5);
         Sref.cfg.set('codexDensity', tostring(cfg.codexDensity or 'normal'));
@@ -507,6 +509,7 @@ return {
             sets = 'string', sets2 = 'string', sets3 = 'string',
             sets2bak = 'string',
             lastApplied = 'string', lastApplied2 = 'string',
+            lastAppliedSet = 'string',
             activeSetName = 'string',
             newSetKind = 'string',
             tooltipDelay = 'number',
@@ -524,6 +527,7 @@ return {
         defaults = {
             sets = '', sets2 = '', sets3 = '', sets2bak = '',
             lastApplied = '', lastApplied2 = '',
+            lastAppliedSet = '',
             activeSetName = '',
             newSetKind = 'flat',
             tooltipDelay = 0.5,

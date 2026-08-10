@@ -982,9 +982,78 @@ function M.reportLevelDown(book)
         free > 0 and (', %d slots free'):format(free) or ''));
 end
 
--- (The pre-timeline adds-only restore -- planDiff + restoreMissing -- is
--- RETIRED, 2026-08-08: the timeline's re-plan replaced it, and with it the
--- guarantee that hand-set native-menu spells survive a level change. That
--- repeal is deliberate and recorded: docs/timeline-sets-plan.md 2.7.)
+-- THE ADDS-ONLY RESTORE, back from its 2026-08-08 retirement (docs/
+-- set-types-plan.md: the LEVELS kind keeps the old promise -- a level
+-- change puts spells back and never takes any away -- while the timeline
+-- kind keeps its re-plan. Which one runs is decided by the followed set's
+-- kind in ui/host.lua, never both.)
+--
+-- Position-independent plan against the live set: targets are matched by
+-- spell IDENTITY, not slot -- a level-change restore must put spells back
+-- without reshuffling the set. Missing spells are paired lowest-level-first
+-- with the lowest open slots. Returns nil when the live set is unreadable.
+local function planDiff(ids, book, removeExtras)
+    local live = M.currentSet();
+    if #live ~= 20 then return nil; end
+    local want = {};
+    for slot = 1, 20 do
+        local id = ids[slot] or 0;
+        if id ~= 0 and M.hasSpell(id) then want[id] = true; end
+    end
+    local liveIds, removes, empties = {}, {}, {};
+    for slot = 1, 20 do
+        local id = live[slot] or 0;
+        if id == 0 then
+            empties[#empties + 1] = slot;
+        elseif want[id] or not removeExtras then
+            liveIds[id] = true;
+        else
+            removes[#removes + 1] = slot;
+            empties[#empties + 1] = slot;   -- open once the unset lands
+        end
+    end
+    local missing, kept = {}, 0;
+    for id in pairs(want) do
+        if liveIds[id] then kept = kept + 1; else missing[#missing + 1] = id; end
+    end
+    missing = byLevel(missing, book);
+    local adds, noSlot = {}, 0;
+    for i, id in ipairs(missing) do
+        if empties[i] then adds[#adds + 1] = { slot = empties[i], id = id };
+        else noSlot = noSlot + 1; end
+    end
+    return { removes = removes, adds = adds, kept = kept, noSlot = noSlot };
+end
+
+function M.restoreMissing(ids, book, onDone)
+    if not M.canApply() or M.applying then return false; end
+    local plan = planDiff(ids, book, false);
+    if plan == nil or #plan.adds == 0 then return false; end
+    local delay = stepDelay();
+    M.applying = true;
+    msg(('Level change: restoring %d spell(s), lowest level first.'):format(#plan.adds));
+    ashita.tasks.once(1, function()
+        for _, e in ipairs(plan.adds) do
+            M.setSlot(e.slot, e.id);
+            coroutine.sleep(delay);
+        end
+        coroutine.sleep(0.5);
+        local liveNow, after = {}, M.currentSet();
+        if #after == 20 then
+            for i = 1, 20 do if after[i] ~= 0 then liveNow[after[i]] = true; end end
+        end
+        local stuck = 0;
+        for _, e in ipairs(plan.adds) do if liveNow[e.id] then stuck = stuck + 1; end end
+        M.applying = false;
+        if #after == 20 and stuck < #plan.adds then
+            msg(('Restored %d of %d - the rest need a higher level (or a free slot). Spells castable in ~%ds.'):format(
+                stuck, #plan.adds, M.castLock));
+        else
+            msg(('Restored %d spell(s). Spells castable in ~%ds.'):format(#plan.adds, M.castLock));
+        end
+        if onDone then pcall(onDone); end
+    end);
+    return true;
+end
 
 return M;

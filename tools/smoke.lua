@@ -1361,6 +1361,135 @@ check(#drew > 20, 'it renders without the job side too');
 check(table.concat(drew, '\n'):find('blocked', 1, true) == nil,
     'and blocks nothing it cannot know about');
 
+print('smoke: the level-change rule (the levels kind\'s watcher)');
+-- The one rule that sends packets on its own, so it is driven end to end
+-- here with a stub client. What it must get right: fire only when the level
+-- crosses into a band THAT HAS ITS OWN BUILD, equip that, and stay silent
+-- otherwise -- a band change that costs a 60s cast lock for no reason is
+-- the failure that matters. Everywhere else Lvl Set Switch behaves as
+-- Restore does, adds-only (the restoreMissing path). And it runs ONLY when
+-- the followed set is the LEVELS kind -- the timeline keeps its re-plan.
+local fake;                      -- declared first: the stubs close over it
+fake = {
+    level = 75, live = {}, applied = nil, says = {}, applying = false,
+    watchCap = function() end,
+    watchJobState = function() return fake.jobChange; end,
+    effectiveLevel = function() return fake.level; end,
+    canApply = function() return true; end,
+    onBlu = function() return true; end,
+    currentSet = function() return fake.live; end,
+    announce = function(s) fake.says[#fake.says + 1] = s; end,
+    -- the adds-only path Restore (and Lvl Set Switch, off a band build) uses
+    restoreMissing = function(ids) fake.restored = ids; return true; end,
+    reportLevelDown = function() fake.downReports = (fake.downReports or 0) + 1; end,
+    applyDiff = function(ids) fake.applied = ids; return true; end,
+};
+for i = 1, 20 do fake.live[i] = 0; end
+local fcfg = {
+    sets = {},
+    lastApplied = {}, lastAppliedSet = 'Solo',
+    capModelVer = 3, capLearnedBonus = 24, capMeritPoints = 10,
+    activeSetName = '', replan = 'manual',
+};
+local flat20 = {}; for i = 1, 20 do flat20[i] = 0; end
+flat20[1] = 623; flat20[2] = 513;                  -- the base build: 2 spells
+local low  = {}; for i = 1, 20 do low[i] = 0; end
+low[1] = 549;                                      -- the Lv.31 build: 1 spell
+fcfg.sets[1] = { name = 'Solo', ids = flat20, builds = { { level = 31, ids = low } } };
+host.init({ book = book, blu = fake, sets = sets, cfg = fcfg, save = function() end });
+check(sets.kindOf(fcfg.sets[1]) == 'levels',
+    'the adopt stamped the followed set as the levels kind');
+host.lastRung, host.switchCheck, host.restoreChecks = nil, nil, nil;
+
+local function tickNow()                           -- fire any pending check now
+    host.tick();
+    if host.switchCheck ~= nil then host.switchCheck = 0; host.tick(); end
+end
+tickNow();
+check(fake.applied == nil, 'the first tick only baselines the band -- nothing is sent');
+fake.level = 40;                                   -- sync down: 71 -> 31 band
+tickNow();
+check(fake.applied ~= nil and fake.applied[1] == 549,
+    'crossing into Lv.31-40 applies that band\'s build');
+check(#fake.says == 1 and fake.says[1]:find('Lv.31 build of "Solo"', 1, true) ~= nil,
+    'and says which build it equipped, by name');
+check(fcfg.lastApplied.ids ~= nil and fcfg.lastApplied.ids[1] == 549,
+    'and the last-applied snapshot follows the switch');
+fake.live = sets.sortedLayout(low, book);          -- the game now holds it
+fake.applied = nil;
+fake.level = 45;                                   -- up into the Lv.41 band
+tickNow();
+check(fake.applied == nil,
+    'a band with no build of its own equips nothing outright...');
+check(sets.groupPick(fcfg.sets[1], 45) == nil,
+    '...it is the base build that serves there, restore-style');
+fake.applied = nil;
+fake.level = 48;                                   -- same band
+tickNow();
+check(fake.applied == nil and host.switchCheck == nil,
+    'moving inside a band is not a band change -- nothing is scheduled');
+-- back into the band that HAS a build, while already wearing it: no packets
+fake.live = sets.sortedLayout(low, book);
+fake.level = 40;
+tickNow();
+check(fake.applied == nil, 'and a band change that would move nothing sends nothing');
+
+-- THE RESTORE PATH rides a settled job-state change, adds-only, twice
+fake.level = 75;
+fake.jobChange = 'up'; host.tick(); fake.jobChange = nil;
+check(host.restoreChecks ~= nil and host.replanCheck ~= nil,
+    'a level up arms the restore checks (and the settle for the re-plan gate)');
+host.restoreChecks = { 0 };
+host.tick();
+check(fake.restored ~= nil and fake.restored[1] == 623,
+    'the restore targets the followed set\'s build for HERE (the base at 75)');
+check(host.restoreChecks == nil, 'and the check queue drains');
+host.replanCheck = 0; host.tick();
+check(host.state.replanPending == nil,
+    'the timeline re-plan STOOD DOWN: the armed levels rule owns the change');
+
+-- a level DOWN sends nothing and keeps its report -- unless the switch is
+-- about to act, whose own line makes the report noise
+fake.restored = nil;
+fake.level = 40;
+fake.live = sets.sortedLayout(flat20, book);       -- wearing the base build
+fake.jobChange = 'down'; host.tick(); fake.jobChange = nil;
+check(host.restoreChecks == nil, 'a level down never arms the restore');
+host.downCheck = 0; host.tick();
+check((fake.downReports or 0) == 0,
+    'the down report is suppressed while the switch is about to act');
+fake.level = 45; host.lastRung = 41; host.switchCheck = nil;
+fake.jobChange = 'down'; host.tick(); fake.jobChange = nil;
+host.downCheck = 0; host.tick();
+check((fake.downReports or 0) == 1,
+    'and speaks when it is not (no band build at 41-50)');
+
+-- the rule lives on the SET, and Manual means Manual
+fake.applied = nil;
+fcfg.sets[1].rule = 'manual';
+fake.live = sets.sortedLayout(flat20, book);
+fake.level = 75; tickNow();
+fake.level = 40; tickNow();
+check(fake.applied == nil, 'Manual on the set never triggers it');
+fcfg.sets[1].rule = 'restore';
+fake.level = 75; tickNow();
+fake.level = 40; tickNow();
+check(fake.applied == nil, 'nor does Restore -- it never swaps builds');
+fcfg.sets[1].rule = nil;                           -- back to derived: has levels
+check(sets.ruleOf(fcfg.sets[1]) == 'switch',
+    'a set with levels derives Lvl Set Switch');
+-- and it follows nothing it was not told about
+fcfg.lastAppliedSet = '';
+fake.level = 75; tickNow();
+fake.level = 40; tickNow();
+check(fake.applied == nil, 'with no last-applied set there is nothing to follow');
+-- a FLAT followed set arms nothing either -- the kind gate, not just the name
+fcfg.lastAppliedSet = 'Plain';
+fcfg.sets[2] = { kind = 'flat', name = 'Plain', ids = flat20 };
+fake.level = 75; tickNow();
+fake.level = 40; tickNow();
+check(fake.applied == nil, 'a followed FLAT set arms no level rule (the kind gate)');
+
 print('smoke: the Sets tab renders (the chooser and all three kinds)');
 -- the same law as the Traits tab render: an unknown Lua name is a silent
 -- nil GLOBAL until the line runs, and in game the tab draws inside pcall.
