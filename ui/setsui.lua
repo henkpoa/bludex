@@ -841,7 +841,7 @@ local function savedList(ctx)
     -- AND carries the blusets file pull at its bottom
     if kit.litButton(im, 'Import', st.importOpen == true, LEFT_W - 20, 20) then
         st.importOpen = not st.importOpen or nil;
-        st.shareOpen, st.pickKind, st.convertOpen = nil, nil, nil;
+        st.shareOpen, st.pickKind, st.copyOpen = nil, nil, nil;
     end
     kit.tip(im, 'Paste a set someone sent you (a BDXSET1 line) and\n'
         .. 'save it as your own. Importing from the old blusets\n'
@@ -863,84 +863,83 @@ local function savedList(ctx)
         end
     end
 
-    -- CONVERT IN PLACE (docs/set-types-plan.md 6): a SAVED set may become
-    -- another kind. The flat projection is the bridge -- the base/Lv.75
-    -- plan crosses, and whatever cannot is NAMED before the click that
-    -- drops it (which is why a lossy convert takes two clicks).
-    local convEntry = st.activeSet and cfg.sets[st.activeSet] or nil;
-    if convEntry ~= nil then
-        local halfW = math.floor((LEFT_W - 24) / 2);
-        if kit.litButton(im, 'Convert...', st.convertOpen == true, halfW, 20) then
-            st.convertOpen = not st.convertOpen or nil;
-            st.convertConfirm = nil;
-            st.shareOpen, st.importOpen = nil, nil;
-        end
-        kit.tip(im, 'Turn this saved set into another kind. What the new kind\n'
-            .. 'cannot carry is listed -- and dropped -- when you do\n'
-            .. '(the old state banks as backup 1, so it is undoable).');
+    -- COPY FROM ANOTHER SET (Henrik 2026-08-10, sixth round -- this took
+    -- Convert's place): seed the build you are editing from one you already
+    -- have. The source is read at its TOP LEVEL, which is the one reading
+    -- that means the same thing whatever kind it came from; the spells
+    -- cross, the per-level authorship does not, and the tooltip says so
+    -- rather than letting it be discovered.
+    local halfW = math.floor((LEFT_W - 24) / 2);
+    if kit.litButton(im, 'Copy from...', st.copyOpen == true, halfW, 20) then
+        st.copyOpen = not st.copyOpen or nil;
+        st.copyConfirm = nil;
+        st.shareOpen, st.importOpen = nil, nil;
+    end
+    kit.tip(im, 'Fill this build from another saved set - its top-level\n'
+        .. 'spells, laid out the way THIS set\'s kind wants them.\n\n'
+        .. 'It REPLACES what is here. Nothing is saved until you Save,\n'
+        .. 'so Revert is always the way back.');
+    local shareEntry = st.activeSet and cfg.sets[st.activeSet] or nil;
+    if shareEntry ~= nil then
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
         if kit.litButton(im, 'Share...', st.shareOpen == true, halfW, 20) then
             st.shareOpen = not st.shareOpen or nil;
-            st.importOpen, st.pickKind, st.convertOpen = nil, nil, nil;
+            st.importOpen, st.pickKind, st.copyOpen = nil, nil, nil;
         end
         kit.tip(im, 'This set as one line of text -- send it to a friend,\nthey paste it under Import.');
     end
-    if st.convertOpen and convEntry ~= nil then
-        if M.unsaved(ctx) then
-            kit.wrapped(im, kit.COL.warn, 'Save or Revert your edits first.');
-            kit.tip(im, 'Converting works from the SAVED set; unsaved edits\nwould be lost silently. Settle them first.');
-        else
-            local fromKind = ctx.sets.kindOf(convEntry);
-            for _, k in ipairs(M.KIND_ORDER) do
-                if k ~= fromKind then
-                    local loss = ctx.sets.convertLoss(convEntry, k, ctx.book);
-                    local confirming = st.convertConfirm ~= nil
-                        and st.convertConfirm.kind == k
-                        and os.clock() < st.convertConfirm.till;
-                    if st.convertConfirm ~= nil and st.convertConfirm.kind == k
-                        and not confirming then
-                        st.convertConfirm = nil;       -- the 4s window closed
-                    end
-                    local label = confirming and 'Confirm convert?'
-                        or ('To ' .. M.KIND_INFO[k].label);
-                    if kit.litButton(im, label, confirming, LEFT_W - 20, 20,
-                        confirming and kit.PAL.go or nil) then
-                        if not confirming and #loss > 0 then
-                            st.convertConfirm = { kind = k, till = os.clock() + 4.0 };
-                        else
-                            st.convertConfirm = nil;
-                            local conv = ctx.sets.convertTo(convEntry, k, ctx.book);
-                            -- THE RING CROSSES, and the state being left
-                            -- banks on it: a kind-shaped backup restores
-                            -- across kinds, so this conversion is undoable
-                            conv.backups = convEntry.backups;
-                            ctx.sets.pushBackup(conv, convEntry, os.time());
-                            cfg.sets[st.activeSet] = conv;
-                            if k == 'levels' then
-                                loadBuild(ctx, st.activeSet, nil);
-                            else
-                                st.editLevel = nil;
-                                st.editingSet = ctx.sets.clone(conv, conv.name);
-                                st.assignSlot = nil;
-                            end
-                            st.convertOpen = nil;
-                            if ctx.save then ctx.save(); end
-                            st.applyNote = (#loss == 0)
-                                and ('"%s" is a %s set now (the old state is backup 1).'):format(
-                                    conv.name, M.KIND_INFO[k].label)
-                                or ('"%s" is a %s set now. Dropped: %s -- backup 1 has it all.'):format(
-                                    conv.name, M.KIND_INFO[k].label,
-                                    table.concat(loss, ', '));
+    if st.copyOpen then
+        -- every saved set except the one being edited -- copying a set onto
+        -- itself is the one move with nothing to offer
+        local srcN = 0;
+        for i, e in ipairs(cfg.sets) do
+            if i ~= st.activeSet then
+                srcN = srcN + 1;
+                local n = ctx.sets.countIds(ctx.sets.resolveAtLevel(e, 75, ctx.book));
+                local confirming = st.copyConfirm ~= nil and st.copyConfirm.i == i
+                    and os.clock() < st.copyConfirm.till;
+                if st.copyConfirm ~= nil and st.copyConfirm.i == i and not confirming then
+                    st.copyConfirm = nil;              -- the 4s window closed
+                end
+                local label = confirming and 'Confirm copy?'
+                    or ('%s  (%d)'):format(e.name, n);
+                if kit.litButton(im, label, confirming, LEFT_W - 20, 20,
+                    confirming and kit.PAL.go or nil) then
+                    -- ONE CLICK into an empty build, TWO over a full one:
+                    -- the same idiom Read current uses, for the same reason
+                    if not confirming and ctx.sets.count(st.editingSet) > 0 then
+                        st.copyConfirm = { i = i, till = os.clock() + 4.0 };
+                    else
+                        st.copyConfirm = nil;
+                        local src = ctx.sets.resolveAtLevel(e, 75, ctx.book);
+                        local rep = ctx.sets.copyFrom(st.editingSet, src, ctx.book);
+                        st.assignSlot, st.slotEdit = nil, nil;
+                        local parts = { ('Copied %d spell%s from "%s".'):format(
+                            rep.taken, (rep.taken == 1) and '' or 's', e.name) };
+                        if (rep.tooHigh or 0) > 0 then
+                            parts[#parts + 1] = ('%d need a higher level than this build reaches.'):format(rep.tooHigh);
                         end
-                    end
-                    kit.tip(im, M.KIND_INFO[k].blurb .. '\n\n'
-                        .. ((#loss == 0) and 'Nothing is lost in this conversion.'
-                            or ('One click arms it, a second converts.')));
-                    for _, L in ipairs(loss) do
-                        kit.wrapped(im, kit.COL.warn, 'drops ' .. L);
+                        if (rep.noSlot or 0) > 0 then
+                            parts[#parts + 1] = ('%d had no slot left.'):format(rep.noSlot);
+                        end
+                        if (rep.refused or 0) > 0 then
+                            parts[#parts + 1] = ('%d could not be set (unlearned, or not settable).'):format(rep.refused);
+                        end
+                        parts[#parts + 1] = 'Save to keep it.';
+                        st.applyNote = table.concat(parts, ' ');
+                        st.copyOpen = nil;
                     end
                 end
+                kit.tip(im, ('Fill this build with the %d spell%s "%s" holds at\n'
+                    .. 'Lv.75.%s%s'):format(n, (n == 1) and '' or 's', e.name,
+                    (ctx.sets.kindOf(e) == 'timeline')
+                        and '\n\nIts per-slot levels do NOT come along -- a flat reading\nis all one set can hand another.' or '',
+                    (ctx.sets.count(st.editingSet) > 0)
+                        and '\n\nThis build has spells in it: one click arms, a second copies.' or ''));
             end
+        end
+        if srcN == 0 then
+            kit.wrapped(im, kit.COL.dim, 'No other saved set to copy from yet.');
         end
     end
 

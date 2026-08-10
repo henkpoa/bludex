@@ -72,6 +72,18 @@ kinds, amended in place through the rounds), `docs/timeline-sets-plan.md`
 
 ### The laws of the day (each smoke-pinned)
 
+00. **COPY FROM replaced CONVERT** in the name-box row (Henrik 2026-08-10,
+   sixth round). `setmodel.copyFrom(set, srcIds, book)` takes a source
+   already flattened by `resolveAtLevel(e, 75, book)` — its top-level plan,
+   the one reading that means the same thing whatever kind it came from —
+   and lets the TARGET's kind decide the layout: `copyInto` for flat/levels
+   (band ceilings applied, reported), one spell per slot at its own level
+   for a slotlist. It REPLACES, never merges. One click into an empty
+   build, two over a full one. A slotlist source's per-level authorship
+   cannot survive the flattening and the tooltip says so up front.
+   `convertTo` / `convertLoss` still exist and are still tested, but NO UI
+   reaches them now — decide whether to delete them or give them a home.
+
 0. **PLAN AT THE LEVEL YOU ARE, WEAR AT THE LEVEL YOU STAND** (Henrik
    2026-08-10, sixth round). `blu.realLevel` reads `GetJobLevel(16)` — the
    character's own job list, which a sync never touches — against

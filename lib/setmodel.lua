@@ -914,6 +914,58 @@ function M.copyInto(ids, level, book)
     return out, { taken = taken, tooHigh = tooHigh, noSlot = #pick - taken };
 end
 
+-- COPY ANOTHER SET'S SPELLS INTO THIS ONE (Henrik 2026-08-10, sixth round:
+-- "make it a copy from button instead... obviously it will only be able to
+-- copy the top level of spells, but should save people some time").
+--
+-- The source arrives already flattened -- resolveAtLevel at 75, its
+-- TOP-LEVEL plan, which is the one reading that means the same thing
+-- whatever kind it came from. A slotlist's per-level authorship cannot
+-- survive that flattening and is not pretended to: what crosses is the set
+-- of spells, and the target's own kind decides how they land.
+--
+-- REPLACES, never merges. "Copy from" means make this look like that; a
+-- merge would need a rule for collisions nobody asked for. The caller does
+-- the confirming.
+--
+-- Returns { taken, tooHigh, noSlot, refused }:
+--   tooHigh   above what this band can cast (a levels draft's ceiling)
+--   noSlot    ran out of slots
+--   refused   the model said no for any other reason (unlearned, unbridled)
+function M.copyFrom(set, srcIds, book)
+    if M.kindOf(set) ~= 'timeline' then
+        -- the id-array path already knows this job: sorted by level, the
+        -- band's ceilings applied, the rest reported
+        local ids, rep = M.copyInto(srcIds, set.level, book);
+        for i = 1, 20 do set.ids[i] = ids[i]; end
+        rep.refused = 0;
+        return rep;
+    end
+    -- A SLOTLIST takes one spell per slot, each activating at its own level
+    -- -- the same placement convertTo uses, and the only honest one from a
+    -- flat reading: nothing in a 20-id list says when anything should take
+    -- over from anything else. Chains are yours to build from here.
+    M.clear(set);
+    local pick = {};
+    for i = 1, 20 do
+        local id = srcIds[i] or 0;
+        if id ~= 0 then pick[#pick + 1] = id; end
+    end
+    table.sort(pick, byLevel(book));
+    local rep = { taken = 0, tooHigh = 0, noSlot = 0, refused = 0 };
+    for _, id in ipairs(pick) do
+        local slot = M.freeSlot(set);
+        if slot == nil then
+            rep.noSlot = rep.noSlot + 1;
+        elseif M.addEntry(set, slot, id, nil, book) then
+            rep.taken = rep.taken + 1;
+        else
+            rep.refused = rep.refused + 1;
+        end
+    end
+    return rep;
+end
+
 -- One build of a levels set as an editable DRAFT -- the shape the Sets tab
 -- edits and every computation takes (no chains, so every editing op below
 -- runs its id-array path; level carries the band ceilings into canAdd).

@@ -694,6 +694,50 @@ check(sets.upgrade(raw, book) == true and raw.kind == 'levels',
     'a builds-shaped store entry is stamped levels');
 check(sets.upgrade(raw, book) == false, 'and the stamp is idempotent');
 
+-- COPY FROM ANOTHER SET (Henrik 2026-08-10, sixth round -- Convert's
+-- replacement). In a function so its locals get their own budget.
+print('smoke: copy from another set (the top-level spells, laid out per kind)');
+(function()
+    -- the source: a SLOTLIST with real per-level authorship in one slot --
+    -- Wild Oats (4) handing over to Bludgeon (18) -- so we can watch the
+    -- authorship NOT come along, which is the whole caveat
+    local src = sets.new('Source');
+    sets.addEntry(src, 1, 603, nil, book);
+    sets.addEntry(src, 1, 529, nil, book);
+    sets.addEntry(src, 2, 549, nil, book);
+    local top = sets.resolveAtLevel(src, 75, book);
+    check(top[1] == 529 and top[2] == 549,
+        'the source reads at Lv.75: Bludgeon won slot 1, Pollen holds slot 2');
+
+    -- into a FLAT build: the id-array path, level-sorted like every other
+    local intoFlat = sets.new('Flat target', 'flat');
+    sets.add(intoFlat, 719, book, 999);            -- something to be replaced
+    local rep = sets.copyFrom(intoFlat, top, book);
+    check(rep.taken == 2 and intoFlat.ids[1] == 549 and intoFlat.ids[2] == 529,
+        'a flat target takes them in level order, replacing what was there');
+    check(sets.contains(intoFlat, 719) == nil, 'and REPLACES -- it does not merge');
+
+    -- into a SLOTLIST: one spell per slot, each at its own level. The
+    -- source's chain does NOT survive -- a flat reading cannot carry it.
+    local intoTl = sets.new('Slotlist target');
+    local rep2 = sets.copyFrom(intoTl, top, book);
+    check(rep2.taken == 2, 'a slotlist target takes them too');
+    check(#intoTl.chains[1] == 1 and intoTl.chains[1][1].id == 549
+        and intoTl.chains[1][1].from == 1,
+        'one spell per slot, lowest first, each from its own level');
+    check(#intoTl.chains[2] == 1 and intoTl.chains[2][1].id == 529,
+        'and the next in the next slot');
+    check(sets.isFlat(intoTl, book),
+        'the source\'s per-level authorship does NOT come along');
+
+    -- a levels DRAFT keeps its band's ceilings: Lv.1 can cast to 10 and
+    -- holds six, so Venom Shell (42) is named as too high rather than set
+    local band = sets.draft({ name = 'B', ids = {}, builds = {} }, 1, book);
+    local rep3 = sets.copyFrom(band, { 549, 513 }, book);
+    check(rep3.taken == 1 and rep3.tooHigh == 1 and band.ids[1] == 549,
+        'a band draft takes what it can cast and NAMES what it cannot');
+end)();
+
 print('smoke: kind conversion (the flat projection is the bridge)');
 do
 -- flat -> timeline: lossless, and the source is never touched
@@ -1975,8 +2019,31 @@ do
     check(screen:find('Flat sets', 1, true) ~= nil
         and screen:find('Slotlists', 1, true) ~= nil,
         'the saved list groups the kinds under their own headings');
-    check(screen:find('Convert', 1, true) ~= nil,
-        'a saved set offers Convert under its name');
+    check(screen:find('Copy from...', 1, true) ~= nil,
+        'the name box offers Copy from (which took Convert\'s place)');
+    check(screen:find('Convert', 1, true) == nil,
+        'and Convert is gone from the tab entirely');
+    -- the pane it opens, DRAWN (the renderBody lesson: the model being right
+    -- says nothing about the thing that draws it)
+    (function()
+        local cctx = rctx(sets.clone(fset, fset.name), 1);
+        cctx.state.copyOpen = true;
+        sdrew = {};
+        setsuiM.render(cctx);
+        local scr = table.concat(sdrew, '\n');
+        check(scr:find('Bandy', 1, true) ~= nil and scr:find('Chained', 1, true) ~= nil,
+            'Copy from lists every OTHER saved set, kinds mixed');
+        check(scr:find('Flatty  (', 1, true) == nil,
+            'and never the set you are editing -- copying onto itself buys nothing');
+        -- with nothing else saved there is nothing to offer, and it says so
+        cctx.cfg = mkcfg();
+        cctx.cfg.sets = { fset };
+        cctx.state.activeSet = 1;
+        sdrew = {};
+        setsuiM.render(cctx);
+        check(table.concat(sdrew, '\n'):find('No other saved set', 1, true) ~= nil,
+            'and says so plainly when there is nothing to copy from');
+    end)();
     check(screen:find('Share', 1, true) ~= nil,
         'and Share beside it');
     check(screen:find('Import', 1, true) ~= nil,
