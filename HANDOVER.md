@@ -81,9 +81,10 @@ fix); both are restored, so all three trait surfaces (Traits tab,
 spell tooltip/Assign, Sets summary) speak the collision again. AND
 **SHARE / IMPORT FROM TEXT** (plan §8, the dlac flow scaled to a set):
 Share... beside Convert... puts the set on one BDXSET1 line
-(checksummed, tab-free, backups stay home), Import from text parses a
-paste live, names what it recognized, refuses damage whole, and
-numbers name collisions. Still queued: (d) the job-traits field round,
+(checksummed, tab-free, backups stay home), Import (ONE button since
+the field round, the blusets pull its second row) parses a paste
+live, names what it recognized, refuses damage whole, and numbers
+name collisions. Still queued: (d) the job-traits field round,
 (e) the field checklist below (§0), once per kind, plus one live
 band-crossing under Lvl Set Switch, one conversion + undo round-trip,
 and one share line through real Discord and back.

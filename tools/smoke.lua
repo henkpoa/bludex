@@ -1709,8 +1709,8 @@ do
         'a saved set offers Convert under its name');
     check(screen:find('Share', 1, true) ~= nil,
         'and Share beside it');
-    check(screen:find('Import from text', 1, true) ~= nil,
-        'the left column offers Import from text');
+    check(screen:find('Import', 1, true) ~= nil,
+        'the left column offers Import');
 
     sdrew = {};
     setsuiM.render(rctx(sets.draft(lset, 41), 2, nil, 41));
@@ -1743,7 +1743,7 @@ do
     imctx.state.importOpen = true;
     setsuiM.render(imctx);
     screen = table.concat(sdrew, '\n');
-    check(screen:find('Import from text', 1, true) ~= nil
+    check(screen:find('BDXSET1 line someone sent', 1, true) ~= nil
         and screen:find('blusets', 1, true) ~= nil,
         'the import pane renders, the blusets pull tucked inside it');
 

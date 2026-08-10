@@ -701,7 +701,7 @@ local function savedList(ctx)
     -- ONE import door (Henrik 2026-08-10, from the field: two import
     -- buttons read as clutter): the pane behind it takes a pasted line
     -- AND carries the blusets file pull at its bottom
-    if kit.litButton(im, 'Import from text', st.importOpen == true, LEFT_W - 20, 20) then
+    if kit.litButton(im, 'Import', st.importOpen == true, LEFT_W - 20, 20) then
         st.importOpen = not st.importOpen or nil;
         st.shareOpen, st.pickKind, st.convertOpen = nil, nil, nil;
     end
@@ -745,7 +745,7 @@ local function savedList(ctx)
             st.shareOpen = not st.shareOpen or nil;
             st.importOpen, st.pickKind, st.convertOpen = nil, nil, nil;
         end
-        kit.tip(im, 'This set as one line of text -- send it to a friend,\nthey paste it under Import from text.');
+        kit.tip(im, 'This set as one line of text -- send it to a friend,\nthey paste it under Import.');
     end
     if st.convertOpen and convEntry ~= nil then
         if M.unsaved(ctx) then
@@ -1459,7 +1459,7 @@ local function sharePane(ctx)
     -- WRAPPED, never clipped (Henrik 2026-08-10, from the field: the
     -- guidance lines ran off the column edge)
     kit.wrapped(im, kit.COL.dim, 'One line, sent whole: chat, Discord, anywhere. '
-        .. 'The other side pastes it under Import from text. '
+        .. 'The other side pastes it under Import. '
         .. 'Backups stay home - the text is the set, not its history.');
     if M.unsaved(ctx) then
         kit.wrapped(im, kit.COL.warn, 'Unsaved edits are NOT in this text - Save to include them.');
@@ -1497,7 +1497,7 @@ end
 
 local function importPane(ctx)
     local im, st, cfg = ctx.im, ctx.state, ctx.cfg;
-    kit.header(im, 'Import from text');
+    kit.header(im, 'Import');
     kit.wrapped(im, kit.COL.dim, 'Paste the whole BDXSET1 line someone sent you. '
         .. 'Chat framing around it is fine - the line is found inside.');
     if kit.isFn(im, 'Separator') then im.Separator(); end

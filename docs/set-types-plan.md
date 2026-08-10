@@ -146,14 +146,15 @@ groupPut lands — the right-click ring opens on every saved row, and
 
 Nothing from the plan is parked anymore.
 
-## 8. Share / Import from text (built in the fifth slice, same day)
+## 8. Share / Import (built in the fifth slice, same day)
 
 The dlac friend-share flow, scaled to one set. **Share...** (beside
 Convert..., saved sets only) shows the set as ONE line --
 `BDXSET1|kind|name|payload|crc4`, no tabs anywhere, so chat, Discord and
 clipboards carry it whole -- with a copy-source text box and a
 Copy-to-clipboard button (degrading to select-and-Ctrl+C when the
-binding has no clipboard). **Import from text** (under Import blusets)
+binding has no clipboard). **Import** (one door since the field round -- the blusets
+file pull is its second row)
 parses a paste LIVE, dlac-style: the moment the line lands it is named
 ("Recognized: ... - a Slotlist set, 12 spells, built for Lv.75") or
 refused with a reason; chat framing around the line is tolerated, a
