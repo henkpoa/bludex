@@ -1,146 +1,135 @@
 # Bludex — Session Handover
 
-**Date:** 2026-08-08 (the TIMELINE session — remote maintainer build on Henrik's
-authority, zero field time; supersedes the 2026-08-04 handover, which is kept
-below as §H for everything it proved that still stands)
+**Date:** 2026-08-10 (the KINDS session — the merge, the two-kind model and
+FOUR live field rounds with Henrik in game, all landed same day; supersedes
+the 2026-08-08 timeline handover, kept below as §0 for the slotlist's design
+history, and the 2026-08-04 handover below that as §H)
 **Repo:** https://github.com/henkpoa/bludex — public, `main` + `dev` (all work on `dev`,
 dev→main only on Henrik's explicit go; same law in dlac). `addon.version` is
-**1.1.0 on dev** — NO release until the field pass below is green.
+**1.1.0 on dev** — NO release until the field list below is done.
 
 ---
 
-## -1. The merge of 2026-08-10 — the three systems, and where each one stands
+## -1. THE STATE OF 2026-08-10 — read this first
 
-Henrik's direction: BLUDEX keeps **all three** ways of building a set, chosen
-**per set at creation** (with plain-words explanations), plus a setting for
-which system answers first:
+One long day: the dev/feature-branch merge, the kind model, and four field
+rounds, every fix landed and pushed the same day. The git log from `9f6b90f`
+(the merge) to HEAD carries the play-by-play; THIS section is the state a
+successor needs. Suite: **452 checks green** — run
+`lua bludex/tools/smoke.lua` from `Ashita/addons/` (or `smoke_posix.lua`,
+same coverage, POSIX paths). Design docs: `docs/set-types-plan.md` (the
+kinds, amended in place through the rounds), `docs/timeline-sets-plan.md`
+(the slotlist's original design, still the law for chains).
 
-1. **Flat** — one spell per slot, the original shape. *Recommended at 75 when
-   level sync doesn't matter.*
-2. **Lvl Subsets** — a dedicated build per level band under one name, falling
-   back to the flat build where no band is defined. *Recommended for dedicated
-   per-band sets.*
-3. **Slotlist (timeline)** — a level-ordered chain of spells per slot.
-   *Recommended for granular control; the most advanced, Henrik's preferred.*
+### What a saved set IS (two kinds, chosen at creation)
 
-**What this merge did:** local dev (Lvl Subsets, commits `c3cf9a6..163b102`,
-plus the trait-attribution work in `47ae622`) merged with `origin/dev` (the
-timeline branch, which already carried main's 1.0.2 log-off save fix). Where
-the two rewrote the same sets subsystem (`setmodel`, `setsui`,
-`blusetsimport`, the codec/config/watcher parts of `config`/`dlacmodule`/
-`host`/`bludex`), **the timeline side won wholesale** — a hunk-level splice
-would have produced a hybrid that half-worked for both. The Lvl Subsets
-implementation is NOT lost: it lives complete in the commits above (§0-old
-row "A build per level band" describes it) and returns as the second set
-type when the three-type model is built. Everything outside that subsystem
-kept both sides: the trait attribution + hover gate + widget theme work,
-the SoA wiki traits (now with per-tier `traitId` and `traitNames` entries —
-generator unified), and the timeline's whole Sets tab.
+```lua
+{ kind='levels',   name, ids={20 base build},
+                   builds={ {level,ids}.. }, rule=nil|'restore'|'switch'|'manual' }
+{ kind='timeline', name, builtFor, chains={20 x {{id,from}..}},
+                   ids={20 Lv.75 mirror}, backups<=5 }
+```
 
-**The work queue from here:** (a) ~~the per-set TYPE at creation + the
-priority setting~~ and (b) ~~port Lvl Subsets back as a type~~ — **BUILT
-2026-08-10, same day** (docs/set-types-plan.md is the design): `kind` on
-every set (`setmodel.kindOf`, adopt stamps by shape, NOTHING converts — a
-v1 store now adopts flat, the repeal of the v2 chains-for-everyone
-migration), the whole group API back from history and kind-dispatched
-through one editing surface, the New chooser (three kinds, Henrik's
-wording, `cfg.newSetKind` = "New sets start as" in Settings orders it),
-levels sets edited through drafts (`setmodel.draft`) with the band
-ceilings and `blu.rungCap` restored, the dlac `sets3` grammar (truth;
-sets2 = timeline-only; legacy stays the tolerant mirror, levels lines
-included). Suite-proven end to end incl. real stub renders of the chooser
-and all three editors (364 checks) — **field round owed on all of it**.
-(c) ~~the LEVELS-KIND LEVEL-CHANGE WATCHER~~ — **BUILT, third slice same
-day** (plan §5): ONE LAW — the behavior belongs to the set you last
-APPLIED (`cfg.lastAppliedSet` is back, every apply path records it, an
-unsaved draft clears it). A followed levels set arms ITS rule (the
-per-set combo under the name box, Henrik's wording verbatim; `ruleOf`
-derives restore-while-flat / switch-with-levels): Switch equips a band's
-own build outright on a crossing (diff-checked, silent when worn, its
-line replaces the down report), everything else restores adds-only
-(`blu.restoreMissing` + `planDiff` un-retired). Level DOWN sends nothing.
-The timeline `replan` check STANDS DOWN while a levels rule is armed —
-never two writers on one change. The quiet-why line (watch alive /
-nothing applied / another set followed) sits under the rule combo.
-Driven end to end against a stub client (`smoke: the level-change rule`,
-21 checks) — **this is the packet-sending feature: its field round is
-the one that matters most**. AND (fourth slice, same day) **KIND
-CONVERSION IN PLACE** (plan §6): Convert... under the name box, the flat
-projection as the bridge (`setmodel.convertTo`/`convertLoss`), losses
-named before the two-click confirm, unsaved edits must settle first,
-source never mutated. AND (fifth slice, same day) **BACKUPS FOR EVERY
-KIND** (plan §7): kind-shaped backups, restoreBackup flips kinds --
-Convert banks the old state as backup 1 with the ring carried across,
-so a lossy conversion is UNDOABLE; save-over banks on every kind, the
-right-click ring opens on every row, sets2bak grammar kind-tagged.
-The plan has nothing parked left. THEN (sixth slice, same day): the
-**Sets-tab trait summary got its attribution back** -- the timeline
-rewrite of setsui had silently dropped the "blocked by WAR" verdict
-line and the left column's measured widths (the 2026-08-07 clipping
-fix); both are restored, so all three trait surfaces (Traits tab,
-spell tooltip/Assign, Sets summary) speak the collision again. AND
-**SHARE / IMPORT FROM TEXT** (plan §8, the dlac flow scaled to a set):
-Share... beside Convert... puts the set on one BDXSET1 line
-(checksummed, tab-free, backups stay home), Import (ONE button since
-the field round, the blusets pull its second row) parses a paste
-live, names what it recognized, refuses damage whole, and numbers
-name collisions. FIELD FIX (Henrik's slotlist round, same day): **A TIMELINE'S SLOTS ARE
-AUTHORSHIP** -- the apply path was still running the flat-era sorted
-placement (`sortedLayout`) on slotlist sets, which re-homed a
-hand-assigned spell to the low slots AND collapsed two levels' plans
-into one list whenever they differed only by position, so Apply refused
-with "already up to date" after a level change (one bug, two faces:
-Foot Kick jumping to slot 1, and the level change not detected).
-`setmodel.applyLayout(set, ids, book)` now picks the layout by kind --
-timeline positional (unlearned zeroed IN PLACE, never compacted),
-flat/levels keep the sorted law -- and applyDiff, applyState, /bdx
-apply and checkReplan all speak it. The quiet-flat rule survives in its
-true form: only a purely-removals difference stays silent; a spell
-MOVING slots is a real change and nudges/auto-applies. Regression
-pinned in smoke (the Moved fixture). SECOND FIELD ROUND (same day,
-Henrik in game): **TWO KINDS, NOT THREE** -- flat and Lvl Subsets
-merged (plan doc amendment): the merged kind keeps the `levels` key,
-wears the label "Flat", and every set can grow level builds under its
-name; the v4 adopt folds stored flat sets in, `'flat'` stays a decode
-alias on every wire. **THE TRAIT LAW FLIPPED BY FIELD FACT**: a job
-trait GIVES its tier (never "blocks") and a higher blue tier still
-applies for its full weight -- CEXI beats the base-LSB reading
-(traitsource's header records the reversal); the UI speaks "Active
-from DNC (sub job)" instead of red "blocked", no rung is "out of
-reach", and "(game says no)" only shows where the 0x0AC bit can KNOW
-(job-sourced, or the editing set actually worn). Codex and Traits
-right-click add RESTORED for the merged kind; a SLOTLIST refuses adds
-by name (per-slot only), both tabs banner it, the whole slot row is
-the Assign mark (the + is gone), and Assign gained a trait filter
-(build a trait slot by slot). Actions sit above the list in both
-editors. AND the HEADER SET PICKER (same round): a combo between the
-Slots meter and Save/Apply lists every saved set -- switch the editing
-set from any tab -- with a second combo beside it for WHICH build when
-the picked set has level builds (Base / Lv.X-Y). Selection behaves
-exactly like clicking in the Sets tab (drafts for the merged kind,
-unsaved edits discarded). FOURTH ROUND (same day): **THE SLOT EDITOR**
--- one recurring window per slot (move entry levels in place via
-`setmodel.setEntryLevel`, an edit succeeds whole or changes nothing;
-remove; take adds) -- opened from the slot row's right-click MENU
-(Edit slot / Remove, no more instant axe) and from the ASSIGN MENU:
-right-clicking a spell in Codex or Traits under a slotlist cascades
-all twenty slots (bracket + current occupant; hover = the slot's whole
-timeline, "Add <spell> here..." on top). The Traits tab under a
-slotlist gained the LEVEL SLIDER (shared with the Sets tab; the job
-side scales, sub at half level, referee stands down off-live), tier
-prices on not-yet-active ladders, and TIERS BY LEVEL -- the whole
-curve from `setmodel.tierTimeline`, spans per ladder. All popup UI
-degrades: no cascade -> flat list, no popups -> the old refusal note /
-immediate remove. Still queued: (d) the job-traits field round
--- now including one in-game confirmation that a higher blue tier
-really does apply over a sub-job trait, (e) the field checklist below
-(§0), once per kind, plus one live band-crossing under Lvl Set Switch,
-one conversion + undo round-trip, and one share line through real
-Discord and back.
+* **Flat** (kind KEY `levels` — wire compat; `'flat'` decodes as an alias
+  everywhere) — one spell per slot, applied by SORTED placement (lowest
+  spell level into the lowest slot: the sync-down protection). Any set can
+  grow dedicated builds per level band under its name (the Levels section);
+  the base build answers wherever no band is built (`groupPick`). Edited
+  through DRAFTS (`setmodel.draft` — one build at a time, band ceilings on
+  adds, saving via `groupPut` never touches the other builds).
+* **Slotlist** (`timeline`) — a level-ordered chain per slot; `resolveAtLevel`
+  collapses to the 20-id array everything downstream speaks. **THE SLOTS ARE
+  AUTHORSHIP**: the apply NEVER re-sorts them (`setmodel.applyLayout` picks
+  positional for this kind — the fix behind "Foot Kick jumped to slot 1" AND
+  "the level change wasn't detected": one bug, two faces). Adds are PER SLOT
+  ONLY — `canAdd` refuses by name; the assign menu / slot editor are the way
+  in. `setmodel.kindOf` answers for any table; the v4 adopt stamps and folds.
+
+### The laws of the day (each smoke-pinned)
+
+1. **The CEXI trait law** (field fact over the base-LSB code reading —
+   `lib/traitsource.lua`'s header records the reversal): a job trait GIVES
+   its tier (never "blocks", nothing is "out of reach"); the blue ladder
+   counts its own weight from zero and a higher blue tier applies at its
+   full threshold. Tier thresholds are TOTALS (tier 2 at 4 total weight —
+   Henrik questioned, then confirmed). One price grammar everywhere:
+   "Tier N at X weight (Y now)". "(game says no)" only where the 0x0AC bit
+   can know (job-sourced, or the editing set actually worn).
+2. **The level-change watcher** (`ui/host.lua`): the behavior belongs to the
+   set you last APPLIED (`cfg.lastAppliedSet`; an unsaved draft clears it).
+   A followed Flat-kind set arms ITS rule (`ruleOf`: derived restore-while-
+   build-less / switch-with-builds; the combo under the name box): Switch
+   equips a band's own build outright on a crossing (diff-checked, silent
+   when worn); Restore re-adds adds-only (`blu.restoreMissing`); level DOWN
+   sends nothing. A followed slotlist gets the re-plan check instead
+   (positional change counting; quiet only for pure removals) — and the
+   re-plan STANDS DOWN while a Flat rule is armed. Never two writers.
+3. **Conversion + undo**: Convert... under the name box; the flat projection
+   is the bridge; losses NAMED before a two-click confirm; the ring crosses
+   and the old state banks as backup 1 — kind-shaped backups restore ACROSS
+   kinds (`restoreBackup` flips), so a lossy conversion is undoable.
+4. **Share**: `BDXSET1|kind|name|payload|crc4` — one tab-free checksummed
+   line (`setmodel.shareText`/`parseShare`); backups never travel; damage
+   refused whole; a NEW grammar needs a new version token, never an
+   in-place change. UI: Share... beside Convert...; ONE Import door (the
+   paste box first, the blusets file pull inside it).
+
+### The UI grammar (field-tuned, four rounds)
+
+* **Header** (every tab): meters → the SET PICKER (kind-separated, slotlists
+  tagged; a second combo for WHICH build when the set has bands) → status →
+  Save/Apply/Revert. No success notes — chat narrates applies; refusals
+  still speak.
+* **Sets tab**: the saved list grouped under "Flat sets"/"Slotlists"
+  headings; New = the two-kind chooser (`cfg.newSetKind` = "New sets start
+  as" orders it); actions sit ABOVE the spell/slot lists in BOTH editors;
+  the whole slot row is the Assign mark (no + button); a slot row's
+  right-click is a MENU (Edit slot... / Remove); the SLOT EDITOR window
+  (one per slot, recurring: move entry levels in place via
+  `setmodel.setEntryLevel` — an edit succeeds whole or changes nothing —
+  remove, take handed-over adds).
+* **Codex/Traits rows**: right-click toggles in/out for Flat-kind sets; for
+  a slotlist it opens the ASSIGN MENU (all 20 slots + bracket + occupant;
+  hover cascades into the slot's timeline; "Add <spell> here..." hands the
+  add to the slot editor). Every popup degrades: no cascades → a flat
+  list, no popups → the old refusal/remove paths.
+* **Traits tab**: the header is just View (+ the LEVEL SLIDER under a
+  slotlist, shared with the Sets preview — the ladders read the slotlist
+  AT that level, the job side scales with it, sub at half level, the
+  referee stands down off-live); source tags on JOB-granted tiers only;
+  every ladder prices its next tier; TIERS BY LEVEL at the bottom
+  (`setmodel.tierTimeline`, the whole 1-75 curve as spans). Codex tooltips
+  price tiers in the same words.
+
+### Where the day's code lives
+
+`lib/setmodel.lua` (kinds, group API, conversion, kind-shaped backups,
+share codec, applyLayout, setEntryLevel, tierTimeline) ·
+`lib/traitsource.lua` (the CEXI verdict) · `lib/blu.lua` (rungCap,
+restoreMissing/planDiff un-retired, applyDiff's layout param) ·
+`ui/host.lua` (watchers, the v4 adopt, header, aux windows) ·
+`ui/setsui.lua` (the Sets tab whole: chooser, pickers, panes, slot editor,
+share/import) · `ui/spellsui.lua` (assign menu, row/tooltip grammar) ·
+`ui/traitsui.lua` (the quiet header, slider, curve) ·
+`dlacmodule/init.lua` (the sets3 + kind-tagged sets2bak grammars,
+lastAppliedSet, newSetKind).
+
+### WHAT IS OWED (the field list — everything above is suite-proven only)
+
+1. The checklist in §0 below, once per kind: create via the chooser, build,
+   apply, relog, see it come back.
+2. One live band-crossing under **Lvl Set Switch** (the packet-sending
+   feature — the round that matters most).
+3. One conversion + undo round-trip in game.
+4. One BDXSET1 line through real Discord and back.
+5. One in-game confirmation that a higher blue tier really applies over a
+   sub-job trait (the Traits tab now promises it).
+6. The slot editor / assign menu / traits slider, one pass each in game
+   (the popup machinery is guarded but has never been field-rendered).
 
 ---
 
-## 0. The timeline session (2026-08-08) — READ THIS FIRST
+## 0. The timeline session (2026-08-08) -- history: the slotlist's origin
 
 **Design:** `docs/timeline-sets-plan.md` — settled with Henrik in a same-day
 Q&A, then built to completion by the remote maintainer session under his
