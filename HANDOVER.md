@@ -118,7 +118,20 @@ Slots meter and Save/Apply lists every saved set -- switch the editing
 set from any tab -- with a second combo beside it for WHICH build when
 the picked set has level builds (Base / Lv.X-Y). Selection behaves
 exactly like clicking in the Sets tab (drafts for the merged kind,
-unsaved edits discarded). Still queued: (d) the job-traits field round
+unsaved edits discarded). FOURTH ROUND (same day): **THE SLOT EDITOR**
+-- one recurring window per slot (move entry levels in place via
+`setmodel.setEntryLevel`, an edit succeeds whole or changes nothing;
+remove; take adds) -- opened from the slot row's right-click MENU
+(Edit slot / Remove, no more instant axe) and from the ASSIGN MENU:
+right-clicking a spell in Codex or Traits under a slotlist cascades
+all twenty slots (bracket + current occupant; hover = the slot's whole
+timeline, "Add <spell> here..." on top). The Traits tab under a
+slotlist gained the LEVEL SLIDER (shared with the Sets tab; the job
+side scales, sub at half level, referee stands down off-live), tier
+prices on not-yet-active ladders, and TIERS BY LEVEL -- the whole
+curve from `setmodel.tierTimeline`, spans per ladder. All popup UI
+degrades: no cascade -> flat list, no popups -> the old refusal note /
+immediate remove. Still queued: (d) the job-traits field round
 -- now including one in-game confirmation that a higher blue tier
 really does apply over a sub-job trait, (e) the field checklist below
 (§0), once per kind, plus one live band-crossing under Lvl Set Switch,

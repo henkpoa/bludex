@@ -745,6 +745,45 @@ check(cnv.backups[1].kind == 'timeline',
     'the slotlist state it replaced banked in turn -- the undo is undoable');
 end
 
+print('smoke: the slot editor moves entries, the timeline sums its tiers');
+do
+-- setEntryLevel: an edit succeeds whole or changes nothing
+local sm = sets.new('Move');
+check(sets.addEntry(sm, 1, 603, nil, book)          -- Wild Oats @4
+    and sets.addEntry(sm, 1, 529, 40, book), 'editor fixture builds');
+check(sets.setEntryLevel(sm, 1, 2, 30, book), 'Bludgeon slides 40 -> 30');
+check(sm.chains[1][2].from == 30 and sm.ids[1] == 529, 'the chain and mirror follow');
+check(sets.setEntryLevel(sm, 1, 1, 10, book) and sm.chains[1][1].from == 10,
+    'the first entry moves too');
+local okBad = sets.setEntryLevel(sm, 1, 2, 10, book);
+check(not okBad and sm.chains[1][2].from == 30,
+    'a refused move changes NOTHING (collision at 10)');
+check(not sets.setEntryLevel(sm, 1, 2, 5, book),
+    'a spell cannot move below its own level');
+
+-- tierTimeline: the whole curve folded into spans, against a stub book
+-- whose arithmetic is pinned exactly
+local sbook = {
+    spells = {
+        [900] = { level = 10, trait = { category = 99, weight = 1 } },
+        [901] = { level = 30, trait = { category = 99, weight = 1 } },
+    },
+    learned = function() return true; end,
+    traits = { categories = { [99] = { name = 'Stub Trait',
+        tiers = { { points = 1, mods = {} }, { points = 2, mods = {} } } } } },
+};
+local cs = sets.new('Curve');
+cs.chains[1] = { { id = 900, from = 10 } };
+cs.chains[2] = { { id = 901, from = 30 } };
+sets.syncLegacyIds(cs, sbook);
+local tt = sets.tierTimeline(cs, sbook);
+check(#tt == 1 and tt[1].name == 'Stub Trait', 'the curve lists the ladder');
+check(tt[1].spans[1].tier == 1 and tt[1].spans[1].lo == 10 and tt[1].spans[1].hi == 29,
+    'tier 1 spans Lv.10-29 (one feeder active)');
+check(tt[1].spans[2].tier == 2 and tt[1].spans[2].lo == 30 and tt[1].spans[2].hi == 75,
+    'tier 2 takes over at 30 (both feeders) and holds to the cap');
+end
+
 print('smoke: share text (one set, one pasteable line)');
 do
 -- every kind round-trips whole through its share line

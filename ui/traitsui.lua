@@ -74,14 +74,55 @@ function M.givenTip(v)
 end
 M.blockedTip = M.givenTip;             -- the old name, kept for callers
 
+local tlCache = { at = -10 };          -- the tiers-by-level sweep, 1s stale
+
 function M.render(ctx)
     local im, book, st = ctx.im, ctx.book, ctx.state;
     local set = st.editingSet;
     st.detailOpen = st.detailOpen or { false };
+    local isTl = ctx.sets.kindOf(set) == 'timeline';
 
-    -- current weights by category, once per frame
+    -- the header is just the View control (Henrik 2026-08-10, third round)
+    -- -- plus, for a SLOTLIST, the level slider (fourth round): the ladders
+    -- read the slotlist AT that level, and the job side scales with it
+    kit.ctext(im, kit.COL.dim, 'View:');
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    local density = spellsui.densityCombo(ctx, 'traitsDensity');
+    local shown = nil;
+    if isTl then
+        st.preview = st.preview or {};     -- SHARED with the Sets tab slider
+        local liveLvl = ctx.blu.effectiveLevel();
+        shown = (st.preview.value ~= nil) and st.preview.value or (liveLvl or 75);
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        kit.ctext(im, kit.COL.head, '   Level');
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        local sbuf = { shown };
+        if kit.sliderInt(im, '##bdxtraitlvl', sbuf, 1, 75, 200) then
+            st.preview.value = sbuf[1];
+            shown = sbuf[1];
+        end
+        kit.tip(im, 'The ladders below read the slotlist AT this level, and your\n'
+            .. 'job traits scale with it (a sub job runs at half the level).\n'
+            .. 'The same slider as the Sets tab.');
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        if kit.litButton(im, 'Live', st.preview.value == nil,
+            kit.measure(im, { 'Live' }, 40), 20) then
+            st.preview.value = nil;
+            shown = liveLvl or 75;
+        end
+        kit.tip(im, 'Follow your real level (75 while off BLU).');
+    end
+    if st.addNote then
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        kit.ctext(im, kit.COL.dim, '   ' .. st.addNote);
+    end
+    if kit.isFn(im, 'Separator') then im.Separator(); end
+
+    -- weights by category -- from the slotlist RESOLVED at the slider level
+    -- when there is one, from the editing build itself otherwise
+    local evalSource = isTl and ctx.sets.resolveAtLevel(set, shown or 75, book) or set;
     local evalByCat = {};
-    for _, ev in ipairs(ctx.sets.traitEval(set, book)) do
+    for _, ev in ipairs(ctx.sets.traitEval(evalSource, book)) do
         evalByCat[ev.cat] = ev;
     end
 
@@ -89,19 +130,17 @@ function M.render(ctx)
     -- attribute (an empty job map = "nothing known", never "nothing granted")
     local verdict = ctx.verdict
         or function(c, w) return tsrc.verdict(c, w, book, {}, nil); end;
-
-    -- the header is just the View control (Henrik 2026-08-10, third round:
-    -- the guidance line, the slotlist banner and the job pair all read as
-    -- noise here -- the ladders below carry the attribution where it
-    -- actually applies, and a slotlist right-click refuses with its reason)
-    kit.ctext(im, kit.COL.dim, 'View:');
-    if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    local density = spellsui.densityCombo(ctx, 'traitsDensity');
-    if st.addNote then
-        if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        kit.ctext(im, kit.COL.dim, '   ' .. st.addNote);
+    -- previewing away from live scales the JOB side too -- main at the
+    -- slider level, sub at half of it -- and the live-bit referee stands
+    -- down (its bits describe the live level alone)
+    if isTl and ctx.jobPair ~= nil then
+        local liveLvl = ctx.blu.effectiveLevel();
+        if shown ~= nil and (liveLvl == nil or shown ~= liveLvl) then
+            local jp = ctx.jobPair;
+            local jobsAt = tsrc.jobs(jp.mainJob, shown, jp.subJob, math.floor(shown / 2));
+            verdict = function(c, w) return tsrc.verdict(c, w, book, jobsAt, nil); end;
+        end
     end
-    if kit.isFn(im, 'Separator') then im.Separator(); end
 
     -- IS THE EDITING SET LIVE? The 0x0AC referee reflects what is EQUIPPED;
     -- while the editing set's spells are not applied, "game says no" on a
@@ -200,7 +239,17 @@ function M.render(ctx)
                     end
                 end
             elseif weight > 0 then
-                kit.ctext(im, kit.COL.warn, ('weight %d - below tier 1'):format(weight));
+                -- price the first tier too (fourth round: "add the tier
+                -- price when the trait isn't active yet")
+                local t1 = info and info.tiers and info.tiers[1] or nil;
+                if t1 ~= nil then
+                    kit.ctext(im, kit.COL.warn, ('Tier 1 at %d weight (%d now)'):format(
+                        t1.points, weight));
+                    kit.tip(im, ('Tier 1 activates once your set feeds %d total weight\n-- %d more from here.'):format(
+                        t1.points, t1.points - weight));
+                else
+                    kit.ctext(im, kit.COL.warn, ('weight %d - below tier 1'):format(weight));
+                end
             else
                 kit.ctext(im, kit.COL.dim, 'not in set');
             end
@@ -278,7 +327,12 @@ function M.render(ctx)
                         st.detailFocus = true;
                     end
                     if rclick then
-                        if inSet then
+                        if isTl and spellsui.canAssignMenu(im) then
+                            -- a slotlist right-click opens the slot menu
+                            -- (fourth field round) -- assignment per slot
+                            st.assignMenuId = id;
+                            pcall(im.OpenPopup, '##bdxassignmenu');
+                        elseif inSet then
                             ctx.sets.removeId(set, id);
                             st.addNote = ('Removed %s.'):format(s.name);
                         else
@@ -297,6 +351,31 @@ function M.render(ctx)
                 if kit.isFn(im, 'Separator') then im.Separator(); end
             end
         end
+        -- THE TIERS BY LEVEL (fourth round): under a slotlist, the whole
+        -- curve in one list -- which tier each ladder holds across 1-75,
+        -- straight from the timeline (setmodel.tierTimeline, cached 1s)
+        if isTl then
+            if kit.isFn(im, 'Separator') then im.Separator(); end
+            kit.ctext(im, kit.COL.head, 'Tiers by level (this slotlist)');
+            kit.tip(im, 'What each ladder holds at every level, resolved from the\nslot timeline. The slider above previews any one level;\nthis is the whole curve.');
+            if tlCache.set ~= set or (os.clock() - tlCache.at) > 1.0 then
+                tlCache.set, tlCache.at = set, os.clock();
+                tlCache.list = ctx.sets.tierTimeline(set, book);
+            end
+            for _, rec in ipairs(tlCache.list or {}) do
+                local parts = {};
+                for _, sp in ipairs(rec.spans) do
+                    parts[#parts + 1] = (sp.lo == sp.hi)
+                        and ('tier %d at Lv.%d'):format(sp.tier, sp.lo)
+                        or ('tier %d Lv.%d-%d'):format(sp.tier, sp.lo, sp.hi);
+                end
+                kit.wrapped(im, kit.COL.dim, ('%s: %s'):format(rec.name, table.concat(parts, ', ')));
+            end
+            if tlCache.list == nil or #tlCache.list == 0 then
+                kit.ctext(im, kit.COL.dim, 'no tiers activate at any level');
+            end
+        end
+        spellsui.renderAssignMenu(ctx);    -- the slot menu, if a row opened it
     end
     im.EndChild();
 end

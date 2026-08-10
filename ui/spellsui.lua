@@ -689,6 +689,81 @@ end
 -- ---------------------------------------------------------------------------
 -- the tab
 -- ---------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- THE ASSIGN MENU (Henrik 2026-08-10, fourth round): right-clicking a spell
+-- while a SLOTLIST is being edited opens a list of all twenty slots -- each
+-- named with its bracket and the spell its Lv.75 plan holds -- and hovering
+-- one cascades into that slot's whole timeline, "Add <spell> here..." on
+-- top (which hands the add to the slot editor window, level box and all).
+-- Opened by the codex AND traits rows; rendered once at each list's scope.
+-- Degrades: without cascade support the slots list flat and click straight
+-- through to the editor; without popups at all the right-click keeps its
+-- old refusal note.
+-- ---------------------------------------------------------------------------
+function M.canAssignMenu(im)
+    return kit.isFn(im, 'OpenPopup') and kit.isFn(im, 'BeginPopup')
+        and kit.isFn(im, 'EndPopup');
+end
+
+function M.renderAssignMenu(ctx)
+    local im, st, book = ctx.im, ctx.state, ctx.book;
+    local id = st.assignMenuId;
+    if id == nil or not M.canAssignMenu(im) then return; end
+    local set = st.editingSet;
+    if ctx.sets.kindOf(set) ~= 'timeline' or set.chains == nil then
+        st.assignMenuId = nil;
+        return;
+    end
+    local opened = false;
+    pcall(function() opened = im.BeginPopup('##bdxassignmenu'); end);
+    if not opened then return; end
+    local s = book.spells[id];
+    local sname = s and s.name or ('#' .. tostring(id));
+    kit.ctext(im, kit.COL.head, ('Assign %s to...'):format(sname));
+    if kit.isFn(im, 'Separator') then im.Separator(); end
+    local canCascade = kit.isFn(im, 'BeginMenu') and kit.isFn(im, 'EndMenu');
+    for slot = 1, 20 do
+        local floor = ctx.sets.bracketFloor(slot);
+        local cur = (set.ids or {})[slot] or 0;
+        local curName = (cur ~= 0)
+            and ((book.spells[cur] and book.spells[cur].name) or ('#' .. cur))
+            or '(empty)';
+        local label = ('%2d  Lv.%d+  %s'):format(slot, floor, curName);
+        if canCascade then
+            local okM = false;
+            pcall(function() okM = im.BeginMenu(kit.esc(label) .. ('##bdxam%d'):format(slot)); end);
+            if okM then
+                local okA, hitA = pcall(im.Selectable, kit.esc(('Add %s here...'):format(sname)));
+                if okA and hitA then
+                    st.slotEdit = { slot = slot, addId = id, addLvl = { '' } };
+                    st.assignMenuId = nil;
+                    pcall(im.CloseCurrentPopup);
+                end
+                if kit.isFn(im, 'Separator') then im.Separator(); end
+                local chain = set.chains[slot] or {};
+                if #chain == 0 then
+                    kit.ctext(im, kit.COL.dim, '(no entries)');
+                end
+                for i, e in ipairs(chain) do
+                    local lo, hi = ctx.sets.entryRange(set, slot, i);
+                    local nm = (e.id == 0) and 'empty'
+                        or ((book.spells[e.id] and book.spells[e.id].name) or ('#' .. e.id));
+                    kit.ctext(im, kit.COL.dim, ('%d-%d  %s'):format(lo or floor, hi or 75, nm));
+                end
+                pcall(im.EndMenu);
+            end
+        else
+            local okS, hitS = pcall(im.Selectable, kit.esc(label) .. ('##bdxam%d'):format(slot));
+            if okS and hitS then
+                st.slotEdit = { slot = slot, addId = id, addLvl = { '' } };
+                st.assignMenuId = nil;
+                pcall(im.CloseCurrentPopup);
+            end
+        end
+    end
+    pcall(im.EndPopup);
+end
+
 function M.render(ctx)
     local im, book, st = ctx.im, ctx.book, ctx.state;
     local f = st.filters;
@@ -883,7 +958,12 @@ function M.render(ctx)
             if rclick and ctx.sets ~= nil then
                 local eset = st.editingSet;
                 local s2 = book.spells[id];
-                if ctx.sets.contains(eset, id) then
+                if ctx.sets.kindOf(eset) == 'timeline' and M.canAssignMenu(im) then
+                    -- a slotlist right-click opens the slot menu (fourth
+                    -- field round) -- assignment stays per slot
+                    st.assignMenuId = id;
+                    pcall(im.OpenPopup, '##bdxassignmenu');
+                elseif ctx.sets.contains(eset, id) then
                     ctx.sets.removeId(eset, id);
                     st.addNote = ('Removed %s.'):format(s2 and s2.name or id);
                 else
@@ -899,6 +979,7 @@ function M.render(ctx)
             end
             M.tooltip(ctx, id, hov);
         end
+        M.renderAssignMenu(ctx);       -- the slot menu, if a row opened it
     end
 
     if kit.isFn(im, 'BeginChild') and kit.isFn(im, 'EndChild') then

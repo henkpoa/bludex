@@ -800,9 +800,11 @@ local function renderBody(im, st, deps, embedded)
             kit.ctext(im, kit.COL.err, 'detail error: ' .. tostring(derr));
         end
         -- the Learn-from and Skillchain-partners windows ride along the
-        -- same way (their open buttons live inside Spell Info)
+        -- same way (their open buttons live inside Spell Info) -- and the
+        -- slot editor (fourth field round), which any tab can open
         pcall(spellsui.learnWindow, ctx);
         pcall(spellsui.scWindow, ctx);
+        pcall(setsui.slotEditorWindow, ctx);
     end
 end
 
@@ -925,6 +927,7 @@ function M.renderDetailFloat()
     pcall(spellsui.detailWindow, ctx);
     pcall(spellsui.learnWindow, ctx);
     pcall(spellsui.scWindow, ctx);
+    pcall(setsui.slotEditorWindow, ctx);
     if pushed > 0 then im.PopStyleColor(pushed); end
 end
 

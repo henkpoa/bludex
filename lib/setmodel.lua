@@ -494,6 +494,30 @@ function M.clearChain(set, slot, book)
     M.syncLegacyIds(set, book);
 end
 
+-- Move ONE entry to a new activation level, in place (the slot editor,
+-- 2026-08-10): take it out, validate the landing like any add, and put it
+-- back EXACTLY where it was when the landing is refused -- an edit either
+-- succeeds whole or changes nothing. Returns ok, why.
+function M.setEntryLevel(set, slot, idx, from, book)
+    local chain = set.chains and set.chains[slot] or nil;
+    local e = chain and chain[idx] or nil;
+    if e == nil then return false, 'no such entry'; end
+    if from == e.from then return true; end
+    local old = { id = e.id, from = e.from };
+    table.remove(chain, idx);
+    local ok, why = M.canAddEntry(set, slot, old.id, from, book);
+    if ok then
+        return M.addEntry(set, slot, old.id, from, book);
+    end
+    local pos = #chain + 1;
+    for i, x in ipairs(chain) do
+        if x.from > old.from then pos = i; break; end
+    end
+    table.insert(chain, pos, old);
+    M.syncLegacyIds(set, nil);
+    return false, why;
+end
+
 function M.clear(set)
     if M.kindOf(set) == 'timeline' and set.chains ~= nil then
         set.chains = emptyChains();
@@ -1470,6 +1494,43 @@ end
 --     tierText,                    -- 'Dual Wield +10' style, or nil
 --     nextPoints, nextText }       -- what the next tier needs, nil at cap
 -- Takes a set (its 75 mirror) or a flat resolveAtLevel array.
+-- THE TIERS BY LEVEL (Henrik 2026-08-10: "a summary what tiers are active
+-- for what levels according to the slotlist"): sweep 1..75, resolve the
+-- set at each level, evaluate the ladders, and fold each category's tier
+-- curve into spans -- { { cat, name, spans = { { tier, text, lo, hi } } } },
+-- name-sorted. A gap in activity splits a span; the whole answer is what
+-- the Traits tab lists under a slotlist.
+function M.tierTimeline(set, book)
+    local out, byCat = {}, {};
+    for L = 1, 75 do
+        for _, ev in ipairs(M.traitEval(M.resolveAtLevel(set, L, book), book)) do
+            if ev.tier ~= nil then
+                local info = book.traits.categories[ev.cat];
+                local tn = 0;
+                if info then
+                    for ti, t in ipairs(info.tiers) do
+                        if t == ev.tier then tn = ti; break; end
+                    end
+                end
+                local rec = byCat[ev.cat];
+                if rec == nil then
+                    rec = { cat = ev.cat, name = ev.name, spans = {} };
+                    byCat[ev.cat] = rec;
+                    out[#out + 1] = rec;
+                end
+                local last = rec.spans[#rec.spans];
+                if last ~= nil and last.hi == L - 1 and last.tier == tn then
+                    last.hi = L;
+                else
+                    rec.spans[#rec.spans + 1] = { tier = tn, text = ev.tierText, lo = L, hi = L };
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b) return a.name < b.name; end);
+    return out;
+end
+
 function M.traitEval(setOrIds, book)
     local ids = flatIds(setOrIds);
     local weights, order = {}, {};

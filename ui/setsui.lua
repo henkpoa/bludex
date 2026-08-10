@@ -962,6 +962,8 @@ end
 -- One slot's chain: the '+' assign target, the ACTIVE entry at the preview
 -- level as a codex-grammar row (name + its level range + live tag), and
 -- the rest of the timeline compact beneath -- retired dim, future blue.
+local slotRowMenu;                     -- defined below, used by slotPlanner
+
 local function chainRow(ctx, slot, shown, liveIds, locked, nameW)
     local im, st, book = ctx.im, ctx.state, ctx.book;
     local set = st.editingSet;
@@ -1045,13 +1047,21 @@ local function chainRow(ctx, slot, shown, liveIds, locked, nameW)
                 st.selectedId = e.id;
             end
             if rclick then
-                local okR, whyR = ctx.sets.removeEntry(set, slot, activeIdx, book);
-                st.applyNote = okR and nil or ('Cannot remove: %s.'):format(whyR);
-                spellsui.tooltip(ctx, e.id, hov);
-                return;                            -- the chain just changed
+                -- the menu, not the axe (Henrik 2026-08-10): Edit slot or
+                -- Remove -- falling back to the immediate remove only when
+                -- this binding has no popups
+                if kit.isFn(im, 'OpenPopup') and kit.isFn(im, 'BeginPopup') then
+                    st.slotMenu = { slot = slot, idx = activeIdx, id = e.id };
+                    pcall(im.OpenPopup, '##bdxslotrowmenu');
+                else
+                    local okR, whyR = ctx.sets.removeEntry(set, slot, activeIdx, book);
+                    st.applyNote = okR and nil or ('Cannot remove: %s.'):format(whyR);
+                    spellsui.tooltip(ctx, e.id, hov);
+                    return;                        -- the chain just changed
+                end
             end
             spellsui.tooltip(ctx, e.id, hov,
-                { { 'click: mark the slot for Assign - right-click: remove this entry', kit.COL.dim } });
+                { { 'click: mark the slot for Assign - right-click: Edit slot / Remove', kit.COL.dim } });
         end
     end
 
@@ -1312,6 +1322,7 @@ local function slotPlanner(ctx)
             chainRow(ctx, slot, shown, liveIds, locked, nameW);
         end
     end
+    slotRowMenu(ctx);
 end
 
 -- ---------------------------------------------------------------------------
@@ -1911,6 +1922,149 @@ local function assignPane(ctx)
         end
     end
     im.EndChild();
+end
+
+-- ---------------------------------------------------------------------------
+-- THE SLOT EDITOR (Henrik 2026-08-10, fourth round): ONE recurring window
+-- for one slot of a slotlist -- edit the levels of its entries, remove
+-- them, and take an add handed over by a codex/traits right-click ("so it
+-- synergizes ... a re-usable recurring window"). Opened from the slot
+-- row's right-click menu (Edit slot...) and from the assign menu's "Add
+-- here...". Renders from the host beside the Spell Info window.
+-- ---------------------------------------------------------------------------
+function M.slotEditorWindow(ctx)
+    local im, st, book = ctx.im, ctx.state, ctx.book;
+    local se = st.slotEdit;
+    if se == nil then return; end
+    local set = st.editingSet;
+    if ctx.sets.kindOf(set) ~= 'timeline' or set.chains == nil then
+        st.slotEdit = nil;
+        return;
+    end
+    if not (kit.isFn(im, 'Begin') and kit.isFn(im, 'End')) then return; end
+    local floor = ctx.sets.bracketFloor(se.slot);
+    se.open = se.open or { true };
+    if kit.isFn(im, 'SetNextWindowSizeConstraints') then
+        pcall(im.SetNextWindowSizeConstraints, { 400, 180 }, { 900, 700 });
+    end
+    local visible = false;
+    local ok = pcall(function()
+        visible = im.Begin(('Slot %d  (opens at Lv.%d)###bdxslotedit'):format(
+            se.slot, floor), se.open);
+    end);
+    if ok and visible then
+        local chain = set.chains[se.slot];
+        -- any mutation re-sorts the chain, so the level buffers are only
+        -- trusted while the chain holds its shape
+        if se.sig ~= #chain then se.sig = #chain; se.bufs = {}; end
+
+        -- the pending add, handed over by a codex/traits right-click
+        if se.addId ~= nil then
+            local s = book.spells[se.addId];
+            kit.ctext(im, kit.COL.head, ('Add %s'):format(s and s.name or ('#' .. se.addId)));
+            if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            kit.ctext(im, kit.COL.dim, ' at Lv.');
+            if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            se.addLvl = se.addLvl or { '' };
+            if kit.isFn(im, 'SetNextItemWidth') then im.SetNextItemWidth(40); end
+            if kit.isFn(im, 'InputText') then
+                pcall(im.InputText, '##bdxseaddlvl', se.addLvl, 3);
+            end
+            kit.tip(im, 'Blank = the spell\'s own level (the earliest legal moment).');
+            if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            if kit.litButton(im, 'Add', false, kit.measure(im, { 'Add' }, 44), 20, kit.PAL.go) then
+                local lv = tonumber(se.addLvl[1]);
+                local okA, whyA = ctx.sets.addEntry(set, se.slot, se.addId, lv, book);
+                se.note = okA and ('Added %s.'):format(s and s.name or se.addId)
+                    or ('Cannot add: %s.'):format(whyA);
+                if okA then se.addId = nil; se.bufs = {}; end
+            end
+            if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            if kit.litButton(im, 'Drop', false, kit.measure(im, { 'Drop' }, 44), 20) then
+                se.addId = nil;
+            end
+            kit.tip(im, 'Forget this add (the slot keeps what it has).');
+            if kit.isFn(im, 'Separator') then im.Separator(); end
+        end
+
+        -- the chain: each entry's level editable in place, each removable
+        if #chain == 0 then
+            kit.wrapped(im, kit.COL.dim,
+                'Nothing here yet - right-click a spell in the Codex or Traits and pick this slot.');
+        end
+        for i, e in ipairs(chain) do
+            local nm = (e.id == 0) and '(empty marker)'
+                or ((book.spells[e.id] and book.spells[e.id].name) or ('#' .. e.id));
+            kit.ctext(im, (e.id == 0) and kit.COL.dim or kit.COL.head, nm);
+            if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            kit.ctext(im, kit.COL.dim, ' from Lv.');
+            if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            se.bufs[i] = se.bufs[i] or { tostring(e.from) };
+            if kit.isFn(im, 'SetNextItemWidth') then im.SetNextItemWidth(40); end
+            if kit.isFn(im, 'InputText') then
+                pcall(im.InputText, ('##bdxself%d'):format(i), se.bufs[i], 3);
+            end
+            if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            if kit.litButton(im, ('Set##bdxsemove%d'):format(i), false,
+                kit.measure(im, { 'Set' }, 40), 20) then
+                local lv = tonumber(se.bufs[i][1]);
+                if lv == nil then
+                    se.note = 'Type the level it should activate at.';
+                else
+                    local okM, whyM = ctx.sets.setEntryLevel(set, se.slot, i, lv, book);
+                    se.note = okM and ('Moved to Lv.%d.'):format(lv)
+                        or ('Cannot move: %s.'):format(whyM);
+                    se.bufs = {};
+                    break;                         -- the chain just re-sorted
+                end
+            end
+            kit.tip(im, 'Move this entry to the typed activation level.\nThe same rules as any add apply; a refused move\nchanges nothing.');
+            if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            if kit.litButton(im, ('Remove##bdxserem%d'):format(i), false,
+                kit.measure(im, { 'Remove' }, 60), 20) then
+                local okR, whyR = ctx.sets.removeEntry(set, se.slot, i, book);
+                se.note = okR and 'Removed.' or ('Cannot remove: %s.'):format(whyR);
+                se.bufs = {};
+                break;                             -- indices just shifted
+            end
+        end
+        if se.note then kit.wrapped(im, kit.COL.dim, se.note); end
+        if kit.litButton(im, 'Close', false, kit.measure(im, { 'Close' }, 54), 22) then
+            st.slotEdit = nil;
+        end
+    end
+    if ok then pcall(im.End); end
+    if se.open ~= nil and se.open[1] == false then st.slotEdit = nil; end
+end
+
+-- The slot row's right-click menu (Henrik 2026-08-10: "instead of removing
+-- the spell immediately, give a menu"). Opened by chainRow, rendered once
+-- per frame here at the planner's scope.
+slotRowMenu = function(ctx)
+    local im, st, book = ctx.im, ctx.state, ctx.book;
+    local sm = st.slotMenu;
+    if sm == nil then return; end
+    if not (kit.isFn(im, 'BeginPopup') and kit.isFn(im, 'EndPopup')) then return; end
+    local opened = false;
+    pcall(function() opened = im.BeginPopup('##bdxslotrowmenu'); end);
+    if not opened then return; end
+    local nm = (sm.id == 0) and 'the empty marker'
+        or ((book.spells[sm.id] and book.spells[sm.id].name) or ('#' .. tostring(sm.id)));
+    local okE, hitE = pcall(im.Selectable, 'Edit slot...');
+    if okE and hitE then
+        st.slotEdit = { slot = sm.slot };
+        st.slotMenu = nil;
+        pcall(im.CloseCurrentPopup);
+    end
+    kit.tip(im, 'The slot editor: move entry levels, remove, add.');
+    local okR, hitR = pcall(im.Selectable, kit.esc(('Remove %s'):format(nm)));
+    if okR and hitR then
+        local okD, whyD = ctx.sets.removeEntry(st.editingSet, sm.slot, sm.idx, book);
+        st.applyNote = okD and nil or ('Cannot remove: %s.'):format(whyD);
+        st.slotMenu = nil;
+        pcall(im.CloseCurrentPopup);
+    end
+    pcall(im.EndPopup);
 end
 
 local function rightPanel(ctx)
