@@ -73,6 +73,35 @@ FIELD_NOTES = {
          "AoE stun 10-15s, not subject to Anvil Lightning's level/NM scaling.",
 }
 
+# ---- WIKI-SOURCED values (bg-wiki, 2026-08-08) -----------------------------
+# The eight SoA burst spells' TRAITS. Henrik's call: the wiki is the
+# authority for everything but the level -- traits, MP cost etc. are the
+# same on CatsEyeXI. Each spell feeds its trait at weight 8 ("Job Trait (8)"
+# on every page). Stat bonuses were cross-checked the same day and MATCH the
+# 2026-08-04 field readings above, so FIELD_MODS stands as-is.
+#   719 Searing Tempest  -> Attack Bonus      (cat 8)
+#   720 Spectral Floe    -> Magic Atk. Bonus  (cat 6)
+#   721 Anvil Lightning  -> Accuracy Bonus    (cat 16)
+#   722 Entomb           -> Defense Bonus     (cat 11)
+#   725 Blinding Fulgor  -> Magic Eva. Bonus  (cat 29 -- wiki addendum below)
+#   726 Scouring Spate   -> Magic Def. Bonus  (cat 13)
+#   727 Silent Storm     -> Evasion Bonus     (cat 18)
+#   728 Tenebral Crush   -> Magic Acc. Bonus  (cat 30 -- wiki addendum below)
+WIKI_TRAITS = {
+    719: (8, 8), 720: (6, 8), 721: (16, 8), 722: (11, 8),
+    725: (29, 8), 726: (13, 8), 727: (18, 8), 728: (30, 8),
+}
+# Trait categories base-LSB's blue_traits.sql does not know (the June 2015
+# trait additions): the category ids 29/30 are BLUDEX-INTERNAL (they never
+# cross the wire -- traitEval sums per category locally), the traitIds are
+# LSB trait.h's TRAIT_MAGIC_ACC_BONUS=125 / TRAIT_MAGIC_EVA_BONUS=126, and
+# the tier VALUES follow the sibling bonus traits' +10 convention -- verify
+# the numbers against CEXI when a chance arises.
+WIKI_TRAIT_CATEGORIES = [
+    (29, "Magic Eva. Bonus", 126, [(8, [("MEVA", 10)])]),
+    (30, "Magic Acc. Bonus", 125, [(8, [("MACC", 10)])]),
+]
+
 warnings = []
 def warn(msg):
     warnings.append(msg)
@@ -519,6 +548,9 @@ def main():
             # base LSB carries no blue_spell_mods rows for the CatsEyeXI
             # custom spells; Spectral Floe proved they DO have stats in game
             verify.append("mods")
+        if sid in WIKI_TRAITS:
+            trait = WIKI_TRAITS[sid]
+            verify = [v for v in verify if v != "trait"]
         if unbridled:
             setpts = None
         if bl is None and stype == "Magical":
@@ -657,6 +689,20 @@ def main():
         T.append("M.categories[%d] = { name = %s, traitId = %d, tiers = { %s } }"
                  % (cat, lq(tname), tinfo["traitId"], ", ".join(tiers)))
     T.append("")
+    T.append("-- bg-wiki addendum (2026-08-08): the SoA burst spells' traits are absent")
+    T.append("-- from base-LSB blue_traits.sql. Category ids 29/30 are bludex-internal")
+    T.append("-- (never on the wire); traitIds are LSB trait.h; tier values follow the")
+    T.append("-- sibling bonus traits' +10 convention -- verify against CEXI.")
+    for cat, tname, tid, wtiers in WIKI_TRAIT_CATEGORIES:
+        tiers = []
+        for pts, mods_l in wtiers:
+            mods = ", ".join("{ stat = %s, value = %d }" % (lq(m), v)
+                             for m, v in mods_l)
+            tiers.append("{ points = %d, traitId = %d, mods = { %s } }" % (pts, tid, mods))
+        T.append("M.categories[%d] = { name = %s, traitId = %d, tiers = { %s } }"
+                 % (cat, lq(tname), tid, ", ".join(tiers)))
+        traitnames.setdefault(tid, tname)
+    T.append("")
     # A rung's own name, because a ladder is not always ONE trait: category 24
     # runs Double Attack then Triple Attack. Needed wherever a rung is named
     # on its own (attribution) rather than as "tier N of <category>".
@@ -664,6 +710,8 @@ def main():
     for tinfo in btraits.values():
         for tier in tinfo["tiers"].values():
             blue_ids.add(tier["traitId"])
+    for _, _, tid, _ in WIKI_TRAIT_CATEGORIES:
+        blue_ids.add(tid)
     T.append("-- each rung's OWN trait name (a ladder can change trait partway up)")
     for tid in sorted(blue_ids):
         T.append("M.traitNames[%d] = %s" % (tid, lq(traitnames.get(tid, "Trait %d" % tid))))

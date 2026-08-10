@@ -93,192 +93,6 @@ check(sets.slotsAtLevel(1) == 6 and sets.slotsAtLevel(10) == 6
     and sets.slotsAtLevel(75) == 20 and sets.slotsAtLevel(99) == 20,
     'slotsAtLevel follows the server rule (6 at 1-10, +2 per 10, cap 20)');
 
-print('smoke: level builds');
--- THE RUNGS: the two server rules (slots, base points) both step every ten
--- levels from 1, so eight bands cover the whole job and one build serves a
--- whole band. 71 is the last -- it runs to the 75 cap.
-check(#sets.LEVELS == 8 and sets.LEVELS[1] == 1 and sets.LEVELS[8] == 71
-    and sets.TOP == 71, 'eight rungs, 1 through 71');
-local rungOk = true;
-for _, lvl in ipairs(sets.LEVELS) do
-    if sets.rungFor(lvl) ~= lvl then rungOk = false; end
-    -- every level in a band answers the same rung, the same slots, the same base
-    for l = lvl, sets.bandTop(lvl) do
-        if sets.rungFor(l) ~= lvl then rungOk = false; end
-        if sets.slotsAtLevel(l) ~= sets.slotsAtLevel(lvl) then rungOk = false; end
-        if sets.baseCapAtLevel(l) ~= sets.baseCapAtLevel(lvl) then rungOk = false; end
-    end
-end
-check(rungOk, 'every level in a band shares its rung, its slots and its base');
-check(sets.rungFor(40) == 31 and sets.rungFor(75) == 71 and sets.rungFor(1) == 1,
-    'rungFor: 40 -> 31, 75 -> 71, 1 -> 1');
-check(sets.rungFor(nil) == nil and sets.rungFor(0) == nil, 'no level, no rung');
-check(sets.bandTop(41) == 50 and sets.bandTop(71) == 75, 'bands: 41-50, 71-75');
-check(sets.levelForSlot(6) == 1 and sets.levelForSlot(7) == 11
-    and sets.levelForSlot(14) == 41 and sets.levelForSlot(20) == 71,
-    'levelForSlot inverts slotsAtLevel');
-local invOk = true;
-for i = 1, 20 do
-    local l = sets.levelForSlot(i);
-    if sets.slotsAtLevel(l) < i then invOk = false; end
-    if l > 1 and sets.slotsAtLevel(l - 1) >= i then invOk = false; end
-end
-check(invOk, 'levelForSlot is the LOWEST level holding that slot');
-
--- a tier knows its own ceiling: a Lv.41 draft stops at fourteen slots
-local t1 = sets.new('Mid', 41);
-check(sets.slotMax(t1) == 14 and sets.slotMax(sets.new('High')) == 20,
-    'slotMax follows the build level (a level-less build keeps all 20)');
-for _, id in ipairs(book.filter({})) do sets.add(t1, id, book, 999); end
-check(sets.count(t1) == 14, 'a Lv.41 build fills fourteen slots and no more');
-check((select(2, sets.add(t1, 623, book, 999))):find('Lv.41 has 14') ~= nil,
-    'and says which level ran out of slots');
--- the band ceiling: a Lv.41 build reaches level 50, so nothing above it fits
-local highId, highLvl = nil, nil;
-for _, id in ipairs(book.filter({})) do
-    local s = book.spells[id];
-    if highId == nil and s.level ~= nil and s.level > 50 then highId, highLvl = id, s.level; end
-end
-check(highId ~= nil, 'the data has a spell above level 50 to test the band with');
-check((select(2, sets.add(sets.new('Mid', 41), highId, book, 999))):find('stops at 50') ~= nil,
-    'a Lv.41 build refuses a spell its band cannot cast');
-check(sets.add(sets.new('Top', 71), highId, book, 999),
-    ('and the top band takes it (Lv.%d, it reaches 75)'):format(highLvl));
-
--- A SAVED SET: its flat build, plus a build per level band under it. `level
--- nil` addresses the flat one everywhere -- it is a real answer, not a
--- missing one, and it is what a set stays until someone builds a level.
-local g = sets.newGroup('Solo');
-check(#g.builds == 0 and sets.groupTop(g) == nil and sets.countIds(g.ids) == 0,
-    'a new set has an empty flat build and no level builds');
-sets.groupPut(g, nil, { 623, 513, 549 });
-check(sets.countIds(sets.groupIds(g, nil)) == 3 and #g.builds == 0,
-    'writing the flat build adds no level builds');
-sets.groupPut(g, 71, { 623, 513 });
-sets.groupPut(g, 41, { 623 });
-check(#g.builds == 2 and g.builds[1].level == 41 and g.builds[2].level == 71,
-    'level builds sort ascending');
-check(sets.countIds(sets.groupIds(g, 71)) == 2
-    and sets.countIds(sets.groupIds(g, 51)) == 0,
-    'an unbuilt band reads as twenty zeros, not nil');
-check(sets.countIds(sets.groupIds(g, nil)) == 3, 'and the flat build is untouched');
-check(sets.groupTop(g) == 71 and #sets.groupLevels(g) == 2, 'levels and top');
-sets.groupPut(g, 41, {});
-check(#g.builds == 2 and sets.groupBuild(g, 41) ~= nil,
-    'emptying a level build is not the same as not having one -- it stays');
-check(sets.groupRemove(g, 41) and #g.builds == 1 and sets.groupBuild(g, 41) == nil,
-    'only Remove takes a band away');
-check(not sets.groupRemove(g, 41), 'and removing one twice is not an error');
-sets.groupPut(g, nil, {});
-check(g.ids ~= nil and sets.countIds(g.ids) == 0,
-    'the flat build always exists, empty or not -- it is the set itself');
-
--- BANDS ARE ADDED ON PURPOSE: a set has the levels you gave it, none to start
-check(sets.groupAdd(g, 41) and sets.groupBuild(g, 41) ~= nil
-    and sets.countIds(sets.groupIds(g, 41)) == 0,
-    'groupAdd gives the set an empty band to build in');
-check(not sets.groupAdd(g, 41), 'adding a band it already has does nothing');
-check(not sets.groupAdd(g, 45) and not sets.groupAdd(g, nil),
-    'and only real bands can be added');
-local free = sets.groupFree(g);
-check(#free == #sets.LEVELS - 2 and free[1] == 1,
-    'groupFree offers exactly the bands not added yet');
-sets.groupPut(g, nil, { 623 });                -- something to fall back to
-check(sets.groupPick(g, 45) == nil,
-    'an EMPTY band is not a build to pick -- it means "not yet", not "wear nothing"');
-sets.groupRemove(g, 41);
--- THE SELECTION RULE (Henrik 2026-08-06, after walking out of a sync still
--- wearing the Lv.31 build): the band's OWN build, otherwise THE FLAT BUILD.
--- A level build serves its band and NOWHERE else -- it must not fill forward.
-sets.groupPut(g, nil, { 623, 513 });           -- a flat build to fall back on
-sets.groupPut(g, 21, { 623 });
-check(sets.groupPick(g, 25) == 21, 'the band you stand in wins');
-check(sets.groupPick(g, 75) == 71, 'and so does the top band, with a build');
-sets.groupPut(g, 71, {});                      -- drop the 71 build again
-check(sets.groupPick(g, 75) == nil and sets.groupPick(g, 45) == nil,
-    'no build for this band -> the FLAT build, not the nearest below');
-check(sets.groupPick(g, 21) == 21, 'the built band still answers for itself');
--- the one exception: a set with an empty flat build has no backup to give
-sets.groupPut(g, nil, {});
-check(sets.groupPick(g, 45) == 21 and sets.groupPick(g, 5) == 21,
-    'with nothing flat to fall back on, the nearest build beats nothing at all');
-sets.groupPut(g, nil, { 623 });
-check(sets.groupPick(g, 45) == nil, 'and the flat build takes over the moment it exists');
-check(sets.groupPick(sets.newGroup('x'), 75) == nil,
-    'a set with no level builds always answers flat');
-
--- COPY: how a flat set becomes a level one, and how a build carries upward.
--- Keeps what the band can hold -- lowest spell levels first, nothing above
--- what it can cast, no more than its slots -- and lets the POINTS overflow,
--- because trimming is the player's call.
-local wide = {};
-for i, id in ipairs(book.filter({})) do if i <= 20 then wide[i] = id; end end
-local into41, rep41 = sets.copyInto(wide, 41, book);
-check(sets.countIds(into41) == 14 and rep41.taken == 14,
-    'a copy into Lv.41 fills its fourteen slots');
-local levelsOk, prev = true, 0;
-for i = 1, sets.countIds(into41) do
-    local s = book.spells[into41[i]];
-    if s.level < prev then levelsOk = false; end
-    if s.level > 50 then levelsOk = false; end
-    prev = s.level;
-end
-check(levelsOk, 'lowest levels first, and nothing its band cannot cast');
-check(rep41.tooHigh > 0 and rep41.tooHigh + rep41.noSlot + rep41.taken == 20,
-    'and every spell is accounted for: taken + too high + no slot');
-local into1 = sets.copyInto(wide, 1, book);
-check(sets.countIds(into1) <= 6, 'a copy into Lv.1 cannot exceed six slots');
-check(sets.countIds(sets.copyInto(wide, nil, book)) == 20,
-    'copying into the flat build keeps all twenty');
-check(sets.copyInto({}, 41, book) ~= nil and sets.countIds(sets.copyInto({}, 41, book)) == 0,
-    'copying nothing is not an error');
-
--- THE LEVEL-CHANGE RULE BELONGS TO THE SET (Henrik 2026-08-07), and unset it
--- is DERIVED from the set's shape -- so the default follows what you build
--- rather than being flipped behind your back. A stored choice stands.
-local r = sets.newGroup('Rules');
-check(sets.ruleOf(r) == 'restore', 'a flat set restores');
-sets.groupAdd(r, 41);
-check(sets.ruleOf(r) == 'switch', 'give it a level and it switches between them');
-check(sets.setRule(r, 'manual') and sets.ruleOf(r) == 'manual', 'a stored choice wins');
-sets.groupAdd(r, 71);
-check(sets.ruleOf(r) == 'manual', 'and keeps winning as the set grows');
-check(not sets.setRule(r, 'nonsense') and sets.ruleOf(r) == 'manual',
-    'an unknown rule is refused, not stored');
-r.rule = 'nonsense';                           -- as if hand-edited into the file
-sets.normalizeGroup(r);
-check(r.rule == nil and sets.ruleOf(r) == 'switch',
-    'and one that got in anyway is dropped back to derived');
-check(sets.ruleOf(nil) == 'restore', 'no set, no rule to run');
-
--- NOTHING IS MIGRATED (Henrik 2026-08-06): a set saved before level builds
--- existed is a flat set and stays one.
-local legacy = sets.normalizeGroup({ name = 'Old', ids = { 623, 0, 513 } });
-check(#legacy.builds == 0 and legacy.ids[1] == 623 and legacy.ids[3] == 513,
-    'a flat { name, ids } set keeps its spells flat, with no level builds');
-check(sets.groupIds(legacy, nil)[1] == 623 and sets.groupIds(legacy, 71)[1] == 0,
-    'and reads back as the flat build, not as a Lv.71 one');
-local blank = sets.normalizeGroup({ name = 'Blank' });
-check(#blank.builds == 0 and #blank.ids == 20 and sets.countIds(blank.ids) == 0,
-    'an entry with no ids at all still normalizes to twenty zeros');
-local twice = sets.normalizeGroup(sets.normalizeGroup({ name = 'Old', ids = { 623 } }));
-check(#twice.builds == 0 and twice.ids[1] == 623,
-    'normalizeGroup is idempotent (the UI runs it over every row it draws)');
-local messy = sets.normalizeGroup({ name = 'Hand', ids = {}, builds = {
-    { level = 45, ids = { 623 } },            -- not a band start: snapped to 41
-    { level = 41, ids = { 513 } },            -- so this one is the duplicate
-    { level = 71, ids = {} },                 -- empty, but added on purpose: KEPT
-    { level = 0,  ids = { 549 } },            -- no such band: dropped
-} });
-check(#messy.builds == 2 and messy.builds[1].level == 41
-    and messy.builds[1].ids[1] == 623 and messy.builds[2].level == 71,
-    'a hand-edited file is snapped to bands and deduped, empties kept');
-check(sets.usableFrom(sets.groupIds(legacy, nil), book)
-    == math.max(book.spells[623].level, book.spells[513].level),
-    'usableFrom reports the highest spell level in a build');
-check(sets.usableFrom(sets.groupIds(sets.newGroup('x'), nil), book) == nil,
-    'and nothing for an empty one');
-
 -- the server's base point rule, bracket by bracket (Henrik's table,
 -- 2026-08-06; blueutils.cpp clamp(((lvl-1)/10)*5+10, 0, 55))
 local BASE_BRACKETS = {
@@ -486,28 +300,6 @@ check(blu.expectedCap(75) == 79, 'Lv75 = 45 base + 24 learned + 10 merits');
 check(sets.baseCapAtLevel(74) == sets.baseCapAtLevel(75), '74 and 75 share a base');
 check(blu.expectedCap(75) - blu.expectedCap(74) == 10,
     'merits switch on at 75 and account for the entire step');
--- THE RUNG BUDGET: what one level tier is planned against. Every rung uses
--- its own level -- except the top one, which runs 71-75 and is planned at 75,
--- where the merits switch on. Henrik's numbers: 24 bonus, five merits.
-check(blu.rungCap(1) == 34, 'Lv.1 rung: 10 base + 24 learned = 34 (his example)');
-check(blu.rungCap(41) == 54 and blu.rungCap(61) == 64, 'Lv.41 -> 54, Lv.61 -> 64');
-check(blu.rungCap(71) == 79, 'the top rung is planned at 75: 45 + 24 + 10 = 79');
-check(select(2, blu.rungCap(41)) == 'model', 'and says the model answered');
-local rungLadderOk = true;
-for i = 2, #sets.LEVELS do
-    if blu.rungCap(sets.LEVELS[i]) <= blu.rungCap(sets.LEVELS[i - 1]) then
-        rungLadderOk = false;
-    end
-end
-check(rungLadderOk, 'the ladder climbs at every rung');
--- with nothing measured the rung still answers -- with the server's base rule,
--- flagged as the FLOOR it is rather than passed off as the total
-blu.learnedBonus, blu.meritPts = nil, nil;
-local baseCap, baseSrc = blu.rungCap(41);
-check(baseCap == 30 and baseSrc == 'base', 'unmeasured: the base rule, flagged base');
-check(blu.rungCap(nil) == nil, 'and no rung at all answers nothing');
-blu.learnedBonus, blu.meritPts = 24, 10;
-
 -- unknowns must answer nil, never a confident wrong number
 blu.learnedBonus, blu.meritPts = 24, nil;
 check(blu.expectedCap(40) == 49, 'bonus alone still answers below 75');
@@ -524,6 +316,259 @@ blu.learnedBonus, blu.meritPts = nil, nil;
 -- budget rules sanity
 check(book.traits.rules.assimilationPerMerit == 2, 'field: +2 per Assimilation merit');
 check(book.traits.rules.expectedTotalAt75 == 80, 'field: expected total 80');
+
+print('smoke: SoA burst spell traits (bg-wiki 2026-08-08)');
+-- Henrik's call: the wiki is authoritative for everything but the level;
+-- traits, MP etc. are the same on CatsEyeXI. Each spell feeds weight 8.
+check(book.spells[719].trait.category == 8 and book.spells[719].trait.weight == 8,
+    'Searing Tempest feeds Attack Bonus at weight 8');
+check(book.spells[720].trait.category == 6, 'Spectral Floe feeds Magic Atk. Bonus');
+check(book.spells[721].trait.category == 16, 'Anvil Lightning feeds Accuracy Bonus');
+check(book.spells[722].trait.category == 11, 'Entomb feeds Defense Bonus');
+check(book.spells[725].trait.category == 29, 'Blinding Fulgor feeds Magic Eva. Bonus');
+check(book.spells[726].trait.category == 13, 'Scouring Spate feeds Magic Def. Bonus');
+check(book.spells[727].trait.category == 18, 'Silent Storm feeds Evasion Bonus');
+check(book.spells[728].trait.category == 30, 'Tenebral Crush feeds Magic Acc. Bonus');
+check(book.traits.categories[29] ~= nil and book.traits.categories[29].name == 'Magic Eva. Bonus'
+    and book.traits.categories[29].tiers[1].points == 8
+    and book.traits.categories[29].traitId == 126,
+    'the Magic Eva. Bonus addendum ladder exists (trait.h 126, tier at 8)');
+check(book.traits.categories[30] ~= nil and book.traits.categories[30].traitId == 125,
+    'the Magic Acc. Bonus addendum ladder exists (trait.h 125)');
+local soa = sets.new('SoA');
+check(sets.add(soa, 720, book, 99), 'Spectral Floe joins a set');
+local mab = nil;
+for _, ev in ipairs(sets.traitEval(soa, book)) do
+    if ev.cat == 6 then mab = ev; end
+end
+check(mab ~= nil and mab.tier ~= nil,
+    'one SoA spell activates its trait outright (weight 8 clears the tier)');
+local hasFloe = false;
+for _, id in ipairs(book.filter({ traitCat = 6 })) do
+    if id == 720 then hasFloe = true; end
+end
+check(hasFloe, 'the trait filter finds Spectral Floe under Magic Atk. Bonus');
+
+print('smoke: timeline chains (docs/timeline-sets-plan.md)');
+-- the bracket rule, and its agreement with the server's slot count at
+-- EVERY level -- the two must never drift (slots open AT 11/21/../71)
+check(sets.bracketFloor(1) == 1 and sets.bracketFloor(6) == 1
+    and sets.bracketFloor(7) == 11 and sets.bracketFloor(8) == 11
+    and sets.bracketFloor(9) == 21 and sets.bracketFloor(19) == 71
+    and sets.bracketFloor(20) == 71, 'bracketFloor: 1-6 open, pairs at x1 levels');
+local agree = true;
+for L = 1, 75 do
+    local open = 0;
+    for slot = 1, 20 do
+        if sets.bracketFloor(slot) <= L then open = open + 1; end
+    end
+    if open ~= sets.slotsAtLevel(L) then agree = false; end
+end
+check(agree, 'bracketFloor agrees with slotsAtLevel at every level 1-75');
+local br = sets.brackets();
+check(#br == 8 and #br[1].slots == 6 and br[2].floor == 11 and br[8].floor == 71,
+    'brackets(): 6 slots at 1, seven pairs after');
+
+-- a new set is v2; a v1 set upgrades by SORTED placement (the migration is
+-- the sorted apply layout made visible: lowest level in the lowest slot)
+local v2 = sets.new('V2');
+check(v2.builtFor == 75 and v2.chains ~= nil and #v2.chains[1] == 0,
+    'new sets carry builtFor 75 and empty chains');
+check(sets.upgrade(v2, book) == false, 'upgrade is a no-op on a fresh v2 set');
+local v1 = { name = 'Old', ids = {} };
+for i = 1, 20 do v1.ids[i] = 0; end
+v1.ids[3] = 529;      -- Bludgeon 18
+v1.ids[9] = 603;      -- Wild Oats 4
+check(sets.upgrade(v1, book) == true, 'a flat set migrates');
+check(v1.chains[1][1].id == 603 and v1.chains[1][1].from == 4
+    and v1.chains[2][1].id == 529 and v1.chains[2][1].from == 18,
+    'migration sorts lowest level into the lowest slot, from = spell level');
+check(v1.ids[1] == 603 and v1.ids[2] == 529 and v1.ids[3] == 0,
+    'the ids mirror re-derives as the level-75 resolution');
+check(sets.isFlat(v1, book), 'a migrated set is flat (no timeline chrome)');
+
+-- the Wild Oats -> Bludgeon -> empty chain, Henrik's founding example
+local tl = sets.new('Leveling');
+check(sets.addEntry(tl, 1, 603, nil, book), 'Wild Oats joins slot 1 at its own level');
+local okB = sets.addEntry(tl, 1, 529, nil, book);
+check(okB, 'Bludgeon stacks on the same chain at 18');
+check(not sets.isFlat(tl, book), 'a stacked chain is not flat');
+local lo1, hi1 = sets.entryRange(tl, 1, 1);
+local lo2, hi2 = sets.entryRange(tl, 1, 2);
+check(lo1 == 4 and hi1 == 17 and lo2 == 18 and hi2 == 75,
+    'ranges: Wild Oats 4-17, Bludgeon 18-75');
+check(sets.resolveAtLevel(tl, 3, book)[1] == 0
+    and sets.resolveAtLevel(tl, 17, book)[1] == 603
+    and sets.resolveAtLevel(tl, 18, book)[1] == 529,
+    'resolve: nothing at 3, Wild Oats at 17, Bludgeon from 18');
+check(sets.addEntry(tl, 1, 0, 45, book), 'the slot goes deliberately empty at 45');
+local _, hi2b = sets.entryRange(tl, 1, 2);
+check(hi2b == 44 and sets.resolveAtLevel(tl, 44, book)[1] == 529
+    and sets.resolveAtLevel(tl, 45, book)[1] == 0,
+    'the empty marker ends Bludgeon at 44');
+check(sets.count(tl) == 2, 'count = spell entries, markers not counted');
+check(sets.contains(tl, 603) == 1, 'contains sees the RETIRED Wild Oats (assigned anywhere)');
+
+-- entry validation: the gates the picker shows as reasons
+check(select(2, sets.addEntry(tl, 1, 529, 18, book)) == 'another entry already activates at Lv.18',
+    'equal activation levels cannot coexist');
+check(select(2, sets.addEntry(tl, 2, 529, 10, book)) == 'cannot activate before its level (18)',
+    'a spell cannot activate before its own level');
+check(select(2, sets.addEntry(tl, 2, 0, 30, book)) == 'the slot is already empty',
+    'an empty marker needs a chain to end');
+check(select(2, sets.addEntry(tl, 1, 0, 50, book)) == 'already empty from Lv.45',
+    'empty on empty says so');
+check(select(2, sets.addEntry(tl, 1, 737, nil, book)) == 'Unbridled spells cannot be set',
+    'the unbridled gate holds for chain entries');
+
+-- the one-place-at-a-time rule and the EXTENSION GUARD (plan 2.4): the
+-- retired Wild Oats may return in another slot at 30 -- and from then on,
+-- removing Bludgeon would stretch slot 1's Wild Oats over 30+, so that
+-- removal is refused with the collision named, never silently absorbed
+check(sets.addEntry(tl, 2, 603, 30, book), 'Wild Oats re-added at 30 in another slot (ranges disjoint)');
+check(select(2, sets.addEntry(tl, 3, 603, 50, book)) == 'already active at Lv.30-75 in another slot',
+    'a third overlapping placement is refused');
+local okRm, whyRm = sets.removeEntry(tl, 1, 2, book);
+check(okRm == false and whyRm == 'Wild Oats would then be active twice (already Lv.30-75 elsewhere)',
+    'the extension guard: removing Bludgeon is refused while Wild Oats lives at 30');
+check(sets.removeEntry(tl, 2, 1, book), 'the 30+ placement removes cleanly');
+check(sets.removeEntry(tl, 1, 2, book), 'and now Bludgeon can go');
+check(sets.resolveAtLevel(tl, 30, book)[1] == 603 and sets.resolveAtLevel(tl, 45, book)[1] == 0,
+    'Wild Oats stretches to 44, the empty marker still ends the chain');
+
+-- the DEAD-ENTRY guard: a high-bracket slot floors every entry, and an
+-- insert may not shadow a neighbor into never existing
+local hb = sets.new('HighBracket');
+check(sets.addEntry(hb, 9, 603, nil, book), 'Wild Oats in a 21+ slot is legal');
+local lo9 = sets.entryRange(hb, 9, 1);
+check(lo9 == 21, 'but it activates at the slot floor, not its level');
+check(select(2, sets.addEntry(hb, 9, 529, nil, book)) == 'Wild Oats would never be active in this slot',
+    'an insert may not shadow a floored neighbor to death');
+check(sets.addEntry(hb, 10, 529, 21, book), 'Bludgeon at the floor of its own slot is fine');
+check(select(2, sets.addEntry(hb, 10, 603, nil, book)) == 'never active here (the slot unlocks at Lv.21)',
+    'a below-floor insert that never activates says why');
+
+-- removeId clears every placement; clearChain and removeSlot clear one
+sets.removeId(tl, 603);
+check(sets.contains(tl, 603) == nil, 'removeId clears every placement of the spell');
+local rmm = sets.new('RM');
+check(sets.addEntry(rmm, 1, 529, nil, book) and sets.addEntry(rmm, 1, 603, 30, book),
+    'mirror fixture builds (Bludgeon 18-29, Wild Oats 30-75)');
+sets.removeId(rmm, 603);
+check(rmm.ids[1] == 529,
+    'removeId re-derives the mirror: the exposed predecessor returns at 75 (review)');
+sets.clearChain(hb, 9, book);
+check(#hb.chains[9] == 0 and sets.contains(hb, 603) == nil, 'clearChain empties one slot');
+
+-- the convenience add: a new chain in the lowest free slot (floors ascend,
+-- so the first free slot is the earliest-activating home)
+local qa = sets.new('Quick');
+check(sets.add(qa, 529, book, 80), 'add() lands the spell as a new chain');
+check(qa.chains[1][1].id == 529 and qa.chains[1][1].from == 18, 'in slot 1 at its own level');
+check(select(2, sets.add(qa, 529, book, 80)) == 'already in set', 'duplicates still refused');
+
+-- the BAND SWEEP (plan 2.6): whole-curve point validation with a stub
+-- book, so the arithmetic is pinned exactly
+local stub = { spells = {
+    [900] = { setPoints = 10, level = 1 },
+    [901] = { setPoints = 10, level = 15 },
+    [902] = { setPoints = 5,  level = 1 },
+}, learned = function() return true; end };
+local bandSet = sets.new('Bands');
+bandSet.chains[1] = { { id = 900, from = 1 } };
+bandSet.chains[2] = { { id = 902, from = 1 } };
+bandSet.chains[3] = { { id = 901, from = 15 } };
+sets.syncLegacyIds(bandSet, stub);
+local baseFn = function(L) return sets.baseCapAtLevel(L); end
+local bands = sets.bandViolations(bandSet, stub, baseFn);
+check(#bands == 2, 'two violation bands against the base rule');
+check(bands[1].lo == 1 and bands[1].hi == 10 and bands[1].over == 5,
+    'band 1: 15 pts vs 10 at levels 1-10');
+check(bands[2].lo == 15 and bands[2].hi == 30 and bands[2].over == 10,
+    'band 2: 25 pts vs 15/20 merges over 15-30 at its worst (10 over)');
+check(not bands[1].enforced and not bands[2].enforced,
+    'builtFor 75: nothing below it is enforced');
+check(#sets.enforcedViolations(bandSet, stub, baseFn) == 0,
+    'an endgame set with low-level noise blocks nothing');
+bandSet.builtFor = 1;
+local bands2 = sets.bandViolations(bandSet, stub, baseFn);
+check(bands2[1].enforced and bands2[2].enforced, 'builtFor 1 enforces the whole curve');
+check(#sets.enforcedViolations(bandSet, stub, baseFn) == 2, 'and both bands now block');
+check(sets.bandText(bands2[2]) == 'Between level 15 and 30, you are up to 10 point(s) above threshold',
+    'the band message is the plan\'s, with "up to" when the overage varies inside');
+check(sets.bandText(bands2[1]) == 'Between level 1 and 10, you are 5 point(s) above threshold',
+    'a constant band states its overage plainly');
+local prov = sets.bandViolations(bandSet, stub, function() return nil; end);
+check(prov[1].provisional and #sets.enforcedViolations(bandSet, stub, function() return nil; end) == 0,
+    'an unknown budget makes bands provisional -- warned, never blocking');
+-- the merit cliff: a maxed 75 set (79 pts) is over at EVERY level below 75
+-- (merits count only at 75) -- REAL math, but builtFor 75 keeps it all
+-- un-enforced: the false positive that shaped the builtFor rule. At
+-- builtFor 71 the 71-74 stretch becomes the set's own problem and blocks.
+local cliff = sets.new('Cliff');
+cliff.chains[1] = { { id = 900, from = 1 } };
+sets.syncLegacyIds(cliff, stub);
+local cliffFn = function(L)                     -- bonus 24 known, merits 10 at 75
+    local c = sets.baseCapAtLevel(L) + 24;
+    if L >= 75 then c = c + 10; end
+    return c;
+end
+stub.spells[900].setPoints = 79;
+local cbands = sets.bandViolations(cliff, stub, cliffFn);
+check(#cbands == 1 and cbands[1].lo == 1 and cbands[1].hi == 74
+    and cbands[1].over == 45 and cbands[1].overMin == 10 and not cbands[1].enforced,
+    'a maxed 75 set is over everywhere below 75 -- one un-enforced band');
+check(sets.bandText(cbands[1]) == 'Between level 1 and 74, you are up to 45 point(s) above threshold',
+    'a varying band says "up to" instead of overstating');
+check(#sets.enforcedViolations(cliff, stub, cliffFn) == 0,
+    'a maxed endgame set stays appliable (nothing at/above builtFor 75)');
+cliff.builtFor = 71;
+local cbands2 = sets.bandViolations(cliff, stub, cliffFn);
+check(#cbands2 == 2 and cbands2[2].lo == 71 and cbands2[2].hi == 74
+    and cbands2[2].over == 10 and cbands2[2].enforced,
+    'builtFor 71 splits the band at the boundary and enforces the merit cliff');
+check(#sets.enforcedViolations(cliff, stub, cliffFn) == 1,
+    'a set that claims 71-75 really must fit at 71-74');
+stub.spells[900].setPoints = 10;
+
+-- equality, cloning, backups
+local eqA = sets.new('Eq');
+sets.addEntry(eqA, 1, 603, nil, book);
+local eqB = sets.clone(eqA, 'Eq');
+check(sets.equal(eqA, eqB), 'a clone is equal');
+sets.addEntry(eqB, 1, 529, nil, book);
+check(not sets.equal(eqA, eqB), 'an added entry breaks equality');
+eqB.chains[1][2] = nil;
+sets.syncLegacyIds(eqB, book);
+eqB.builtFor = 40;
+check(not sets.equal(eqA, eqB), 'builtFor is authorship (compared)');
+eqB.builtFor = 75;
+check(sets.equal(eqA, eqB), 'and back');
+for i = 1, 7 do
+    sets.pushBackup(eqA, eqB, 1000 + i);
+end
+check(#eqA.backups == sets.BACKUP_CAP and eqA.backups[1].ts == 1007,
+    'backups cap at 5, newest first');
+local rb = sets.new('RB');
+sets.addEntry(rb, 1, 603, nil, book);
+sets.pushBackup(rb, rb, 1);
+sets.addEntry(rb, 1, 529, nil, book);
+check(sets.restoreBackup(rb, 1, book, 2), 'restore returns true');
+check(#rb.chains[1] == 1 and rb.chains[1][1].id == 603, 'restore brings the old chain back');
+check(rb.backups[1].ts == 2 and #rb.backups[1].chains[1] == 2,
+    'and the pre-restore state was banked first (restore is undoable)');
+local cl = sets.clone(rb, 'CL');
+cl.chains[1][1].from = 10;
+check(rb.chains[1][1].from == 4, 'clone is deep (chains detached)');
+
+-- fromIds (Read current / blusets import) and the legacy resolve fallback
+local fi = sets.fromIds('Imported', { [1] = 529, [2] = 603 }, book);
+check(fi.chains[1][1].id == 603 and fi.chains[2][1].id == 529,
+    'fromIds sorts like the migration');
+local legacy = { name = 'L', ids = { [1] = 529 } };
+check(sets.resolveAtLevel(legacy, 75, book)[1] == 529
+    and sets.resolveAtLevel(legacy, 17, book)[1] == 0,
+    'an un-upgraded set still resolves (built on the fly)');
 
 print('smoke: sorted apply layout');
 local slIds = { 623, 513, 0, 719 };   -- Head Butt, Sandspin, empty, Searing Tempest
@@ -584,184 +629,13 @@ check(sawFusion, 'Burning Blade -> Head Butt closes Fusion');
 check(sc.LEVEL['Darkness II'] == 4 and sc.ELEMENTS.Fusion == 'Fire/Light',
     'level + burst-element tables');
 
-print('smoke: the Sets tab actions');
--- setsui owns the verbs (the tab buttons and the window header share them),
--- and none of Save / Revert / load touches imgui -- so the whole state
--- machine runs here. This is the net under the one promise that matters:
--- editing a LEVEL build must never disturb the flat set it sits under.
-local setsui = require('bludex\\ui\\setsui');
-local saves = 0;
-local sctx = {
-    sets = sets, book = book,
-    cfg = { sets = {}, activeSetName = '', activeSetLevel = 0 },
-    state = { editingSet = sets.new('Solo'), activeSet = nil, activeLevel = nil },
-    save = function() saves = saves + 1; end,
-};
-sets.add(sctx.state.editingSet, 623, book, 999);
-sets.add(sctx.state.editingSet, 513, book, 999);
-check(setsui.unsaved(sctx), 'a new set with spells in it is unsaved');
-setsui.saveEditing(sctx);
-check(#sctx.cfg.sets == 1 and sets.countIds(sctx.cfg.sets[1].ids) == 2
-    and #sctx.cfg.sets[1].builds == 0,
-    'saving a flat build makes a flat set -- no level builds invented');
-check(not setsui.unsaved(sctx) and sctx.cfg.activeSetLevel == 0,
-    'saved and clean, and the flat build is what is remembered');
-
-setsui.loadBuild(sctx, 1, 41);
-check(sctx.state.editingSet.level == 41 and sets.count(sctx.state.editingSet) == 0
-    and sets.slotMax(sctx.state.editingSet) == 14,
-    'clicking a level opens an empty build with that level\'s slots');
-check(not setsui.unsaved(sctx), 'an unbuilt level is not "unsaved changes"');
-sets.add(sctx.state.editingSet, 623, book, 999);
-check(setsui.unsaved(sctx), 'and adding to it is');
-setsui.saveEditing(sctx);
-check(#sctx.cfg.sets == 1 and #sctx.cfg.sets[1].builds == 1
-    and sctx.cfg.sets[1].builds[1].level == 41,
-    'saving it adds the level build to the same set');
-check(sets.countIds(sctx.cfg.sets[1].ids) == 2,
-    'AND LEAVES THE FLAT BUILD ALONE -- nothing was migrated into a level');
-check(sctx.cfg.activeSetLevel == 41, 'the level being edited is remembered');
-
-sets.add(sctx.state.editingSet, 513, book, 999);
-setsui.revertEditing(sctx);
-check(sets.count(sctx.state.editingSet) == 1 and sctx.state.editingSet.level == 41,
-    'Revert restores THIS level build, and stays on it');
-setsui.loadBuild(sctx, 1, nil);
-check(sctx.state.editingSet.level == nil and sets.count(sctx.state.editingSet) == 2
-    and sets.slotMax(sctx.state.editingSet) == 20,
-    'the set name row opens the flat build again, all 20 slots');
-
-sctx.state.editingSet.name = 'Solo DD';
-setsui.saveEditing(sctx);
-check(sctx.cfg.sets[1].name == 'Solo DD' and #sctx.cfg.sets[1].builds == 1,
-    'the name box renames the whole set, level builds and all');
-setsui.loadBuild(sctx, 1, 41);
-sets.clear(sctx.state.editingSet);
-setsui.saveEditing(sctx);
-check(#sctx.cfg.sets[1].builds == 1 and sets.countIds(sctx.cfg.sets[1].ids) == 2,
-    'clearing a level build empties it but keeps it -- Remove is what drops it');
-check(sets.groupPick(sctx.cfg.sets[1], 45) == nil,
-    'and an emptied band falls back to the flat build like an unbuilt one');
-sets.groupRemove(sctx.cfg.sets[1], 41);
-check(#sctx.cfg.sets[1].builds == 0 and sets.countIds(sctx.cfg.sets[1].ids) == 2,
-    'Remove drops the band, flat build untouched');
-check(saves > 0, 'every one of those persisted');
-
-print('smoke: the level-change rule');
--- The one rule that sends packets on its own, so it is driven end to end here
--- with a stub client. What it must get right: fire only when the level crosses
--- into a band THAT HAS ITS OWN BUILD, equip that, and stay silent otherwise --
--- a band change that costs a 60s cast lock for no reason is the failure that
--- matters. Everywhere else Lvl Set Switch behaves as Restore does, adds-only,
--- which is the restoreMissing path and not this one.
-local host = require('bludex\\ui\\host');
-local fake;                      -- declared first: the stubs close over it
-fake = {
-    level = 75, live = {}, applied = nil, says = {}, applying = false,
-    watchCap = function() end,
-    watchJobState = function() return nil; end,
-    effectiveLevel = function() return fake.level; end,
-    canApply = function() return true; end,
-    currentSet = function() return fake.live; end,
-    say = function(s) fake.says[#fake.says + 1] = s; end,
-    applyDiff = function(ids) fake.applied = ids; return true; end,
-    -- the adds-only path Restore (and Lvl Set Switch, off a band build) uses
-    restoreMissing = function(ids) fake.restored = ids; return true; end,
-    reportLevelDown = function() end,
-};
-for i = 1, 20 do fake.live[i] = 0; end
-local fcfg = {
-    sets = {},
-    lastApplied = {}, lastAppliedSet = 'Solo',
-    capModelVer = 3, capLearnedBonus = 24, capMeritPoints = 10,
-    activeSetName = '', activeSetLevel = 0,
-};
-local flat = {}; for i = 1, 20 do flat[i] = 0; end
-flat[1] = 623; flat[2] = 513;                      -- the flat build: 2 spells
-local low  = {}; for i = 1, 20 do low[i] = 0; end
-low[1] = 549;                                      -- the Lv.31 build: 1 spell
-fcfg.sets[1] = { name = 'Solo', ids = flat, builds = { { level = 31, ids = low } } };
-host.init({ book = book, blu = fake, sets = sets, cfg = fcfg, save = function() end });
-
-local function tickNow()                           -- fire any pending check now
-    host.tick();
-    if host.switchCheck ~= nil then host.switchCheck = 0; host.tick(); end
-end
-tickNow();
-check(fake.applied == nil, 'the first tick only baselines the band -- nothing is sent');
-fake.level = 40;                                   -- sync down: 71 -> 31 band
-tickNow();
-check(fake.applied ~= nil and fake.applied[1] == 549,
-    'crossing into Lv.31-40 applies that band\'s build');
-check(#fake.says == 1 and fake.says[1]:find('Lv.31 set of "Solo"', 1, true) ~= nil,
-    'and says which build it equipped, by name');
-fake.live[1] = 549;                                -- the game now holds it
-fake.applied = nil;
-fake.level = 45;                                   -- up into the Lv.41 band
-tickNow();
-check(fake.applied == nil,
-    'a band with no build of its own equips nothing outright...');
-check(sets.groupPick(fcfg.sets[1], 45) == nil,
-    '...it is the flat set that serves there, restore-style');
-fake.applied = nil;
-fake.level = 48;                                   -- same band
-tickNow();
-check(fake.applied == nil and host.switchCheck == nil,
-    'moving inside a band is not a band change -- nothing is scheduled');
--- back into the band that HAS a build, while already wearing it: no packets
-fake.live = sets.sortedLayout(low, book);
-fake.level = 40;
-tickNow();
-check(fake.applied == nil, 'and a band change that would move nothing sends nothing');
--- the rule lives on the SET, and Manual means Manual
-fcfg.sets[1].rule = 'manual';
-fake.live = sets.sortedLayout(flat, book);
-fake.level = 75; tickNow();
-fake.level = 40; tickNow();
-check(fake.applied == nil, 'Manual on the set never triggers it');
-fcfg.sets[1].rule = 'restore';
-fake.level = 75; tickNow();
-fake.level = 40; tickNow();
-check(fake.applied == nil, 'nor does Restore -- it never swaps builds');
-fcfg.sets[1].rule = nil;                           -- back to derived: has levels
-check(sets.ruleOf(fcfg.sets[1]) == 'switch',
-    'a set with levels derives Lvl Set Switch');
--- and it follows nothing it was not told about
-fcfg.lastAppliedSet = '';
-fake.level = 75; tickNow();
-fake.level = 40; tickNow();
-check(fake.applied == nil, 'with no last-applied set there is nothing to follow');
-
-print('smoke: the codex show-filter');
--- the resolver reads these BY INDEX, so the order is load-bearing: renaming
--- or reordering them silently turns a filter into a no-op
-local spellsui = require('bludex\\ui\\spellsui');
-check(#spellsui.SHOW_CHOICES == 4
-    and spellsui.SHOW_CHOICES[1] == 'Learned'
-    and spellsui.SHOW_CHOICES[2] == 'Missing'
-    and spellsui.SHOW_CHOICES[3] == 'In the set'
-    and spellsui.SHOW_CHOICES[4] == 'Not in the set',
-    'the codex show-filter choices, in the order the resolver indexes them');
-
 print('smoke: dlac module adapter');
 local dm = require('bludex\\dlacmodule\\init');
 check(dm.api == 2 and type(dm.panel) == 'function' and type(dm.init) == 'function'
     and type(dm.window) == 'function' and type(dm.open) == 'function',
     'contract shape (api 2, panel, init, window, open)');
 check(dm.config and dm.config.keys and dm.config.keys.sets == 'string'
-    and dm.config.defaults.lastAppliedSet == '', 'config declaration');
--- the two flavors keep ONE settings shape: a key the library defaults but
--- this adapter never declared is a setting that silently forgets itself in
--- dlac. (`sets` and `lastApplied` are declared as the codec's strings.)
-local libdef = require('bludex\\lib\\config').defaults();
-local undeclared = nil;
-for k in pairs(libdef) do
-    if dm.config.keys[k] == nil then undeclared = k; break; end
-end
-check(undeclared == nil, 'every library setting is declared here too'
-    .. (undeclared and (' -- missing ' .. undeclared) or ''));
-check(dm.config.defaults.tooltipDelay == libdef.tooltipDelay,
-    'and the hover delay defaults the same in both flavors');
+    and dm.config.defaults.autoRestore == false, 'config declaration');
 local ids = {}; for i = 1, 20 do ids[i] = 0; end
 ids[1] = 623; ids[7] = 700;
 local rt = dm._codec.decodeIds(dm._codec.encodeIds(ids));
@@ -773,37 +647,357 @@ check(#sl == 2 and sl[1].name == 'Solo DD' and sl[1].ids[7] == 700
     and sl[2].ids[1] == 0, 'sets codec roundtrip');
 check(dm._codec.decodeSets('')[1] == nil and dm._codec.decodeIds(nil)[20] == 0,
     'codec tolerates empty and nil');
--- LEVEL BUILDS ride along as extra lines under the same name; the flat line
--- keeps the exact shape it had before they existed, which is why a set nobody
--- has levelled needs no migration in either direction.
-local low = {}; for i = 1, 20 do low[i] = 0; end
-low[1] = 623;
-local wire = dm._codec.encodeSets({
-    { name = 'Solo', ids = ids, builds = { { level = 41, ids = low } } },
-    { name = 'Flat', ids = ids, builds = {} },
-});
-check(select(2, wire:gsub('\n', '\n')) == 2, 'three lines for two sets, one levelled');
-check(wire:find('Flat\t' .. dm._codec.encodeIds(ids), 1, true) ~= nil,
-    'the flat line is byte-identical to the pre-level shape');
-local tl = dm._codec.decodeSets(wire);
-check(#tl == 2 and tl[1].name == 'Solo' and #tl[1].builds == 1
-    and tl[1].builds[1].level == 41 and tl[1].builds[1].ids[1] == 623,
-    'level builds group under their set by name');
-check(tl[1].ids[7] == 700 and #tl[2].builds == 0,
-    'the flat build survives beside them, and a flat set stays flat');
--- a settings string written by the PREVIOUS version reads back unchanged
-local old = dm._codec.decodeSets('Solo\t' .. dm._codec.encodeIds(ids));
-check(#old == 1 and #old[1].builds == 0 and old[1].ids[7] == 700,
-    'a pre-level settings string reads back as one flat set');
--- the set's level-change rule rides as its own line, and only when stored
-local rw = dm._codec.decodeSets(dm._codec.encodeSets({
-    { name = 'A', ids = ids, builds = {}, rule = 'manual' },
-    { name = 'B', ids = ids, builds = {} },
-}));
-check(rw[1].rule == 'manual' and rw[2].rule == nil,
-    'a picked rule round-trips; a derived one writes nothing');
-check(dm._codec.encodeSets({ { name = 'B', ids = ids, builds = {} } }):find('rule') == nil,
-    'so a set nobody configured stays exactly one line');
+
+-- the TIMELINE grammar (sets2/sets2bak, plan 7): lossless round-trip of
+-- chains, builtFor and backups -- and the legacy key stays a usable flat
+-- mirror, because the OLD decoder zeroes unknown tokens (changing the old
+-- grammar in place would silently EMPTY every set on an older module)
+local tset = sets.new('Level Up');
+check(sets.addEntry(tset, 1, 603, nil, book)
+    and sets.addEntry(tset, 1, 529, nil, book)
+    and sets.addEntry(tset, 1, 0, 45, book), 'codec fixture builds');
+tset.builtFor = 1;
+sets.pushBackup(tset, tset, 12345);
+local dec = dm._codec.decodeSets2(dm._codec.encodeSets2({ tset }));
+check(#dec == 1 and dec[1].builtFor == 1, 'sets2: builtFor survives');
+check(#dec[1].chains[1] == 3 and dec[1].chains[1][2].id == 529
+    and dec[1].chains[1][2].from == 18 and dec[1].chains[1][3].id == 0
+    and dec[1].chains[1][3].from == 45,
+    'sets2: the chain survives, empty marker included');
+check(#dec[1].chains[2] == 0 and dec[1].chains[20] ~= nil,
+    'sets2: empty chains keep their places (the split keeps empty tokens)');
+dm._codec.attachBackups(dec, dm._codec.encodeBackups({ tset }));
+check(dec[1].backups ~= nil and dec[1].backups[1].ts == 12345
+    and #dec[1].backups[1].chains[1] == 3, 'sets2bak: backups reattach by name');
+sets.upgrade(dec[1], book);
+check(sets.equal(dec[1], tset), 'the round-tripped set equals the original');
+check(dm._codec.decodeSets2('')[1] == nil and dm._codec.decodeSets2('#v2')[1] == nil,
+    'sets2 decode tolerates empty and header-only');
+local eg = sets.fromIds('EG', { 529, 603 }, book);
+local oldRead = dm._codec.decodeSets(dm._codec.encodeSets({ eg }));
+check(oldRead[1].ids[1] == 603 and oldRead[1].ids[2] == 529,
+    'the legacy key carries the flat level-75 mirror for older modules');
+-- decode tolerance sharpened by review 2026-08-08: a corrupt builtFor
+-- clamps (0 would enforce everything, 200 nothing), an out-of-order chain
+-- re-sorts (resolveAtLevel breaks at the first later entry), and duplicate
+-- names hand the ring to the FIRST set (the activeSetName rule)
+local oo = dm._codec.decodeSets2('#v2\nOO\t0\t529@18,603@4');
+check(oo[1].builtFor == 75, 'a corrupt builtFor clamps to 75');
+check(oo[1].chains[1][1].from == 4 and oo[1].chains[1][2].from == 18,
+    'an out-of-order stored chain re-sorts on decode');
+local dupA, dupB = sets.new('D'), sets.new('D');
+local dup = { dupA, dupB };
+dm._codec.attachBackups(dup,
+    'D\t5\t75\t' .. dm._codec.encodeChains(sets.new('D').chains));
+check(dupA.backups ~= nil and dupB.backups == nil,
+    'duplicate names: the first set gets the ring');
+
+print('smoke: settings lifecycle (logoff / relog / character switch)');
+-- The Ashita settings library swaps the WHOLE settings table at every
+-- login and logout: the shared defaults profile while logged off, the
+-- character's own file at login. host.onSettingsSwap is the addon's answer;
+-- these drive the three arms it has to get right. (ui/host is headless-safe
+-- to require -- every imgui touch is guarded -- and none of this renders.)
+local host   = require('bludex\\ui\\host');
+local config = require('bludex\\lib\\config');
+local function mkcfg(t)
+    local c = config.defaults();
+    for k, v in pairs(t or {}) do c[k] = v; end
+    return c;
+end
+local function entry(name, id)
+    local e = sets.new(name);
+    e.ids[1] = id;
+    return e;
+end
+blu.forgetBudget();
+-- A COLD START: addons load at the title screen, so init can only adopt the
+-- defaults profile. The character's real file arrives with the first login,
+-- THROUGH THE SWAP -- before the swap adopted it, every fresh game start
+-- came up with an empty editor and an unseeded budget, which from the chair
+-- reads as 'my save did not survive the log off'.
+host.init({ im = {}, book = book, blu = blu, sets = sets, cfg = mkcfg(),
+    save = function() end });
+host.noteChar(nil);
+check(host.state.activeSet == nil, 'cold start: nothing to select in the defaults profile');
+local aCfg = mkcfg({ activeSetName = 'Solo', capLearnedBonus = 24, capMeritPoints = 10 });
+aCfg.sets = { entry('Farm', 623), entry('Solo', 700) };
+host.onSettingsSwap(aCfg, 'Aludra_101');
+check(host.deps.cfg == aCfg, 'first login: the swapped-in table is the one saves serialize');
+check(host.state.activeSet == 2 and host.state.editingSet.name == 'Solo'
+    and host.state.editingSet.ids[1] == 700,
+    'first login restores the remembered active set from the character file');
+check(blu.learnedBonus == 24 and blu.meritPts == 10,
+    'first login seeds the budget halves from the character file');
+-- the timeline migration rides the same adopt: flat entries gain chains
+check(aCfg.sets[1].chains ~= nil and aCfg.sets[1].chains[1][1] ~= nil
+    and aCfg.sets[1].chains[1][1].id == 623 and aCfg.sets[1].builtFor == 75,
+    'adopt migrates stored flat sets to chains (builtFor 75)');
+check(aCfg.setsModelVer == 2, 'and stamps setsModelVer 2');
+check(aCfg.replan == 'manual', 'the retired autoRestore maps to replan=manual');
+check(host.state.editingSet.chains ~= nil, 'the editing clone speaks chains too');
+-- LOG OFF: the defaults profile swaps in. The working state stays put (the
+-- same character usually returns; the standalone gates rendering meanwhile).
+host.state.editingSet.ids[3] = 623;                 -- an unsaved edit
+host.onSettingsSwap(mkcfg(), nil);
+check(host.deps.cfg ~= aCfg, 'logoff: cfg rebinds to the defaults profile');
+check(host.state.editingSet.ids[3] == 623, 'logoff keeps the working state');
+-- THE SAME CHARACTER RETURNS: their file reloads into a fresh table; the
+-- selection and the unsaved edits are still theirs to keep.
+local aCfg2 = mkcfg({ activeSetName = 'Solo', capLearnedBonus = 24, capMeritPoints = 10 });
+aCfg2.sets = { entry('Farm', 623), entry('Solo', 700) };
+host.onSettingsSwap(aCfg2, 'Aludra_101');
+check(host.deps.cfg == aCfg2, 'relog: cfg rebinds to the reloaded file');
+check(host.state.activeSet == 2 and host.state.editingSet.ids[3] == 623,
+    'relog keeps the selection and the unsaved edits');
+check(blu.learnedBonus == 24 and blu.meritPts == 10, 'relog keeps the seeded budget');
+-- A DIFFERENT CHARACTER: everything the previous one owned is dropped.
+-- Keeping it is how their editing set overwrote the new character\'s saved
+-- set, and how their budget figures were saved into the new character\'s
+-- file by the first 0x08C of the session.
+host.state.tab = 'Sets';
+local bCfg = mkcfg();
+bCfg.sets = { entry('Tank', 594) };
+host.onSettingsSwap(mkcfg(), nil);                  -- the logoff between them
+host.onSettingsSwap(bCfg, 'Belias_101');
+check(host.deps.cfg == bCfg, 'switch: cfg rebinds');
+check(host.state.activeSet == nil and sets.count(host.state.editingSet) == 0,
+    'switch drops the previous character\'s selection and editing set');
+check(blu.learnedBonus == nil and blu.meritPts == nil and blu.wireTotal == nil,
+    'switch forgets the previous character\'s budget instead of inheriting it');
+check(host.state.tab == 'Sets', 'switch keeps pure view state (the active tab)');
+check(type(blu.resetJobWatch) == 'function', 'the job watch has its lifecycle seam');
+blu.forgetBudget();
+
+print('smoke: timeline apply verbs (applyState / applyEditing / checkReplan)');
+-- setsui owns the verbs; a stubbed game layer drives them headless.
+local setsuiM = require('bludex\\ui\\setsui');
+local stubLive = { lvl = 20, live = nil, applied = nil };
+local _cur, _eff, _can, _onb, _diff, _ann =
+    blu.currentSet, blu.effectiveLevel, blu.canApply, blu.onBlu, blu.applyDiff, blu.announce;
+blu.currentSet = function() return stubLive.live or {}; end
+blu.effectiveLevel = function() return stubLive.lvl; end
+blu.canApply = function() return true; end
+blu.onBlu = function() return true; end
+blu.applyDiff = function(ids) stubLive.applied = ids; return true; end
+local said = nil;
+blu.announce = function(s) said = s; end
+local function live20(t)
+    local out = {};
+    for i = 1, 20 do out[i] = t[i] or 0; end
+    return out;
+end
+
+local plan = sets.new('Plan');
+check(sets.addEntry(plan, 1, 603, nil, book)
+    and sets.addEntry(plan, 1, 529, nil, book), 'verb fixture builds');
+local vcfg = mkcfg();
+local vst = { editingSet = plan, activeSet = nil, applyNote = nil };
+local vctx = { im = {}, book = book, blu = blu, sets = sets, cfg = vcfg,
+    save = function() end, state = vst,
+    budgetMax = function() return 80; end };
+
+-- the consolidated three-state compare
+stubLive.live = live20({ [1] = 529 });
+check(setsuiM.applyState(vctx) == 'clean', 'applyState: live == the plan for the live level');
+stubLive.live = live20({});
+check(setsuiM.applyState(vctx) == 'dirty', 'applyState: an empty live set is dirty');
+stubLive.live = nil;
+check(setsuiM.applyState(vctx) == nil, 'applyState: an unreadable live set answers nil');
+
+-- the preemptive apply (plan 2.9): send the Lv.4 plan while standing at 20,
+-- and be recognized afterwards instead of glowing dirty
+setsuiM.applyEditing(vctx, 4);
+check(stubLive.applied ~= nil and stubLive.applied[1] == 603
+    and stubLive.applied[2] == 0, 'Apply for Lv.4 sends the Wild Oats plan');
+check(vcfg.lastApplied.level == 4, 'lastApplied remembers the level the plan was FOR');
+stubLive.live = live20({ [1] = 603 });
+local vs, vl = setsuiM.applyState(vctx);
+check(vs == 'planned' and vl == 4, 'applyState: live matches the Lv.4 plan -> planned, not dirty');
+stubLive.applied = nil;
+setsuiM.applyEditing(vctx);
+check(stubLive.applied ~= nil and stubLive.applied[1] == 529 and vcfg.lastApplied.level == 20,
+    'a plain Apply resolves at the live level');
+
+-- the band block (plan 2.6): a known budget, a leveling builtFor, and a
+-- low bracket stuffed past it -- Apply refuses with the band message;
+-- builtFor 75 un-enforces the same bands and Apply works again
+blu.learnedBonus, blu.meritPts = 0, 0;
+plan.builtFor = 1;
+local lowIds = {};
+for _, id in ipairs(book.filter({})) do
+    local sp = book.spells[id];
+    if sp.level ~= nil and sp.level <= 10 and sp.setPoints ~= nil and id ~= 603 then
+        lowIds[#lowIds + 1] = id;
+    end
+end
+-- dearest first, and only into the six level-1 slots -- the 11+ slots'
+-- floors would keep anything there out of the level-10 resolution
+table.sort(lowIds, function(a, b)
+    return (book.spells[a].setPoints or 0) > (book.spells[b].setPoints or 0);
+end);
+local slotN = 2;
+while slotN <= 6
+    and sets.usedPoints(sets.resolveAtLevel(plan, 10, book), book) <= 10 and #lowIds > 0 do
+    check(sets.addEntry(plan, slotN, table.remove(lowIds, 1), nil, book),
+        'fixture: low spell joins its own chain');
+    slotN = slotN + 1;
+end
+check(sets.usedPoints(sets.resolveAtLevel(plan, 10, book), book) > 10,
+    'fixture: the low bracket overflows a 10-point budget');
+stubLive.live = live20({});
+stubLive.applied = nil;
+vst.applyNote = nil;
+setsuiM.applyEditing(vctx);
+check(stubLive.applied == nil and type(vst.applyNote) == 'string'
+    and vst.applyNote:find('Cannot apply: ', 1, true) == 1
+    and vst.applyNote:find('above threshold', 1, true) ~= nil,
+    'an enforced band blocks Apply with the band message');
+plan.builtFor = 75;
+setsuiM.applyEditing(vctx);
+check(stubLive.applied ~= nil, 'builtFor 75 un-enforces the low bands; Apply works again');
+blu.learnedBonus, blu.meritPts = nil, nil;
+
+-- the level-change watcher: nudge on new spells, silence on removals-only
+-- (the flat-set-under-sync case), auto mode applies by itself
+local plan2 = sets.new('Watch');
+sets.addEntry(plan2, 1, 603, nil, book);
+sets.addEntry(plan2, 1, 529, nil, book);
+host.onSettingsSwap(vcfg, 'Verb_101');
+host.state.editingSet = plan2;
+stubLive.lvl = 3;
+stubLive.live = live20({});
+said = nil;
+host.checkReplan();
+check(host.state.replanPending == nil, 'nothing activates at Lv.3 -> clean, no nudge');
+stubLive.lvl = 4;
+host.checkReplan();
+check(host.state.replanPending ~= nil and host.state.replanPending.level == 4
+    and type(said) == 'string' and said:find('Level 4', 1, true) ~= nil,
+    'a level with new spells arms the nudge and says one line');
+stubLive.lvl = 20;
+stubLive.live = live20({ [1] = 529, [2] = 623 });   -- plan(20) plus an extra
+host.state.replanPending = { level = 99 };
+host.checkReplan();
+check(host.state.replanPending == nil,
+    'a removals-only diff stays quiet (the client\'s own disable handles it)');
+vcfg.replan = 'auto';
+stubLive.live = live20({});
+stubLive.applied = nil;
+host.checkReplan();
+check(stubLive.applied ~= nil and stubLive.applied[1] == 529
+    and vcfg.lastApplied.level == 20, 'replan=auto applies the plan for the settled level');
+vcfg.replan = 'manual';
+
+-- the backup ring DEEPENS through consecutive saves (review 2026-08-08:
+-- cloning the editing set's selection-time ring reset the depth to one)
+local rcfg = mkcfg();
+local rst = { editingSet = nil, activeSet = 1, applyNote = nil };
+local rctx = { state = rst, cfg = rcfg, sets = sets, book = book, blu = blu,
+    save = function() end };
+local ring0 = sets.new('Ring');
+sets.addEntry(ring0, 1, 603, nil, book);
+rcfg.sets = { ring0 };
+rst.editingSet = sets.clone(ring0, 'Ring');
+sets.addEntry(rst.editingSet, 1, 529, nil, book);
+setsuiM.saveEditing(rctx);
+check(#(rcfg.sets[1].backups or {}) == 1, 'the first save-over banks the original');
+rst.editingSet = sets.clone(rcfg.sets[1], 'Ring');
+sets.addEntry(rst.editingSet, 1, 0, 45, book);
+setsuiM.saveEditing(rctx);
+check(#(rcfg.sets[1].backups or {}) == 2,
+    'the second save-over deepens the ring to two');
+check(#rcfg.sets[1].backups[1].chains[1] == 2 and #rcfg.sets[1].backups[2].chains[1] == 1,
+    'newest first: backup 1 is the two-entry state, backup 2 the original');
+
+blu.currentSet, blu.effectiveLevel, blu.canApply, blu.onBlu, blu.applyDiff, blu.announce =
+    _cur, _eff, _can, _onb, _diff, _ann;
+blu.learnedBonus, blu.meritPts = nil, nil;
+
+print('smoke: dlac adapter store lifecycle');
+-- dlac loads modules BEFORE login, and its store serves declared defaults
+-- until the character directory exists. The adapter's decoded bridge must
+-- FOLLOW the store: init's snapshot alone meant the first save of a session
+-- wrote an empty set list over the character's real file.
+local disk = {};                       -- the stub store's backing 'files'
+local storeDir = nil;                  -- nil = pre-login
+local stubStore = {
+    get = function(k)
+        local f = storeDir and disk[storeDir] or nil;
+        local v = nil;
+        if f ~= nil then v = f[k]; end
+        if v == nil then return dm.config.defaults[k]; end
+        return v;
+    end,
+    set = function(k, v)
+        if storeDir == nil then return false; end
+        disk[storeDir] = disk[storeDir] or {};
+        disk[storeDir][k] = v;
+        return true;
+    end,
+    path = function()
+        if storeDir == nil then return nil; end
+        return storeDir .. 'jobhelper-bludex.lua';
+    end,
+};
+local function ids20(firstId)
+    local t = {}; for i = 1, 20 do t[i] = 0; end
+    t[1] = firstId;
+    return t;
+end
+dm._forceLib({ host = host, book = book, blu = blu, sets = sets });
+dm.init({ cfg = stubStore, say = { err = function() end } });
+check(#host.deps.cfg.sets == 0, 'pre-login init: the bridge holds the declared defaults');
+-- character A logs in: their file already has a set the bridge must adopt
+disk['A\\'] = {
+    sets = dm._codec.encodeSets({ { name = 'Solo', ids = ids20(700) } }),
+    activeSetName = 'Solo', capLearnedBonus = 24, capMeritPoints = 10,
+};
+storeDir = 'A\\';
+dm._syncStore();
+check(#host.deps.cfg.sets == 1 and host.deps.cfg.sets[1].name == 'Solo',
+    'first login: the bridge re-decodes the character file');
+check(host.state.editingSet.name == 'Solo' and host.state.editingSet.ids[1] == 700,
+    'and the host adopts it (the active set is restored)');
+check(host.deps.cfg.sets[1].chains ~= nil,
+    'a legacy dlac store migrates to chains through the same adopt');
+check(blu.learnedBonus == 24 and blu.meritPts == 10,
+    'the budget halves now persist through the dlac store too');
+-- a save now round-trips the real list, not the empty init snapshot --
+-- and writes BOTH grammars: sets2 as the truth, sets as the flat mirror
+host.deps.save();
+check(dm._codec.decodeSets(disk['A\\'].sets)[1].name == 'Solo',
+    'a save after login keeps the character file (no empty-snapshot clobber)');
+check(dm._codec.decodeSets2(disk['A\\'].sets2)[1] ~= nil
+    and dm._codec.decodeSets2(disk['A\\'].sets2)[1].chains[1][1].id == 700,
+    'the save writes the timeline grammar alongside the legacy key');
+-- character B: their own file (none yet) -- nothing of A may leak
+storeDir = 'B\\';
+dm._syncStore();
+check(#host.deps.cfg.sets == 0 and host.state.activeSet == nil,
+    'character switch: B starts from their own file, not A\'s bridge');
+check(blu.learnedBonus == nil and blu.meritPts == nil,
+    'and A\'s budget is not inherited');
+-- back to A: this login must decode the TIMELINE grammar (sets2 written by
+-- the save above outranks the legacy key)
+storeDir = 'A\\';
+dm._syncStore();
+check(host.deps.cfg.sets[1].chains ~= nil and host.deps.cfg.sets[1].chains[1][1].id == 700,
+    'a return to A decodes the timeline grammar directly');
+check(host.state.editingSet.name == 'Solo',
+    'and the active set restores from it as before');
+blu.forgetBudget();
+
+print('smoke: the codex show-filter');
+-- the resolver reads these BY INDEX, so the order is load-bearing: renaming
+-- or reordering them silently turns a filter into a no-op
+local spellsui = require('bludex\\ui\\spellsui');
+check(#spellsui.SHOW_CHOICES == 4
+    and spellsui.SHOW_CHOICES[1] == 'Learned'
+    and spellsui.SHOW_CHOICES[2] == 'Missing'
+    and spellsui.SHOW_CHOICES[3] == 'In the set'
+    and spellsui.SHOW_CHOICES[4] == 'Not in the set',
+    'the codex show-filter choices, in the order the resolver indexes them');
 
 print('smoke: the hover gate');
 -- The tooltip dwell (Settings: hover tooltip delay). Pure timing, so it runs

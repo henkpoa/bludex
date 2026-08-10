@@ -101,7 +101,9 @@ end
 -- `hovered` (optional): the row-wide state from listRow -- the overlay row
 -- draws art LAST, so IsItemHovered on the last item only covers the name.
 -- true shows, false skips, nil falls back to the last-item check.
-function M.tooltip(ctx, id, hovered)
+-- `extra` (optional): array of { text, color } rows appended at the end --
+-- the Assign pane explains a blocked spell through it.
+function M.tooltip(ctx, id, hovered, extra)
     local im, book = ctx.im, ctx.book;
     if hovered == false then return; end
     if hovered ~= true
@@ -172,13 +174,21 @@ function M.tooltip(ctx, id, hovered)
     if s.unbridled then add('Unbridled Learning', kit.COL.badge); end
     local lt, ltc = learnedText(ctx, id);
     if lt then add(lt, ltc); end
-    if s.castable and not s.unbridled and s.setPoints then
-        if ctx.sets.contains(ctx.state.editingSet, id) then
-            add('right-click: remove from set', kit.COL.dim);
-        elseif book.learned(id) then
-            add('right-click: add to set', kit.COL.dim);
+    -- assignment status, timeline-aware: a spell in the set shows its level
+    -- range(s) even while inactive at the current level (Henrik's ask) --
+    -- mutation lives in the Sets tab now, so no click hints here
+    if ctx.sets.contains(ctx.state.editingSet, id) then
+        local ranges = ctx.sets.activeRanges
+            and ctx.sets.activeRanges(ctx.state.editingSet, id) or {};
+        if #ranges > 0 then
+            for _, r in ipairs(ranges) do
+                add(('in set: Lv.%d-%d'):format(r.lo, r.hi), kit.COL.ok);
+            end
+        else
+            add('in the editing set', kit.COL.ok);
         end
     end
+    for _, e in ipairs(extra or {}) do add(e[1], e[2]); end
 
     -- rich flavor: the 64 sprite centered over the text, lines colored.
     -- BeginTooltip is not field-proven here, so everything inside is
@@ -238,30 +248,22 @@ function M.detail(ctx, id)
         kit.ctext(im, kit.COL.err, 'Learnable but NEVER castable at the 75 cap.');
     end
 
-    -- add/remove FIRST -- the working button belongs at the top, not under
-    -- a screen of lore. It flips to remove when the spell is in the set.
+    -- assignment status FIRST, where the button used to be. The compendium
+    -- is a pure reference now (Henrik 2026-08-08) -- every set mutation
+    -- lives in the Sets tab, so this reports and points, never acts.
     if s.castable and not s.unbridled and s.setPoints then
-        local btnW = kit.measure(im, { 'Add to current set', 'Remove from set' }, 150);
-        if ctx.sets.contains(ctx.state.editingSet, id) then
-            -- removal always works, even for spells that predate the
-            -- learned gate (or came in from a live read)
-            if kit.litButton(im, 'Remove from set', true, btnW, 26) then
-                ctx.sets.removeId(ctx.state.editingSet, id);
-                ctx.state.addNote = ('Removed %s.'):format(s.name);
-                if ctx.save then ctx.save(); end
+        local ranges = ctx.sets.activeRanges
+            and ctx.sets.activeRanges(ctx.state.editingSet, id) or {};
+        if #ranges > 0 then
+            for _, r in ipairs(ranges) do
+                kit.ctext(im, kit.COL.ok, ('In the editing set: Lv.%d-%d'):format(r.lo, r.hi));
             end
+        elseif ctx.sets.contains(ctx.state.editingSet, id) then
+            kit.ctext(im, kit.COL.ok, 'In the editing set.');
         elseif not book.learned(id) then
             kit.ctext(im, kit.COL.err, 'Not learned - learn it before it can be set.');
         else
-            if kit.litButton(im, 'Add to current set', false, btnW, 26) then
-                local max = ctx.budgetMax();
-                local ok, why = ctx.sets.add(ctx.state.editingSet, id, book, max);
-                ctx.state.addNote = ok and ('Added %s.'):format(s.name) or ('Cannot add: %s.'):format(why);
-                if ok and ctx.save then ctx.save(); end
-            end
-        end
-        if ctx.state.addNote then
-            kit.ctext(im, kit.COL.dim, ctx.state.addNote);
+            kit.ctext(im, kit.COL.dim, 'Not in the editing set - assign it on the Sets tab (a slot\'s + button).');
         end
     end
     if kit.isFn(im, 'Separator') then im.Separator(); end
@@ -423,7 +425,10 @@ function M.listRow(ctx, id, iconSz, nameW, selected, showIcon, opts)
     local dimColor = (opts and opts.dimColor) or kit.COL.dim;
     local dim = ctx.blu.onBlu() and not book.learned(id) or false;
     local inSet = ctx.sets.contains(ctx.state.editingSet, id) ~= nil;
-    local textCol = inSet and kit.COL.ok or (dim and dimColor or nil);
+    -- opts.textCol overrides the whole coloring rule -- the Sets tab's own
+    -- rows are ALL in the set, so the green tint says nothing there
+    local textCol = (opts and opts.textCol)
+        or (inSet and kit.COL.ok or (dim and dimColor or nil));
     local drawIcon = showIcon ~= false;
     local rowH = drawIcon and iconSz or math.min(iconSz, 20);
     local pad = 8;                                     -- icon-to-name gap
@@ -859,27 +864,14 @@ function M.render(ctx)
                     pcall(im.SetCursorPosY, rowTop);
                 end
             end
-            local lclick, rclick, hov = M.listRow(ctx, id, iconSz, nameW, st.selectedId == id, showIcon);
+            -- the codex is a REFERENCE (Henrik 2026-08-08): left-click for
+            -- Spell Info, hover for the tooltip -- and that is all. Set
+            -- mutation lives in the Sets tab's Assign pane alone.
+            local lclick, _, hov = M.listRow(ctx, id, iconSz, nameW, st.selectedId == id, showIcon);
             if lclick then
                 st.selectedId = id;
                 st.detailOpen[1] = true;
                 st.detailFocus = true;
-            end
-            if rclick then
-                -- toggle set membership without opening the window
-                local s = book.spells[id];
-                if s ~= nil then
-                    if ctx.sets.contains(st.editingSet, id) then
-                        ctx.sets.removeId(st.editingSet, id);
-                        st.addNote = ('Removed %s.'):format(s.name);
-                        if ctx.save then ctx.save(); end
-                    else
-                        local ok, why = ctx.sets.add(st.editingSet, id, book, ctx.budgetMax());
-                        st.addNote = ok and ('Added %s.'):format(s.name)
-                            or ('Cannot add %s: %s.'):format(s.name, why);
-                        if ok and ctx.save then ctx.save(); end
-                    end
-                end
             end
             M.tooltip(ctx, id, hov);
         end

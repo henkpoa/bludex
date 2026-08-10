@@ -1,4 +1,4 @@
--- traits.lua -- bludex trait ladder (GENERATED 2026-08-07 by tools/generate_spells.py -- DO NOT EDIT)
+-- traits.lua -- bludex trait ladder (GENERATED 2026-08-10 by tools/generate_spells.py -- DO NOT EDIT)
 -- category -> tiers: set spells whose trait.category matches; sum their weights;
 -- highest tier with points <= total weight is active (server: blueutils.cpp CalculateTraits).
 -- Values are base-LSB (public clone); CEXI may override in private submodules.
@@ -37,6 +37,13 @@ M.categories[26] = { name = 'Zanshin', traitId = 70, tiers = { { points = 2, tra
 M.categories[27] = { name = 'Mag. Burst Bonus', traitId = 110, tiers = { { points = 2, traitId = 110, mods = { { stat = 'MAGIC_BURST_BONUS_CAPPED', value = 5 } } } } }
 M.categories[28] = { name = 'Gilfinder', traitId = 20, tiers = { { points = 2, traitId = 20, mods = { { stat = 'GILFINDER', value = 1 } } }, { points = 3, traitId = 19, mods = { { stat = 'TREASURE_HUNTER', value = 1 } } } } }
 
+-- bg-wiki addendum (2026-08-08): the SoA burst spells' traits are absent
+-- from base-LSB blue_traits.sql. Category ids 29/30 are bludex-internal
+-- (never on the wire); traitIds are LSB trait.h; tier values follow the
+-- sibling bonus traits' +10 convention -- verify against CEXI.
+M.categories[29] = { name = 'Magic Eva. Bonus', traitId = 126, tiers = { { points = 8, traitId = 126, mods = { { stat = 'MEVA', value = 10 } } } } }
+M.categories[30] = { name = 'Magic Acc. Bonus', traitId = 125, tiers = { { points = 8, traitId = 125, mods = { { stat = 'MACC', value = 10 } } } } }
+
 -- each rung's OWN trait name (a ladder can change trait partway up)
 M.traitNames[1] = 'Accuracy Bonus'
 M.traitNames[2] = 'Evasion Bonus'
@@ -68,6 +75,8 @@ M.traitNames[58] = 'Resist Gravity'
 M.traitNames[70] = 'Zanshin'
 M.traitNames[106] = 'Skillchain Bonus'
 M.traitNames[110] = 'Mag. Burst Bonus'
+M.traitNames[125] = 'Magic Acc. Bonus'
+M.traitNames[126] = 'Magic Eva. Bonus'
 
 -- Set-point budget law (server: blueutils.cpp GetTotalBlueMagicPoints):
 --   base = clamp(((level-1)/10)*5 + 10, 0, 55)  -- level 75 => 45

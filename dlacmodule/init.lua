@@ -50,15 +50,27 @@ end
 
 -- ---------------------------------------------------------------------------
 -- scalar codec: the framework store holds strings/numbers/booleans only.
--- Saved sets serialize as one string, ONE LINE PER BUILD:
---   'name<TAB>id,id,...'          the set's flat build -- unchanged, byte for
---                                 byte, from before level builds existed
---   'name<TAB>level<TAB>id,..'    a build for one level band, under that name
---   'name<TAB>rule<TAB>key'       the set's level-change rule, only when the
---                                 player picked one (otherwise it is derived)
--- so a flat set still writes exactly one line and reads back identically in
--- either direction. THERE IS NOTHING TO MIGRATE. The last-applied snapshot is
--- one 'id,id,...' line.
+--
+-- TWO GRAMMARS live side by side (docs/timeline-sets-plan.md 7):
+--
+--   'sets' (legacy)   'name<TAB>id,id,...' per line -- a FLAT list. Still
+--                     WRITTEN on every save (from each set's level-75 ids
+--                     mirror) so an older module reading this store sees a
+--                     usable flat set instead of nothing: the old decoder
+--                     turns any unknown token into 0, so changing this
+--                     grammar in place would silently EMPTY every set.
+--   'sets2' (v2)      the timeline. '#v2' header line, then per set:
+--                         name<TAB>builtFor<TAB>chains
+--                     chains = 20 ';'-joined chain tokens (empties kept);
+--                     chain  = ','-joined entries; entry = id@from
+--                     (id 0 = the deliberate empty marker).
+--   'sets2bak'        backups, per line: name<TAB>ts<TAB>builtFor<TAB>chains
+--                     (newest first, <= 5 per set name).
+--   'lastApplied2'    'level<TAB>id,id,...' -- the level the apply was FOR.
+--                     'lastApplied' (bare csv) stays dual-written.
+--
+-- Readers prefer v2 and fall back; every decode is tolerant -- a bad token
+-- drops the entry, never the file.
 -- ---------------------------------------------------------------------------
 local codec = {};
 
@@ -127,6 +139,141 @@ function codec.decodeSets(s)
     return out;
 end
 
+-- split preserving EMPTY tokens (gmatch('[^;]+') would swallow them, and an
+-- empty chain token is meaningful: that slot has no entries)
+local function splitKeep(s, sep)
+    local out, pos = {}, 1;
+    s = tostring(s or '');
+    while true do
+        local i = s:find(sep, pos, true);
+        if i == nil then
+            out[#out + 1] = s:sub(pos);
+            return out;
+        end
+        out[#out + 1] = s:sub(pos, i - 1);
+        pos = i + 1;
+    end
+end
+
+function codec.encodeChains(chains)
+    local slots = {};
+    for i = 1, 20 do
+        local parts = {};
+        for _, e in ipairs(chains and chains[i] or {}) do
+            parts[#parts + 1] = ('%d@%d'):format(tonumber(e.id) or 0, tonumber(e.from) or 1);
+        end
+        slots[i] = table.concat(parts, ',');
+    end
+    return table.concat(slots, ';');
+end
+
+function codec.decodeChains(s)
+    local chains = {};
+    local slots = splitKeep(s, ';');
+    for i = 1, 20 do
+        chains[i] = {};
+        local tok = slots[i] or '';
+        if tok ~= '' then
+            for entry in tok:gmatch('[^,]+') do
+                local id, from = entry:match('^(%-?%d+)@(%-?%d+)$');
+                id, from = tonumber(id), tonumber(from);
+                if id ~= nil and from ~= nil and from >= 1 and from <= 75 then
+                    chains[i][#chains[i] + 1] = { id = id, from = from };
+                end
+            end
+            -- restore the ascending-activation invariant every consumer
+            -- assumes (resolveAtLevel breaks at the first later entry) --
+            -- a hand-edited or corrupted line must not misresolve silently
+            table.sort(chains[i], function(a, b) return a.from < b.from; end);
+        end
+    end
+    return chains;
+end
+
+function codec.encodeSets2(list)
+    local recs = { '#v2' };
+    for _, e in ipairs(list or {}) do
+        local name = tostring(e.name or '?'):gsub('[\t\n]', ' ');
+        recs[#recs + 1] = name .. '\t' .. tostring(tonumber(e.builtFor) or 75)
+            .. '\t' .. codec.encodeChains(e.chains);
+    end
+    return table.concat(recs, '\n');
+end
+
+function codec.decodeSets2(s)
+    local out = {};
+    for line in tostring(s or ''):gmatch('[^\n]+') do
+        if line:sub(1, 1) ~= '#' then
+            local name, bf, chains = line:match('^(.-)\t(%d+)\t(.*)$');
+            if name ~= nil and name ~= '' then
+                -- clamp builtFor into 1-75: a corrupt 0 would enforce every
+                -- band and a corrupt 200 would enforce none -- tolerance
+                -- means neither flip, not garbage-in-semantics-out
+                local n = tonumber(bf) or 75;
+                if n < 1 or n > 75 then n = 75; end
+                out[#out + 1] = {
+                    name = name,
+                    builtFor = n,
+                    chains = codec.decodeChains(chains),
+                };
+            end
+        end
+    end
+    return out;
+end
+
+-- backups travel on their own key, attached to sets by NAME (names are the
+-- identity keys everywhere else too -- activeSetName restores by them)
+function codec.encodeBackups(list)
+    local recs = {};
+    for _, e in ipairs(list or {}) do
+        local name = tostring(e.name or '?'):gsub('[\t\n]', ' ');
+        for _, b in ipairs(e.backups or {}) do
+            recs[#recs + 1] = name .. '\t' .. tostring(tonumber(b.ts) or 0)
+                .. '\t' .. tostring(tonumber(b.builtFor) or 75)
+                .. '\t' .. codec.encodeChains(b.chains);
+        end
+    end
+    return table.concat(recs, '\n');
+end
+
+-- the ring depth mirrors setmodel.BACKUP_CAP; read it from the vendored
+-- library when it is loaded (the headless codec tests run before that and
+-- fall back to the same number)
+local function backupCap()
+    if lib ~= nil and lib.sets ~= nil and lib.sets.BACKUP_CAP ~= nil then
+        return lib.sets.BACKUP_CAP;
+    end
+    return 5;
+end
+
+function codec.attachBackups(list, s)
+    local byName = {};
+    -- FIRST match wins on a duplicate name -- the same rule activeSetName
+    -- resolution uses -- so a name collision cannot silently move every
+    -- backup onto the later set
+    for _, e in ipairs(list or {}) do
+        local key = tostring(e.name);
+        if byName[key] == nil then byName[key] = e; end
+    end
+    local cap = backupCap();
+    for line in tostring(s or ''):gmatch('[^\n]+') do
+        local name, ts, bf, chains = line:match('^(.-)\t(%d+)\t(%d+)\t(.*)$');
+        local e = name ~= nil and byName[name] or nil;
+        if e ~= nil then
+            e.backups = e.backups or {};
+            if #e.backups < cap then
+                e.backups[#e.backups + 1] = {
+                    ts = tonumber(ts) or 0,
+                    name = name,
+                    builtFor = tonumber(bf) or 75,
+                    chains = codec.decodeChains(chains),
+                };
+            end
+        end
+    end
+end
+
 -- ---------------------------------------------------------------------------
 -- the cfg bridge: the library mutates one live table and calls save();
 -- save() re-encodes into the framework store (mutation-only underneath)
@@ -135,11 +282,29 @@ local cfg, Sref = nil, nil;
 local _panelAt = nil;   -- last frame the Panel rendered: the fresh-click detector
 
 local function loadCfg(S)
+    -- v2 first; a store that predates the timeline (empty sets2) falls back
+    -- to the legacy flat key, and host.adoptCfg upgrades the entries after
+    -- the swap. The first save then writes both grammars.
+    local sets2raw = S.cfg.get('sets2');
+    local setsList;
+    if type(sets2raw) == 'string' and sets2raw ~= '' then
+        setsList = codec.decodeSets2(sets2raw);
+        codec.attachBackups(setsList, S.cfg.get('sets2bak'));
+    else
+        setsList = codec.decodeSets(S.cfg.get('sets'));
+    end
+    local lastApplied;
+    local la2 = S.cfg.get('lastApplied2');
+    if type(la2) == 'string' and la2 ~= '' then
+        local lvl, csv = la2:match('^(%d*)\t(.*)$');
+        lastApplied = { ids = codec.decodeIds(csv), level = tonumber(lvl) };
+    else
+        lastApplied = { ids = codec.decodeIds(S.cfg.get('lastApplied')) };
+    end
     cfg = {
-        sets           = codec.decodeSets(S.cfg.get('sets')),
-        lastApplied    = { ids = codec.decodeIds(S.cfg.get('lastApplied')) },
+        sets           = setsList,
+        lastApplied    = lastApplied,
         activeSetName  = S.cfg.get('activeSetName'),
-        activeSetLevel = S.cfg.get('activeSetLevel'),
         tooltipDelay   = S.cfg.get('tooltipDelay'),
         codexDensity   = S.cfg.get('codexDensity'),
         traitsDensity  = S.cfg.get('traitsDensity'),
@@ -147,7 +312,12 @@ local function loadCfg(S)
         applyMode      = S.cfg.get('applyMode'),
         applyDelay     = S.cfg.get('applyDelay'),
         budgetOverride = S.cfg.get('budgetOverride'),
-        lastAppliedSet = S.cfg.get('lastAppliedSet'),
+        replan         = S.cfg.get('replan'),
+        autoRestore    = S.cfg.get('autoRestore'),
+        setsModelVer    = S.cfg.get('setsModelVer'),
+        capModelVer     = S.cfg.get('capModelVer'),
+        capLearnedBonus = S.cfg.get('capLearnedBonus'),
+        capMeritPoints  = S.cfg.get('capMeritPoints'),
     };
     local any = false;
     for i = 1, 20 do
@@ -160,11 +330,18 @@ end
 local function saveCfg()
     if cfg == nil or Sref == nil or Sref.cfg == nil then return; end
     pcall(function()
+        -- both grammars, every save: sets2 is the truth, the legacy key is
+        -- each set's flat level-75 mirror so an OLDER module reading this
+        -- store still sees usable sets (its decoder zeroes unknown tokens)
+        Sref.cfg.set('sets2', codec.encodeSets2(cfg.sets));
+        Sref.cfg.set('sets2bak', codec.encodeBackups(cfg.sets));
         Sref.cfg.set('sets', codec.encodeSets(cfg.sets));
+        local la = cfg.lastApplied;
+        Sref.cfg.set('lastApplied2', (la and la.ids)
+            and (tostring(tonumber(la.level) or '') .. '\t' .. codec.encodeIds(la.ids)) or '');
         Sref.cfg.set('lastApplied',
-            (cfg.lastApplied and cfg.lastApplied.ids) and codec.encodeIds(cfg.lastApplied.ids) or '');
+            (la and la.ids) and codec.encodeIds(la.ids) or '');
         Sref.cfg.set('activeSetName', tostring(cfg.activeSetName or ''));
-        Sref.cfg.set('activeSetLevel', tonumber(cfg.activeSetLevel) or 0);
         Sref.cfg.set('tooltipDelay', tonumber(cfg.tooltipDelay) or 0.5);
         Sref.cfg.set('codexDensity', tostring(cfg.codexDensity or 'normal'));
         Sref.cfg.set('traitsDensity', tostring(cfg.traitsDensity or 'normal'));
@@ -172,8 +349,47 @@ local function saveCfg()
         Sref.cfg.set('applyMode', tostring(cfg.applyMode or 'safe'));
         Sref.cfg.set('applyDelay', tonumber(cfg.applyDelay) or 1.1);
         Sref.cfg.set('budgetOverride', tonumber(cfg.budgetOverride) or 0);
-        Sref.cfg.set('lastAppliedSet', tostring(cfg.lastAppliedSet or ''));
+        Sref.cfg.set('replan', tostring(cfg.replan or 'manual'));
+        Sref.cfg.set('autoRestore', cfg.autoRestore == true);
+        Sref.cfg.set('setsModelVer', tonumber(cfg.setsModelVer) or 2);
+        Sref.cfg.set('capModelVer', tonumber(cfg.capModelVer) or 3);
+        Sref.cfg.set('capLearnedBonus', tonumber(cfg.capLearnedBonus) or -1);
+        Sref.cfg.set('capMeritPoints', tonumber(cfg.capMeritPoints) or -1);
     end);
+end
+
+-- ---------------------------------------------------------------------------
+-- the store watch: the bridge is a snapshot, the store is per-character
+-- ---------------------------------------------------------------------------
+--
+-- dlac loads modules at addon load -- BEFORE login -- and its store serves
+-- declared defaults until the character directory exists. So the snapshot
+-- loadCfg takes at init holds an EMPTY set list, and without a re-read the
+-- session's first save would write that emptiness over the character's real
+-- file: the dlac flavor of the save-after-logoff bug. Watch the one fact
+-- that names the store's identity -- the file it would write (S.cfg.path(),
+-- per-character, nil pre-login) -- and re-decode the bridge the moment it
+-- changes: the first login, and every character switch. The fresh table
+-- goes through host.onSettingsSwap, which keeps or drops the working state
+-- by character exactly as the standalone flavor does. Runs at every beat
+-- and at the top of every render, so no save-capable surface can act on a
+-- stale bridge first.
+local _storeAt = nil;   -- the store path the bridge was decoded from
+
+local function syncStore()
+    if Sref == nil or Sref.cfg == nil or lib == nil or cfg == nil then return; end
+    local p = nil;
+    pcall(function() p = Sref.cfg.path(); end);
+    if p == nil or p == _storeAt then return; end
+    _storeAt = p;
+    loadCfg(Sref);
+    lib.blu.delay = tonumber(cfg.applyDelay) or 1.1;
+    lib.blu.mode  = tostring(cfg.applyMode or 'safe');
+    if type(lib.host.onSettingsSwap) == 'function' then
+        lib.host.onSettingsSwap(cfg, p);
+    elseif lib.host.deps ~= nil then
+        lib.host.deps.cfg = cfg;    -- an older vendored host: rebind at least
+    end
 end
 
 -- ---------------------------------------------------------------------------
@@ -186,13 +402,19 @@ return {
 
     config = {
         keys = {
-            sets = 'string', lastApplied = 'string', activeSetName = 'string',
-            activeSetLevel = 'number',
+            -- sets2/sets2bak/lastApplied2 are the timeline grammar; sets and
+            -- lastApplied stay dual-written so an older module still reads a
+            -- usable flat list (see the codec block). setsLayout and
+            -- autoRestore are retired, kept one release for tolerance.
+            sets = 'string', sets2 = 'string', sets2bak = 'string',
+            lastApplied = 'string', lastApplied2 = 'string',
+            activeSetName = 'string',
             tooltipDelay = 'number',
             codexDensity = 'string', traitsDensity = 'string', setsLayout = 'string',
-            applyMode = 'string',
+            applyMode = 'string', replan = 'string',
             applyDelay = 'number', budgetOverride = 'number',
-            lastAppliedSet = 'string',
+            autoRestore = 'boolean',
+            setsModelVer = 'number',
             -- the point-budget model (see ui/settingsui.lua). This flavor
             -- has no packet hook, so the 0x063 cross-check never arrives
             -- here -- both figures come from readings or the Settings tab.
@@ -200,12 +422,15 @@ return {
             capLearnedBonus = 'number', capMeritPoints = 'number',
         },
         defaults = {
-            sets = '', lastApplied = '', activeSetName = '', activeSetLevel = 0,
+            sets = '', sets2 = '', sets2bak = '',
+            lastApplied = '', lastApplied2 = '',
+            activeSetName = '',
             tooltipDelay = 0.5,
             codexDensity = 'normal', traitsDensity = 'normal', setsLayout = 'grid',
-            applyMode = 'safe',
+            applyMode = 'safe', replan = 'manual',
             applyDelay = 1.1, budgetOverride = 0,
-            lastAppliedSet = '',
+            autoRestore = false,
+            setsModelVer = 2,
             capModelVer = 3, capLearnedBonus = -1, capMeritPoints = -1,
         },
     },
@@ -218,6 +443,9 @@ return {
             return;
         end
         loadCfg(S);
+        -- a mid-session load (/addon reload dlac) already has the character
+        -- directory: record it so the watch only fires on a real change
+        pcall(function() _storeAt = S.cfg.path(); end);
         L.blu.delay = tonumber(cfg.applyDelay) or 1.1;
         L.blu.mode  = tostring(cfg.applyMode or 'safe');
         L.host.init({
@@ -225,11 +453,17 @@ return {
             book = L.book, blu = L.blu, sets = L.sets,
             cfg = cfg, save = saveCfg,
         });
+        pcall(function()
+            if type(L.host.noteChar) == 'function' then L.host.noteChar(_storeAt); end
+        end);
         -- the level-change watch + armed Restore ride the framework beat,
         -- Panel open or not, gated on the one activity predicate. A read we
-        -- could not make is not permission: '~= true' stays inert.
+        -- could not make is not permission: '~= true' stays inert. The store
+        -- watch runs FIRST and ungated -- login detection cannot depend on
+        -- the module being 'active'.
         pcall(function()
             S.combat.subscribe('tick', function()
+                syncStore();
                 if S.me.acting().active == true then
                     pcall(L.host.tick);
                 end
@@ -245,6 +479,7 @@ return {
             end
             return;
         end
+        syncStore();                     -- never render (or save) a stale bridge
         L.host.deps.im = ctx.imgui;      -- always the HOST's handle
         if L.host.deps.floatWindow == true then
             -- The float surface is live (this dlac has the window hook), so
@@ -285,6 +520,7 @@ return {
     window = function(ctx)
         local L = lib;
         if L == nil then return; end
+        syncStore();                     -- never render (or save) a stale bridge
         L.host.deps.im = ctx.imgui;
         L.host.renderWindowFloat();
     end,
@@ -307,5 +543,9 @@ return {
     end,
 
     -- not part of the loader contract; exposed for the headless smoke suite
+    -- (_forceLib seeds the lazy lib cache: the repo layout lacks the vendored
+    -- sibling dirs, so require-based loadLib cannot resolve there)
     _codec = codec,
+    _syncStore = syncStore,
+    _forceLib = function(t) lib = t; end,
 };

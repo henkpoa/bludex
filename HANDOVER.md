@@ -1,13 +1,188 @@
 # Bludex — Session Handover
 
-**Date:** 2026-08-04 (end of the full-day session; supersedes the night-build handover)
+**Date:** 2026-08-08 (the TIMELINE session — remote maintainer build on Henrik's
+authority, zero field time; supersedes the 2026-08-04 handover, which is kept
+below as §H for everything it proved that still stands)
 **Repo:** https://github.com/henkpoa/bludex — public, `main` + `dev` (all work on `dev`,
-dev→main only on Henrik's explicit go; same law in dlac). Released at `4c91e41`+docs.
-**State:** everything below is **FIELD-CONFIRMED on CatsEyeXI** unless marked otherwise.
-`addon.version` is **1.0.1** — tagged `v1.0.1` on `main`. The point budget is
-now MODELLED (`base(level) + learned bonus + Assimilation merits`, merits only
-at 75) rather than read from the client's cache, which only recomputes when the
-native Set Spells menu opens. See §7.
+dev→main only on Henrik's explicit go; same law in dlac). `addon.version` is
+**1.1.0 on dev** — NO release until the field pass below is green.
+
+---
+
+## -1. The merge of 2026-08-10 — the three systems, and where each one stands
+
+Henrik's direction: BLUDEX keeps **all three** ways of building a set, chosen
+**per set at creation** (with plain-words explanations), plus a setting for
+which system answers first:
+
+1. **Flat** — one spell per slot, the original shape. *Recommended at 75 when
+   level sync doesn't matter.*
+2. **Lvl Subsets** — a dedicated build per level band under one name, falling
+   back to the flat build where no band is defined. *Recommended for dedicated
+   per-band sets.*
+3. **Slotlist (timeline)** — a level-ordered chain of spells per slot.
+   *Recommended for granular control; the most advanced, Henrik's preferred.*
+
+**What this merge did:** local dev (Lvl Subsets, commits `c3cf9a6..163b102`,
+plus the trait-attribution work in `47ae622`) merged with `origin/dev` (the
+timeline branch, which already carried main's 1.0.2 log-off save fix). Where
+the two rewrote the same sets subsystem (`setmodel`, `setsui`,
+`blusetsimport`, the codec/config/watcher parts of `config`/`dlacmodule`/
+`host`/`bludex`), **the timeline side won wholesale** — a hunk-level splice
+would have produced a hybrid that half-worked for both. The Lvl Subsets
+implementation is NOT lost: it lives complete in the commits above (§0-old
+row "A build per level band" describes it) and returns as the second set
+type when the three-type model is built. Everything outside that subsystem
+kept both sides: the trait attribution + hover gate + widget theme work,
+the SoA wiki traits (now with per-tier `traitId` and `traitNames` entries —
+generator unified), and the timeline's whole Sets tab.
+
+**The work queue from here:** (a) the per-set TYPE at creation + the
+priority setting; (b) port Lvl Subsets back as a type on the timeline-era
+storage; (c) finish the job-traits work (field round still owed); (d) the
+timeline field checklist below (§0) still stands.
+
+---
+
+## 0. The timeline session (2026-08-08) — READ THIS FIRST
+
+**Design:** `docs/timeline-sets-plan.md` — settled with Henrik in a same-day
+Q&A, then built to completion by the remote maintainer session under his
+"you are the maintainer now" grant. **Everything is smoke-green (264 checks,
+`lua bludex/tools/smoke_posix.lua` from the parent dir) and NOTHING is
+field-confirmed yet.** The field checklist is plan §9; the concrete morning
+list is at the end of this section.
+
+### What a set IS now
+
+`{ name, builtFor, chains[20], ids[20] (derived 75-mirror), backups<=5 }` —
+each slot a level-ordered CHAIN of `{ id, from }` entries (id 0 = deliberate
+empty marker). The entry with the highest `from` at or below the level is
+worn; `setmodel.resolveAtLevel` collapses to the flat 20-id array everything
+below the resolution line still speaks (sortedLayout/applyDiff untouched).
+Slot index carries the unlock bracket (`bracketFloor`: 1-6 open at Lv.1,
+pairs at 11/21/31/41/51/61/71 — pinned against `slotsAtLevel` at every
+level). A flat set is the degenerate case; migration (adopt-time,
+`setsModelVer 2`) is the sorted apply layout made visible and is lossless.
+
+### The laws this session added (each smoke-pinned)
+
+1. **One place at a time** — a spell's ranges may never overlap across
+   chains; adds are refused with the collision named, and REMOVALS that
+   would stretch a predecessor into a collision are refused too (the
+   extension guard).
+2. **No dead entries** — an edit may not leave any entry never-active
+   (floor-shadowed or instantly replaced).
+3. **The band sweep** — `bandViolations` checks points vs budget at every
+   breakpoint 1-75; `builtFor` scopes ENFORCEMENT (75 = endgame set, only
+   75 must fit; 1 = leveling set, everything must). Enforced+known bands
+   hard-block Apply (UI, `/bdx apply`, `/bdx replan`, auto — all four);
+   Save is never blocked, the set wears a badge instead. Unknown learned
+   bonus ⇒ provisional bands, warn-only. THE MERIT CLIFF: a maxed 75 set is
+   over budget at 71-74 by real math (merits count only at 75) — builtFor
+   75 is what keeps every endgame set green.
+4. **The slider previews, Apply resolves live** — the plain Apply always
+   uses the real effective level; only the explicit **Apply for Lv.N**
+   button (shown while previewing away from live) sends another level's
+   plan, and `lastApplied` remembers the level so the header says
+   "matches your Lv.N plan" instead of glowing green at it.
+5. **The adds-only law is REPEALED** (Henrik 2026-08-08): level changes
+   re-plan, which may unset. `restoreMissing`/`planDiff` are deleted;
+   `cfg.autoRestore` → `cfg.replan` ('manual' default for everyone — auto's
+   meaning changed). Manual = header note + nudge float (rides the dlac
+   float hook too) + one chat line; auto = debounced self-apply. THE
+   QUIET-FLAT RULE: a plan that would only REMOVE spells for the level
+   stays silent — the client's own sync-disable already covers it.
+6. **Mutation lives in the Sets tab alone** — codex/traits/Spell Info are
+   reference-only (assignment status with ranges where the buttons were);
+   the Assign pane (right column, opened by a slot's `+`) is the one add
+   path; entries remove by right-click with the guards deciding.
+7. **Backups** — every save-over and Read-current banks the replaced state
+   (ring of `BACKUP_CAP=5` on the entry, restore via right-click on the
+   saved row; restores bank first, so they undo too).
+
+### Persistence
+
+Standalone: new fields ride the settings table; `adoptCfg` migrates in
+place. dlac: new keys `sets2` / `sets2bak` / `lastApplied2` (versioned
+'#v2' grammar, `id@from` entries, empty-token-preserving splits, clamps and
+re-sorts on decode) while the LEGACY `sets`/`lastApplied` keys keep being
+written as each set's flat 75-mirror — the old decoder zeroes unknown
+tokens, so the old grammar must never change shape or an older module
+silently EMPTIES every set. Reader prefers v2. Retire the dual-write one
+release after the field pass.
+
+### The SoA burst spells (Henrik's parting task, done)
+
+Traits added from bg-wiki (his call: wiki is truth for all but level):
+719→Attack Bonus, 720→Magic Atk., 721→Accuracy, 722→Defense, 725→Magic
+Eva. (NEW cat 29), 726→Magic Def., 727→Evasion, 728→Magic Acc. (NEW cat
+30) — weight 8 each; stats cross-checked and they MATCH the 2026-08-04
+field readings, so mods stand. Cats 29/30 are bludex-internal ids
+(traitId = LSB trait.h 126/125, tier at 8 pts, +10 sibling convention —
+the tier VALUES are the one assumption left; eyeball in game). bg-wiki
+itself was egress-blocked from the cloud session — values came through
+per-spell web-search extraction, cross-checked against upstream LSB where
+it had anything. Generator carries `WIKI_TRAITS`/`WIKI_TRAIT_CATEGORIES`.
+
+### Decisions made on maintainer authority (alternatives noted)
+
+* **Assign pane is a lean picker** (search + category + level-sorted rows
+  reusing `listRow`), NOT the extracted codex filter row the plan §6
+  sketched — less churn, same UX; the full extraction remains open if the
+  pane ever wants sort/density parity.
+* **The nudge float rides the existing float surfaces** (standalone
+  d3d hook + dlac `window` hook when the main window is closed); the
+  embedded-Panel-only flavor degrades to header note + chat line.
+* **`cfg.replan` defaults to 'manual' for everyone**, including old
+  autoRestore=true users — auto now unsets, nobody inherits that silently.
+* **Slot numbers never render** — bracket group headers only ("Lv.21-30"),
+  since the engine re-sorts slots on every apply anyway.
+* **builtFor edits live under the Name box** (left column), default 75 on
+  everything migrated and new.
+* An adversarial code review ran over the whole branch before merge; its
+  13 findings (backup-ring reset, silent refusals, stale nudges, decode
+  clamps, the /bdx apply back door, meter semantics, per-frame sweep cost)
+  are all fixed and largely regression-pinned.
+
+### Field checklist for the morning (plan §9 in short)
+
+- [ ] Load on CEXI: saved sets migrate flat, look identical, no badges,
+      Apply behaves byte-identically for a flat set.
+- [ ] Build the Wild Oats → Bludgeon → empty-at-45 chain; slider sweep;
+      stats/traits follow; bands paint.
+- [ ] Preemptive apply: Apply for Lv.N at 75, sync, zero packets at sync,
+      header reads "matches your Lv.N plan".
+- [ ] Ding a level with a pending swap: Manual nudge (header + float +
+      chat), then Auto mode, debounce not firing mid-bounce.
+- [ ] Sync down with a builtFor=1 set: low entries return via re-plan, no
+      server-rejected tail; flat set stays QUIET.
+- [ ] Badge + Apply block on a deliberately overfilled leveling set;
+      `/bdx apply` refuses too.
+- [ ] dlac flavor: chains round-trip the store; an OLD dlac module still
+      sees flat sets (nothing wiped).
+- [ ] Read current: two clicks, backup banked, restore works.
+- [ ] SoA: set Spectral Floe, check Magic Atk. Bonus appears (and the two
+      addendum trait VALUES against the game's own trait menu).
+- [ ] README + screenshots are STALE (grid, right-click add, quick-add) —
+      rewrite after the field pass, not before.
+
+---
+
+# §H — the 2026-08-04 handover (previous session)
+
+Everything below was field-confirmed for the PRE-TIMELINE addon. Still-true
+laws: the packet layer, signatures, cast lock, cap staleness, budget model,
+settings lifecycle, the kit laws. SUPERSEDED by §0: the Sets tab layout
+(grid + quick-add are gone), right-click add/remove anywhere (gone), the
+adds-only auto-restore (deleted), `applyDirty` duplication (consolidated
+into `setsui.applyState`), flat `{ name, ids }` sets (now timelines).
+
+**State as of 2026-08-04:** everything below **FIELD-CONFIRMED on CatsEyeXI**
+unless marked otherwise. `addon.version` was **1.0.1**. The point budget is
+MODELLED (`base(level) + learned bonus + Assimilation merits`, merits only
+at 75) rather than read from the client's cache, which only recomputes when
+the native Set Spells menu opens. See §7.
 
 ---
 

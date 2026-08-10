@@ -398,23 +398,6 @@ function M.expectedCap(level)
     return total + M.meritPts;
 end
 
--- The budget to PLAN A RUNG with (setmodel.LEVELS: 1/11/.../71). A rung is a
--- band -- 41 covers 41-50 -- and a band shares one base, so the rung's own
--- level answers for all of it. The top band is the exception: it runs 71-75
--- and the Assimilation merits switch on at 75, so that is the level it is
--- planned at (a Lv.71 build IS the level-75 build).
---
--- Returns cap, source:
---   'model'  both parts known -- ours, and right at every rung
---   'base'   the server's base rule alone, a FLOOR: this character's learned
---            bonus is not measured yet, so the real cap is higher than this.
-function M.rungCap(level)
-    if level == nil or level < 1 then return nil, nil; end
-    local est = M.expectedCap(level >= setmodel.TOP and 75 or level);
-    if est ~= nil then return est, 'model'; end
-    return setmodel.baseCapAtLevel(level), 'base';
-end
-
 -- The budget to SHOW. The client's own number while it is trustworthy;
 -- otherwise the model for the level we are actually standing at.
 -- Returns value, source: 'live' | 'model' | 'stale' (nothing better known).
@@ -613,6 +596,13 @@ function M.watchJobState()
     return kind;
 end
 
+-- Forget the observed job identity. For a character switch: the character
+-- coming in must set a fresh baseline, not read as the previous one having
+-- changed jobs (which would arm the level-change restore for them).
+function M.resetJobWatch()
+    watched = nil;
+end
+
 function M.canApply()
     return sig.equipex ~= nil and sig.offset ~= nil and M.onBlu();
 end
@@ -622,10 +612,11 @@ local function msg(s)
     print(chat.header('bludex'):append(chat.message(s)));
 end
 
--- One chat voice for the whole library: rules that act on their own (the
--- host's level-change rules) say so through the same prefix the apply engine
--- uses, rather than growing a second one.
-M.say = msg;
+-- the one chat voice, exported: the host's level-change watcher speaks
+-- through it so every bludex line wears the same header
+function M.announce(s)
+    msg(s);
+end
 
 -- The CAST LOCK: setting or unsetting any spell locks Blue Magic casting
 -- for about a minute (the game's own rule). Every 0x102 we send restamps
@@ -752,45 +743,6 @@ local function byLevel(ids, book)
         end);
     end
     return out;
-end
-
--- Position-independent plan against the live set: targets are matched by
--- spell IDENTITY, not slot. Since the sorted slot-wise plan took over the
--- apply path (2026-08-04), this serves ONLY the adds-only restore -- a
--- level-change restore must put spells back without reshuffling the set.
--- Missing spells are paired lowest-level-first with the lowest open slots.
--- Returns nil when the live set is unreadable.
-local function planDiff(ids, book, removeExtras)
-    local live = M.currentSet();
-    if #live ~= 20 then return nil; end
-    local want = {};
-    for slot = 1, 20 do
-        local id = ids[slot] or 0;
-        if id ~= 0 and M.hasSpell(id) then want[id] = true; end
-    end
-    local liveIds, removes, empties = {}, {}, {};
-    for slot = 1, 20 do
-        local id = live[slot] or 0;
-        if id == 0 then
-            empties[#empties + 1] = slot;
-        elseif want[id] or not removeExtras then
-            liveIds[id] = true;
-        else
-            removes[#removes + 1] = slot;
-            empties[#empties + 1] = slot;   -- open once the unset lands
-        end
-    end
-    local missing, kept = {}, 0;
-    for id in pairs(want) do
-        if liveIds[id] then kept = kept + 1; else missing[#missing + 1] = id; end
-    end
-    missing = byLevel(missing, book);
-    local adds, noSlot = {}, 0;
-    for i, id in ipairs(missing) do
-        if empties[i] then adds[#adds + 1] = { slot = empties[i], id = id };
-        else noSlot = noSlot + 1; end
-    end
-    return { removes = removes, adds = adds, kept = kept, noSlot = noSlot };
 end
 
 -- Apply a whole set (array of 20 real ids / 0s): reset, then set each spell
@@ -1013,40 +965,9 @@ function M.reportLevelDown(book)
         free > 0 and (', %d slots free'):format(free) or ''));
 end
 
--- The auto-restore path: put back whatever a level change stripped from the
--- last-applied set. ADDS ONLY -- never unsets, so anything set by hand in
--- the native menu survives. Quiet when nothing is missing (this fires after
--- every level change). Ends by re-reading the live set and reporting how
--- many actually stuck -- a still-synced level rejects the tail server-side.
-function M.restoreMissing(ids, book, onDone)
-    if not M.canApply() or M.applying then return false; end
-    local plan = planDiff(ids, book, false);
-    if plan == nil or #plan.adds == 0 then return false; end
-    local delay = stepDelay();
-    M.applying = true;
-    msg(('Level change: restoring %d spell(s), lowest level first.'):format(#plan.adds));
-    ashita.tasks.once(1, function()
-        for _, e in ipairs(plan.adds) do
-            M.setSlot(e.slot, e.id);
-            coroutine.sleep(delay);
-        end
-        coroutine.sleep(0.5);
-        local liveNow, after = {}, M.currentSet();
-        if #after == 20 then
-            for i = 1, 20 do if after[i] ~= 0 then liveNow[after[i]] = true; end end
-        end
-        local stuck = 0;
-        for _, e in ipairs(plan.adds) do if liveNow[e.id] then stuck = stuck + 1; end end
-        M.applying = false;
-        if #after == 20 and stuck < #plan.adds then
-            msg(('Restored %d of %d - the rest need a higher level (or a free slot). Spells castable in ~%ds.'):format(
-                stuck, #plan.adds, M.castLock));
-        else
-            msg(('Restored %d spell(s). Spells castable in ~%ds.'):format(#plan.adds, M.castLock));
-        end
-        if onDone then pcall(onDone); end
-    end);
-    return true;
-end
+-- (The pre-timeline adds-only restore -- planDiff + restoreMissing -- is
+-- RETIRED, 2026-08-08: the timeline's re-plan replaced it, and with it the
+-- guarantee that hand-set native-menu spells survive a level change. That
+-- repeal is deliberate and recorded: docs/timeline-sets-plan.md 2.7.)
 
 return M;

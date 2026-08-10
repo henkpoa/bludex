@@ -30,7 +30,29 @@ local host   = require('bludex\\ui\\host');
 
 local cfg = settings.load(config.defaults());
 
+-- Where the settings library routes a load or save is decided by its own
+-- login state: the character's folder while logged in, a shared 'defaults'
+-- profile otherwise (title screen, character select). Nothing character-
+-- owned may be read or written through the defaults profile -- a save made
+-- there LOOKS saved and is thrown away at the next login -- so the save,
+-- the commands and the render all gate on this.
+local function loggedIn()
+    return settings.logged_in == true;
+end
+
+-- The character the settings library is currently serving, as its folder
+-- tag; nil while logged off. The host compares tags to tell a relog (keep
+-- the working state) from a character switch (drop it).
+local function charTag()
+    if loggedIn() and (settings.server_id or 0) ~= 0
+        and type(settings.name) == 'string' and #settings.name > 0 then
+        return ('%s_%d'):format(settings.name, settings.server_id);
+    end
+    return nil;
+end
+
 local function saveSettings()
+    if not loggedIn() then return; end
     settings.save();
 end
 
@@ -38,17 +60,20 @@ host.init({
     im = imgui, book = book, blu = blu, sets = sets,
     cfg = cfg, save = saveSettings,
 });
+host.noteChar(charTag());
 blu.delay = cfg.applyDelay or 1.1;
 blu.mode  = cfg.applyMode or 'safe';
 
+-- The library swaps the whole settings table at every login and logout
+-- (and so on any character switch). Everything holding the old table must
+-- rebind, and per-character state must not cross characters -- the host
+-- owns that logic (host.onSettingsSwap).
 settings.register('settings', 'bdx_settings_update', function(s)
     if s ~= nil then
         cfg = s;
-        -- a settings file written before level builds existed arrives here too
-        for _, entry in ipairs(cfg.sets or {}) do sets.normalizeGroup(entry); end
-        host.deps.cfg = cfg;
         blu.delay = cfg.applyDelay or 1.1;
         blu.mode  = cfg.applyMode or 'safe';
+        host.onSettingsSwap(cfg, charTag());
     end
 end);
 
@@ -69,6 +94,11 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
     if #args == 0 or not args[1]:any('/bludex', '/bdx') then return; end
     e.blocked = true;
 
+    if not loggedIn() then
+        msg('Asleep while no character is logged in: settings are per character, so nothing can be shown -- and a save made now would be lost at login.');
+        return;
+    end
+
     if #args == 1 then
         host.toggle();
         return;
@@ -78,7 +108,8 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
         msg('/bludex (or /bdx) - toggle the window.');
         msg('/bludex list - list saved sets.');
         msg('/bludex import [name] - import blusets spell lists as saved sets.');
-        msg('/bludex apply <name> [level] - apply a saved set (only the changed slots); without a level, the build for the level you are at.');
+        msg('/bludex apply <name> - apply a saved set (its plan for your current level).');
+        msg('/bludex replan - apply the editing set\'s plan for your current level.');
         msg('/bludex reset - unset every spell.');
         msg('/bludex refresh - re-request job data (wakes a stuck points read).');
         msg('/bludex delay <0.2-5> - seconds between set-spell packets.');
@@ -178,13 +209,9 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
             return;
         end
         for _, entry in ipairs(cfg.sets) do
-            sets.normalizeGroup(entry);
-            local parts = { ('%d spells'):format(sets.countIds(entry.ids)) };
-            for _, lvl in ipairs(sets.groupLevels(entry)) do
-                parts[#parts + 1] = ('Lv.%d: %d'):format(
-                    lvl, sets.countIds(sets.groupIds(entry, lvl)));
-            end
-            msg(('  %s (%s)'):format(entry.name, table.concat(parts, ', ')));
+            local n = 0;
+            for i = 1, 20 do if (entry.ids[i] or 0) ~= 0 then n = n + 1; end end
+            msg(('  %s (%d spells)'):format(entry.name, n));
         end
         return;
     end
@@ -202,39 +229,38 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
         return;
     end
 
-    -- /bludex apply <name> [level] -- WHICH BUILD: the named level when you
-    -- give one; otherwise the build for the level you are standing at (its own
-    -- band if you made one, else the highest band below it -- a smaller build
-    -- always fits), and the set's flat build when no band suits. A set with no
-    -- level builds behaves exactly as it always did.
     if args[2]:any('apply') and #args >= 3 then
-        local rest = table.concat(args, ' ', 3);
-        local want, asked = nil, rest:match('%s(%d+)$');
-        if asked ~= nil then
-            want = sets.rungFor(tonumber(asked));
-            rest = rest:gsub('%s%d+$', '');
-        end
-        local entry = findSet(rest);
+        local entry = findSet(table.concat(args, ' ', 3));
         if entry == nil then
             msg('No saved set by that name. /bludex list shows them.');
             return;
         end
-        sets.normalizeGroup(entry);
-        local level = want or sets.groupPick(entry, blu.effectiveLevel());
-        local ids = sets.groupIds(entry, level);
-        if sets.countIds(ids) == 0 then
-            msg(('"%s" has nothing in its %s build. /bludex list shows what it has.'):format(
-                entry.name, (level == nil) and 'flat' or ('Lv.' .. level)));
+        -- the same hard block the UI Apply wears (plan 2.6) -- the command
+        -- must not be the back door around the band sweep
+        local viol = sets.enforcedViolations(entry, book, function(L)
+            local c = blu.expectedCap(L);
+            if c ~= nil then return c; end
+            if L >= 75 and (cfg.budgetOverride or 0) > 0 then return cfg.budgetOverride; end
+            return nil;
+        end);
+        if #viol > 0 then
+            msg(('Cannot apply %s: %s.'):format(entry.name, sets.bandText(viol[1])));
             return;
         end
-        if level ~= nil then
-            msg(('Applying %s, the Lv.%d build.'):format(entry.name, level));
-        end
+        -- the timeline resolved for the level we stand at, like the button
+        local lvl = blu.effectiveLevel() or 75;
+        local ids = sets.resolveAtLevel(entry, lvl, book);
         if blu.applyDiff(ids, book) then
-            cfg.lastApplied = { ids = ids };
-            cfg.lastAppliedSet = entry.name;      -- what the Switch rule follows
+            local snap = {};
+            for i = 1, 20 do snap[i] = ids[i] or 0; end
+            cfg.lastApplied = { ids = snap, level = lvl };
             saveSettings();
         end
+        return;
+    end
+
+    if args[2]:any('replan') then
+        host.replanNow();
         return;
     end
 
@@ -286,9 +312,15 @@ ashita.events.register('packet_in', 'bdx_packet_cb', function(e)
 end);
 
 ashita.events.register('d3d_present', 'bdx_present_cb', function()
+    -- Logged off, the settings library serves the shared defaults profile:
+    -- the window would show -- and save into -- data belonging to no
+    -- character (with the Save button lit green against the empty defaults,
+    -- inviting exactly the click that loses work). It sleeps instead; the
+    -- working state is kept for the character coming back.
+    if not loggedIn() then return; end
     host.render();
 end);
 
 ashita.events.register('unload', 'bdx_unload_cb', function()
-    settings.save();
+    saveSettings();
 end);

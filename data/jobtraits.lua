@@ -1,6 +1,6 @@
--- jobtraits.lua -- job traits that COLLIDE with blue traits (GENERATED 2026-08-07
+-- jobtraits.lua -- job traits that COLLIDE with blue traits (GENERATED 2026-08-10
 --                  by tools/generate_spells.py -- DO NOT EDIT)
--- Source: sql/traits.sql, filtered to the 30 trait ids blue magic can also
+-- Source: sql/traits.sql, filtered to the 32 trait ids blue magic can also
 -- grant. A job trait SUPPRESSES the blue one outright, at any tier
 -- (blueutils.cpp CalculateTraits: "Player has the real job trait, making
 -- them ineligible" -- the TODO beside it is why the stronger-blue case does
