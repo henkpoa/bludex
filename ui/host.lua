@@ -350,12 +350,28 @@ end
 -- still refuses to act on a set you have since moved away from -- the live
 -- spells must all belong to the banked plan, or the promise is dropped
 -- rather than allowed to clobber whatever you are wearing now.
+--
+-- READ IT THROUGH pendingPromise, NEVER FIELD BY FIELD. While the promise
+-- is still the settings default it is an Ashita T{}, and a T{} carries the
+-- table HELPERS as fields -- `count` among them. `pend.count > 0` compared
+-- a function to a number and took the addon down on the first frame (field
+-- 2026-08-10). Only ids/need/waiting are ever stored, none of them helper
+-- names, and `ids` proves the shape before anything else is touched.
+function M.pendingPromise(cfg)
+    local p = cfg and cfg.pendingSync or nil;
+    if type(p) ~= 'table' or type(p.ids) ~= 'table' then return nil; end
+    local n = (type(p.waiting) == 'table') and #p.waiting or 0;
+    local need = tonumber(p.need);
+    if n == 0 or need == nil then return nil; end
+    return { ids = p.ids, need = need, n = n };
+end
+
 local function finishPending(deps)
-    local p = deps.cfg.pendingSync;
-    if p == nil or type(p.ids) ~= 'table' then return; end
+    local p = M.pendingPromise(deps.cfg);
+    if p == nil then return; end
     local lvl = deps.blu.effectiveLevel();
     if lvl == nil then return; end
-    if p.need ~= nil and lvl < p.need then return; end      -- not there yet
+    if lvl < p.need then return; end                        -- not there yet
     local function drop()
         -- EMPTY, never nil: the settings lib merges its defaults over a
         -- missing key on load, so a hole would read back as whatever the
@@ -376,7 +392,7 @@ local function finishPending(deps)
     end
     drop();
     deps.blu.announce(('Back at Lv.%d - setting the %d spell(s) the sync refused.'):format(
-        lvl, p.count or 0));
+        lvl, p.n));
     deps.blu.restoreMissing(p.ids, deps.book);
 end
 
@@ -688,16 +704,14 @@ local function renderBody(im, st, deps, embedded)
     -- THE PROMISE, visible while it is outstanding (Henrik 2026-08-10,
     -- sixth round): spells the sync refused, and the level they are waiting
     -- for. It clears itself the moment the watcher sets them.
-    local pend = deps.cfg.pendingSync;
-    if pend ~= nil and (pend.count or 0) > 0 then
+    local pend = M.pendingPromise(deps.cfg);
+    if pend ~= nil then
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        kit.ctext(im, kit.COL.warn, ('   %d waiting for Lv.%d'):format(
-            pend.count, pend.need or 75));
+        kit.ctext(im, kit.COL.warn, ('   %d waiting for Lv.%d'):format(pend.n, pend.need));
         kit.tip(im, ('%d spell(s) of this set could not go in at your level.\n'
             .. 'Bludex sets them by itself once you are Lv.%d -- nothing to\n'
             .. 'remember, and no need to Apply again.\n\n'
-            .. 'Applying anything else retires the promise.'):format(
-            pend.count, pend.need or 75));
+            .. 'Applying anything else retires the promise.'):format(pend.n, pend.need));
     end
     -- the set picker (Henrik 2026-08-10): every saved set one click away,
     -- and a second menu for WHICH build when the set has level builds

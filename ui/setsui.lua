@@ -194,12 +194,18 @@ function M.applyEditing(ctx, forLevel)
         -- Bank it and the level watcher finishes the job. Measured at the
         -- LIVE level whatever level the plan was sent for -- 'Apply for
         -- Lv.41' at 75 is refused nothing.
+        --
+        -- FIELD NAMES ARE NOT FREE HERE: this table lands in cfg, whose
+        -- default is an Ashita T{}, and a T{} carries the table helpers as
+        -- fields. `count` is one of them, and reading it back cost a crash
+        -- (field 2026-08-10). ids/need/waiting only, read back through
+        -- host.pendingPromise, never field by field.
         local liveLvl = ctx.blu.effectiveLevel();
         ctx.cfg.pendingSync = {};         -- a new apply retires any old tail
         if liveLvl ~= nil then
             local refused, need = ctx.sets.refusedAtLevel(snap, liveLvl, ctx.book);
             if #refused > 0 and need ~= nil then
-                ctx.cfg.pendingSync = { ids = snap, need = need, count = #refused };
+                ctx.cfg.pendingSync = { ids = snap, need = need, waiting = refused };
                 local line = ('Lv.%d cannot hold %d of these spells - Bludex will set them\nwhen you reach Lv.%d.'):format(
                     liveLvl, #refused, need);
                 st.applyNote = (line:gsub('\n', ' '));

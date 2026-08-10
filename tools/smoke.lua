@@ -1254,9 +1254,11 @@ blu.learnedBonus, blu.meritPts = nil, nil;
     vcfg.pendingSync = nil;
     stubLive.lvl, stubLive.live, said = 20, live20({}), nil;
     setsuiM.applyEditing(vctx);
-    check(vcfg.pendingSync ~= nil and vcfg.pendingSync.count == 1
-        and vcfg.pendingSync.need == 42,
+    check(host.pendingPromise(vcfg) ~= nil and host.pendingPromise(vcfg).n == 1
+        and host.pendingPromise(vcfg).need == 42,
         'an apply at Lv.20 banks the one spell Lv.20 cannot hold');
+    check(vcfg.pendingSync.count == nil,
+        'and stores NO field named after a table helper (the T{} crash)');
     check(type(said) == 'string' and said:find('Lv.42', 1, true) ~= nil,
         'and says so in chat rather than failing silently');
     check(type(vst.applyNote) == 'string' and vst.applyNote ~= '',
@@ -1264,11 +1266,11 @@ blu.learnedBonus, blu.meritPts = nil, nil;
     -- the same set applied at a level that CAN hold it retires the promise
     stubLive.lvl = 75;
     setsuiM.applyEditing(vctx);
-    check((vcfg.pendingSync or {}).ids == nil, 'a clean apply leaves no promise behind');
+    check(host.pendingPromise(vcfg) == nil, 'a clean apply leaves no promise behind');
     -- 'Apply for Lv.N' is judged at the level you are STANDING at, not the
     -- level the plan was sent for -- a Lv.4 plan sent at 75 refuses nothing
     setsuiM.applyEditing(vctx, 4);
-    check((vcfg.pendingSync or {}).ids == nil, 'a preemptive apply at full level banks nothing');
+    check(host.pendingPromise(vcfg) == nil, 'a preemptive apply at full level banks nothing');
     vst.editingSet = plan;
 end)();
 
@@ -1858,6 +1860,22 @@ check(fake.applied == nil,
 -- budget -- the main chunk is near Lua's 200-local ceiling.
 print('smoke: the sync promise (what the level refused, set when it returns)');
 (function()
+    -- THE CRASH THIS COST, pinned first (field 2026-08-10: "attempt to
+    -- compare number with function", host.lua renderBody, first frame after
+    -- load). Untouched, cfg.pendingSync is Ashita's T{}, and a T{} carries
+    -- the table HELPERS as fields -- so `pend.count` was the count METHOD.
+    -- Stand a T{} lookalike in for it: the reader must see nothing pending,
+    -- not a function.
+    fcfg.pendingSync = setmetatable({}, { __index = {
+        count = function() return 0; end,
+        length = function() return 0; end,
+        empty = function() return true; end,
+    } });
+    check(host.pendingPromise(fcfg) == nil,
+        'an untouched T{} default reads as no promise, never as a helper');
+    check(type((fcfg.pendingSync).count) == 'function',
+        '...and the fixture really is the shape that broke it');
+
     -- what Lv.20 will bounce off a plan of Head Butt (12) and Venom Shell (42)
     local refused, need = sets.refusedAtLevel(flat20, 20, book);
     check(#refused == 1 and refused[1] == 513 and need == 42,
@@ -1878,23 +1896,23 @@ print('smoke: the sync promise (what the level refused, set when it returns)');
     fcfg.lastAppliedSet = '';
     fake.level, fake.applied, fake.restored = 40, nil, nil;
     fake.live = sets.sortedLayout({ [1] = 623 }, book);   -- only the low one is on
-    fcfg.pendingSync = { ids = flat20, need = 42, count = 1 };
+    fcfg.pendingSync = { ids = flat20, need = 42, waiting = { 513 } };
     host.restoreChecks = { 0 }; host.tick();
-    check(fake.restored == nil and (fcfg.pendingSync or {}).ids ~= nil,
+    check(fake.restored == nil and host.pendingPromise(fcfg) ~= nil,
         'below the level it needs, the promise waits and says nothing');
     fake.level = 75;
     host.restoreChecks = { 0 }; host.tick();
     check(fake.restored ~= nil and fake.restored[2] == 513,
         'at the level it needs, it sets the refused spell by itself');
-    check((fcfg.pendingSync or {}).ids == nil, 'and the promise is spent, not repeated');
+    check(host.pendingPromise(fcfg) == nil, 'and the promise is spent, not repeated');
 
     -- MOVED ON? The promise is dropped, never allowed to clobber the set you
     -- are actually wearing now.
     fake.restored = nil;
     fake.live = sets.sortedLayout({ [1] = 549 }, book);   -- some other set
-    fcfg.pendingSync = { ids = flat20, need = 42, count = 1 };
+    fcfg.pendingSync = { ids = flat20, need = 42, waiting = { 513 } };
     host.restoreChecks = { 0 }; host.tick();
-    check(fake.restored == nil and (fcfg.pendingSync or {}).ids == nil,
+    check(fake.restored == nil and host.pendingPromise(fcfg) == nil,
         'a set you have moved away from retires the promise instead');
 end)();
 
@@ -2071,6 +2089,35 @@ do
     setsuiM.headerPicker(rctx(sets.clone(tset, tset.name), 3));
     setsuiM.headerPicker(rctx(sets.new('N', 'flat'), nil));
     check(true, 'and takes a timeline selection and no selection at all');
+
+    -- THE WHOLE HEADER, ACTUALLY DRAWN. The T{} crash landed in renderBody
+    -- (field 2026-08-10) and nothing here had ever run it -- every render
+    -- check above stops at the tab. renderEmbedded catches its own errors
+    -- and draws them as a line, so the check is that the line is absent.
+    (function()
+        local _d, _s = host.deps, host.state;
+        host.deps = { im = sIm, book = book, blu = blu, sets = sets, cfg = rcfg,
+            save = function() end };
+        host.state = { editingSet = sets.clone(fset, fset.name), activeSet = 1,
+            nameBuf = { '' }, open = { true }, detailOpen = { false } };
+        -- untouched: an Ashita T{}, helpers and all
+        rcfg.pendingSync = setmetatable({}, { __index = {
+            count = function() return 0; end, length = function() return 0; end,
+        } });
+        sdrew = {};
+        host.renderEmbedded();
+        check(#sdrew > 3 and table.concat(sdrew, '\n'):find('bludex error', 1, true) == nil,
+            'the header draws clean against an untouched T{} promise');
+        rcfg.pendingSync = { ids = fset.ids, need = 42, waiting = { 513 } };
+        sdrew = {};
+        host.renderEmbedded();
+        screen = table.concat(sdrew, '\n');
+        check(screen:find('bludex error', 1, true) == nil
+            and screen:find('1 waiting for Lv.42', 1, true) ~= nil,
+            'and carries the promise, counted and named, once there is one');
+        rcfg.pendingSync = nil;
+        host.deps, host.state = _d, _s;
+    end)();
 
     blu.currentSet, blu.effectiveLevel, blu.onBlu, blu.budget,
         blu.syncStats, blu.rungCap =

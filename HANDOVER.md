@@ -96,6 +96,16 @@ kinds, amended in place through the rounds), `docs/timeline-sets-plan.md`
    if the live set holds anything outside the banked plan (you moved on),
    and clears to `{}` rather than nil, because the settings lib merges its
    defaults over a missing key.
+   **NEVER NAME A cfg FIELD AFTER A TABLE HELPER.** A settings default is an
+   Ashita `T{}`, and `T{}` carries the table helpers AS FIELDS — so an
+   untouched `cfg.pendingSync.count` was the `count` METHOD, and
+   `count > 0` took the addon down on the first frame after load (field
+   2026-08-10, "attempt to compare number with function"). The promise
+   stores `ids`/`need`/`waiting` and is read ONLY through
+   `host.pendingPromise`, which proves the shape via `ids` first. The smoke
+   suite now drives `host.renderEmbedded` against a `T{}` lookalike —
+   `renderBody` had never been run headless, which is exactly why this got
+   out. Reverting the fix fails that check.
 
 1. **The CEXI trait law** (field fact over the base-LSB code reading —
    `lib/traitsource.lua`'s header records the reversal): a job trait GIVES
