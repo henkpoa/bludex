@@ -1310,6 +1310,28 @@ function M.sortedLayout(ids, book)
     return T;
 end
 
+-- THE LAYOUT AN APPLY SENDS, per kind (field 2026-08-10, Henrik's slotlist
+-- round). Flat and levels builds keep the sorted-placement law -- low
+-- spells sit in the low slots a level-down spares. A TIMELINE set's slots
+-- are AUTHORSHIP: the Assign pane put Foot Kick in slot 11 on purpose, and
+-- the sorted re-shuffle was both moving it home to slot 1 AND making two
+-- levels' plans compare equal whenever they differed only by position --
+-- so after a level change, Apply refused with "already up to date".
+-- Positions hold; unlearned spells zero out IN PLACE, never compacted.
+function M.applyLayout(set, ids, book)
+    if M.kindOf(set) ~= 'timeline' then return M.sortedLayout(ids, book); end
+    local T = {};
+    for i = 1, 20 do
+        local id = ids[i] or 0;
+        if id ~= 0 and book.spells[id] ~= nil and book.learned(id) then
+            T[i] = id;
+        else
+            T[i] = 0;
+        end
+    end
+    return T;
+end
+
 -- The server's set-slot count for a BLU level (blueutils GetTotalSlots):
 -- 6 slots through level 10, +2 every 10 levels after, capped at 20.
 function M.slotsAtLevel(level)

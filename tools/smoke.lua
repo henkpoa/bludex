@@ -1162,6 +1162,40 @@ check(stubLive.applied ~= nil and stubLive.applied[1] == 529
     and vcfg.lastApplied.level == 20, 'replan=auto applies the plan for the settled level');
 vcfg.replan = 'manual';
 
+-- THE SLOT AUTHORSHIP REGRESSION (field 2026-08-10, Henrik: "Foot Kick is
+-- on slot 1, even though I clearly assigned it to slot 11"): slot 1 runs
+-- Wild Oats then Bludgeon from 40; slot 11 takes Wild Oats from 40. The
+-- sorted layout collapsed both plans into one list, so the apply re-homed
+-- the spell AND a level change read as nothing-to-do.
+local moved = sets.new('Moved');
+check(sets.addEntry(moved, 1, 603, nil, book)
+    and sets.addEntry(moved, 1, 529, 40, book)
+    and sets.addEntry(moved, 11, 603, 40, book), 'the moving fixture builds');
+local L75 = sets.applyLayout(moved, sets.resolveAtLevel(moved, 75, book), book);
+check(L75[1] == 529 and L75[11] == 603,
+    'the apply layout honors the assigned slots (no re-sort)');
+local S75 = sets.sortedLayout(sets.resolveAtLevel(moved, 75, book), book);
+check(S75[1] == 603 and S75[2] == 529 and S75[11] == 0,
+    '(the sorted law would have re-homed it -- the bug, pinned)');
+vst.editingSet = moved;
+stubLive.lvl = 39;
+stubLive.live = live20({ [1] = 603 });
+check(setsuiM.applyState(vctx) == 'clean', 'at 39 the live set matches its plan');
+stubLive.lvl = 75;
+stubLive.live = live20({ [1] = 603, [2] = 529 });  -- what the OLD sorted apply left
+check(setsuiM.applyState(vctx) == 'dirty',
+    'at 75 the same spells in the wrong slots are a real change (the fix)');
+-- and the settled check counts positions -- the old by-identity adds count
+-- saw every planned spell already live and said nothing to do
+host.state.editingSet = moved;
+host.state.replanPending = nil;
+said = nil;
+host.checkReplan();
+check(host.state.replanPending ~= nil and host.state.replanPending.changes == 2
+    and said ~= nil,
+    'the settled check nudges: two positional changes, zero adds');
+host.state.replanPending = nil;
+
 -- the backup ring DEEPENS through consecutive saves (review 2026-08-08:
 -- cloning the editing set's selection-time ring reset the depth to one)
 local rcfg = mkcfg();

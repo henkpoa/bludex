@@ -84,10 +84,23 @@ Share... beside Convert... puts the set on one BDXSET1 line
 (checksummed, tab-free, backups stay home), Import (ONE button since
 the field round, the blusets pull its second row) parses a paste
 live, names what it recognized, refuses damage whole, and numbers
-name collisions. Still queued: (d) the job-traits field round,
-(e) the field checklist below (§0), once per kind, plus one live
-band-crossing under Lvl Set Switch, one conversion + undo round-trip,
-and one share line through real Discord and back.
+name collisions. FIELD FIX (Henrik's slotlist round, same day): **A TIMELINE'S SLOTS ARE
+AUTHORSHIP** -- the apply path was still running the flat-era sorted
+placement (`sortedLayout`) on slotlist sets, which re-homed a
+hand-assigned spell to the low slots AND collapsed two levels' plans
+into one list whenever they differed only by position, so Apply refused
+with "already up to date" after a level change (one bug, two faces:
+Foot Kick jumping to slot 1, and the level change not detected).
+`setmodel.applyLayout(set, ids, book)` now picks the layout by kind --
+timeline positional (unlearned zeroed IN PLACE, never compacted),
+flat/levels keep the sorted law -- and applyDiff, applyState, /bdx
+apply and checkReplan all speak it. The quiet-flat rule survives in its
+true form: only a purely-removals difference stays silent; a spell
+MOVING slots is a real change and nudges/auto-applies. Regression
+pinned in smoke (the Moved fixture). Still queued: (d) the job-traits
+field round, (e) the field checklist below (§0), once per kind, plus
+one live band-crossing under Lvl Set Switch, one conversion + undo
+round-trip, and one share line through real Discord and back.
 
 ---
 

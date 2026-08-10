@@ -534,28 +534,28 @@ function M.checkReplan()
     if state == nil then return; end
     if state ~= 'dirty' then st.replanPending = nil; return; end
     local live = deps.blu.currentSet();
-    local liveHas = {};
-    for i = 1, 20 do
-        if (live[i] or 0) ~= 0 then liveHas[live[i]] = true; end
-    end
+    -- POSITIONS COUNT (field 2026-08-10, Henrik's slotlist round): the
+    -- layout is the timeline's authorship, so a spell MOVING slots at a
+    -- level boundary is a real change -- the old by-identity adds count
+    -- read it as nothing to do. The quiet-flat rule survives in its true
+    -- form: only a difference made purely of REMOVALS stays silent (the
+    -- client's own sync-disable already covers those, and re-adding on
+    -- sync-end would cost a cast lock nobody asked for).
     local plan = deps.sets.resolveAtLevel(st.editingSet, lvl, deps.book);
-    local adds = 0;
+    local T = deps.sets.applyLayout(st.editingSet, plan, deps.book);
+    local changes = 0;
     for i = 1, 20 do
-        local id = plan[i] or 0;
-        if id ~= 0 and not liveHas[id] and deps.book.spells[id] ~= nil
-            and deps.book.learned(id) then
-            adds = adds + 1;
-        end
+        if T[i] ~= (live[i] or 0) and T[i] ~= 0 then changes = changes + 1; end
     end
-    if adds == 0 then st.replanPending = nil; return; end
+    if changes == 0 then st.replanPending = nil; return; end
     if deps.cfg.replan == 'auto' then
         st.replanPending = nil;
         setsui.applyEditing(ctx);
         return;
     end
     if st.replanPending ~= nil and st.replanPending.level == lvl then return; end
-    st.replanPending = { level = lvl, adds = adds };
-    deps.blu.announce(('Level %d: the set plans %d spell change(s) for this level - Apply when ready, or /bdx replan.'):format(lvl, adds));
+    st.replanPending = { level = lvl, changes = changes };
+    deps.blu.announce(('Level %d: the set plans %d spell change(s) for this level - Apply when ready, or /bdx replan.'):format(lvl, changes));
 end
 
 -- Apply the plan for the CURRENT level from outside the window (the /bdx
@@ -834,7 +834,7 @@ local function renderNudge(im, st, deps)
     if ok and visible then
         kit.ctext(im, kit.COL.warn,
             ('Plan changed for Lv.%d (%d spell change(s))'):format(
-                st.replanPending.level, st.replanPending.adds or 0));
+                st.replanPending.level, st.replanPending.changes or 0));
         local w = kit.measure(im, { 'Apply', 'Dismiss' }, 70);
         if kit.litButton(im, 'Apply', false, w, 22, kit.PAL.go) then
             M.replanNow();

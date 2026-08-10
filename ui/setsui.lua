@@ -184,7 +184,10 @@ function M.applyEditing(ctx, forLevel)
     end
     local lvl = forLevel or ctx.blu.effectiveLevel() or 75;
     local ids = ctx.sets.resolveAtLevel(st.editingSet, lvl, ctx.book);
-    if ctx.blu.applyDiff(ids, ctx.book) then
+    -- the layout is the kind's call: a timeline's slots are authorship,
+    -- flat/levels keep sorted placement (setmodel.applyLayout)
+    if ctx.blu.applyDiff(ids, ctx.book, nil,
+        ctx.sets.applyLayout(st.editingSet, ids, ctx.book)) then
         local snap = {};
         for k = 1, 20 do snap[k] = ids[k] or 0; end
         ctx.cfg.lastApplied = { ids = snap, level = lvl };
@@ -237,7 +240,10 @@ function M.applyState(ctx)
     local st = ctx.state;
     local lvl = ctx.blu.effectiveLevel() or 75;
     local function matches(atLevel)
-        local T = ctx.sets.sortedLayout(
+        -- against the layout the apply would SEND (kind-aware since the
+        -- 2026-08-10 field round: a timeline's positions count, so two
+        -- levels' plans that differ only by slot no longer compare equal)
+        local T = ctx.sets.applyLayout(st.editingSet,
             ctx.sets.resolveAtLevel(st.editingSet, atLevel, ctx.book), ctx.book);
         for i = 1, 20 do
             if (live[i] or 0) ~= T[i] then return false; end

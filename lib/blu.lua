@@ -812,7 +812,10 @@ end
 -- go first (frees slots, points, and any spell moving between slots -- the
 -- client refuses a spell set twice), then adds, lowest level first into the
 -- lowest slots. Falls back to applySet when the live set cannot be read.
-function M.applyDiff(ids, book, onDone)
+-- layoutT (optional) is a caller-computed 20-slot target layout
+-- (setmodel.applyLayout: a timeline set's slots are authorship and must
+-- not be re-sorted); without it the sorted-placement law applies.
+function M.applyDiff(ids, book, onDone, layoutT)
     if not M.canApply() then
         msg('Cannot apply: BLU is not your main or sub job (or memory signatures failed).');
         return false;
@@ -833,14 +836,13 @@ function M.applyDiff(ids, book, onDone)
         msg('Could not read the live set - doing a full reset + apply instead.');
         return M.applySet(ids, book, onDone);
     end
-    -- The target LAYOUT is level-sorted (field 2026-08-04: the game's own
-    -- set list should read in level order): slot i holds the i-th lowest
-    -- learned spell. Slot-wise diff against it -- a matching slot costs
-    -- nothing; a spell in the wrong slot is an unset plus a set (the client
-    -- refuses a spell set twice, so every unset goes first). An insertion
-    -- LOW in the list therefore shifts what follows -- dearer than the old
-    -- identity diff, and exactly what a sorted list costs.
-    local T = setmodel.sortedLayout(ids, book);
+    -- The target LAYOUT: the caller's (a timeline set's slot authorship),
+    -- else level-sorted (field 2026-08-04: the game's own set list should
+    -- read in level order -- slot i holds the i-th lowest learned spell).
+    -- Slot-wise diff against it -- a matching slot costs nothing; a spell
+    -- in the wrong slot is an unset plus a set (the client refuses a spell
+    -- set twice, so every unset goes first).
+    local T = layoutT or setmodel.sortedLayout(ids, book);
     local removes, adds, kept = {}, {}, 0;
     for slot = 1, 20 do
         local have = live[slot] or 0;
@@ -852,7 +854,7 @@ function M.applyDiff(ids, book, onDone)
         end
     end
     if #removes == 0 and #adds == 0 then
-        msg('The live set already matches (level order) - nothing to send.');
+        msg('The live set already matches - nothing to send.');
         if onDone then pcall(onDone); end
         return true;
     end

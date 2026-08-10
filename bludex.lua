@@ -262,7 +262,7 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
         -- the timeline resolved for the level we stand at, like the button
         local lvl = blu.effectiveLevel() or 75;
         local ids = sets.resolveAtLevel(entry, lvl, book);
-        if blu.applyDiff(ids, book) then
+        if blu.applyDiff(ids, book, nil, sets.applyLayout(entry, ids, book)) then
             local snap = {};
             for i = 1, 20 do snap[i] = ids[i] or 0; end
             cfg.lastApplied = { ids = snap, level = lvl };
