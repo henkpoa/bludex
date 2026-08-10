@@ -1565,6 +1565,8 @@ check(screen:find('out of reach', 1, true) == nil
     'and NO rung is called out of reach or blocked (the CEXI law)');
 check(screen:find('Tier 2 at ', 1, true) ~= nil,
     'a job-granted ladder names the next tier\'s activation weight plainly');
+check(screen:find('[your set]', 1, true) == nil,
+    'a set-earned tier wears NO source tag (only jobs are attributed)');
 -- and with no job data at all the same tab still renders, claiming nothing
 drew = {};
 tctx2.verdict, tctx2.jobPair, tctx2.jobTraits = nil, nil, {};

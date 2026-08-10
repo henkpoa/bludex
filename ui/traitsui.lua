@@ -47,11 +47,16 @@ end
 -- trait, and it is what the rungs below are numbered by.
 --
 -- The rung's own name comes along only when it differs from the ladder's, so
--- 'Triple Attack tier 2' never reads as a Double Attack tier.
+-- 'Triple Attack tier 2' never reads as a Double Attack tier. The SOURCE
+-- tag only when it is a JOB (Henrik 2026-08-10, third round: your own set
+-- earning its own tier needs no attribution -- that is the normal case).
 local function tierLabel(v, a)
     local n = (a.traitName ~= nil and a.traitName ~= v.name)
         and (a.traitName .. ' tier ') or 'Tier ';
-    return ('%s%d [%s]'):format(n, a.tier or 0, sourceLabel(a));
+    if a.source == 'job' then
+        return ('%s%d [%s]'):format(n, a.tier or 0, sourceLabel(a));
+    end
+    return ('%s%d'):format(n, a.tier or 0);
 end
 
 -- The sentence that matters: what the job already gives. Kept in one place
@@ -174,24 +179,24 @@ function M.render(ctx)
                     kit.ctext(im, kit.COL.dim, ('  Active from %s'):format(jobLabel(v.blocker)));
                     kit.tip(im, M.givenTip(v));
                 end
-                -- THE ROAD ABOVE A JOB-GRANTED TIER (Henrik 2026-08-10,
-                -- third round: name the target plainly). The blue ladder
-                -- counts its own weight from zero, the job's tier
-                -- notwithstanding -- so the header states what the next
-                -- tier activates at, and where the set stands.
+                -- THE ROAD ABOVE, for ANY active ladder (Henrik 2026-08-10,
+                -- third round: name the next tier's cost plainly -- and on
+                -- a set-earned ladder too, where the tag stays silent). The
+                -- blue ladder counts its own weight from zero either way.
                 local top = v.active[1];
-                if top ~= nil and top.source == 'job' and info ~= nil and weight > 0 then
+                if top ~= nil and info ~= nil and weight > 0 then
                     local nxtTier = (top.tier or 0) + 1;
                     local nxt = info.tiers[nxtTier];
                     if nxt ~= nil and weight < nxt.points then
                         if kit.isFn(im, 'SameLine') then im.SameLine(); end
                         kit.ctext(im, kit.COL.warn, ('  Tier %d at %d weight (%d now)'):format(
                             nxtTier, nxt.points, weight));
-                        kit.tip(im, ('The blue ladder counts its own weight from zero -- the\n'
-                            .. 'job\'s tier %d does not stand in for the blue rungs below\n'
-                            .. 'tier %d. It activates once your set feeds %d total weight;\n'
-                            .. '%d more from here.'):format(
-                            top.tier or 0, nxtTier, nxt.points, nxt.points - weight));
+                        local jobNote = (top.source == 'job')
+                            and ('\nThe job\'s tier %d does not stand in for the blue\nrungs below it.'):format(top.tier or 0)
+                            or '';
+                        kit.tip(im, ('Tier %d activates once your set feeds %d total weight\n'
+                            .. '-- %d more from here.%s'):format(
+                            nxtTier, nxt.points, nxt.points - weight, jobNote));
                     end
                 end
             elseif weight > 0 then
