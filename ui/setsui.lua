@@ -2046,23 +2046,42 @@ function M.slotEditorWindow(ctx)
             if kit.isFn(im, 'SameLine') then im.SameLine(); end
             kit.ctext(im, kit.COL.dim, ' at Lv.');
             if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            -- PREFILLED WITH THE SPELL'S OWN LEVEL (Henrik 2026-08-10, sixth
+            -- round: "auto fill in the level of the ability so it's not just
+            -- blank"). It is exactly what the blank box already meant --
+            -- setmodel.addEntry defaults to s.level -- now shown rather than
+            -- implied, and a starting point to edit from instead of an empty
+            -- field you have to know the answer for.
+            --
+            -- Keyed to the pending id: handing a DIFFERENT spell to this
+            -- window refills it, instead of leaving the last one's number
+            -- sitting there looking deliberate.
+            if se.addFor ~= se.addId then
+                se.addFor = se.addId;
+                se.addLvl = { tostring((s and s.level) or 1) };
+            end
             se.addLvl = se.addLvl or { '' };
             if kit.isFn(im, 'SetNextItemWidth') then im.SetNextItemWidth(40); end
             if kit.isFn(im, 'InputText') then
                 pcall(im.InputText, '##bdxseaddlvl', se.addLvl, 3);
             end
-            kit.tip(im, 'Blank = the spell\'s own level (the earliest legal moment).');
+            kit.tip(im, ('Filled in with %s\'s own level - the earliest it can\n'
+                .. 'activate. Type any level from there up; blank means the\n'
+                .. 'same thing as the number shown.'):format(
+                (s and s.name) or 'the spell'));
             if kit.isFn(im, 'SameLine') then im.SameLine(); end
             if kit.litButton(im, 'Add', false, kit.measure(im, { 'Add' }, 44), 20, kit.PAL.go) then
                 local lv = tonumber(se.addLvl[1]);
                 local okA, whyA = ctx.sets.addEntry(set, se.slot, se.addId, lv, book);
                 se.note = okA and ('Added %s.'):format(s and s.name or se.addId)
                     or ('Cannot add: %s.'):format(whyA);
-                if okA then se.addId = nil; se.bufs = {}; end
+                if okA then se.addId, se.addFor = nil, nil; se.bufs = {}; end
             end
             if kit.isFn(im, 'SameLine') then im.SameLine(); end
             if kit.litButton(im, 'Drop', false, kit.measure(im, { 'Drop' }, 44), 20) then
-                se.addId = nil;
+                -- addFor goes with it, so handing the SAME spell over again
+                -- comes back prefilled rather than holding the dropped edit
+                se.addId, se.addFor = nil, nil;
             end
             kit.tip(im, 'Forget this add (the slot keeps what it has).');
             if kit.isFn(im, 'Separator') then im.Separator(); end

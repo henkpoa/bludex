@@ -2119,6 +2119,41 @@ do
         host.deps, host.state = _d, _s;
     end)();
 
+    -- THE SLOT EDITOR'S ADD BOX (Henrik 2026-08-10, sixth round: "auto fill
+    -- in the level of the ability so it's not just blank"). Another window
+    -- nothing had ever run headless -- the renderBody lesson, applied.
+    (function()
+        local eim = {};
+        for k, v in pairs(sIm) do eim[k] = v; end
+        eim.Begin = function() return true; end
+        eim.End = function() end;
+        eim.SetNextItemWidth = function() end;
+        eim.InputText = function(_, buf)
+            sdrew[#sdrew + 1] = 'input=' .. tostring(buf and buf[1]);
+            return false;
+        end
+        local ectx = { im = eim, book = book, blu = blu, sets = sets, cfg = rcfg,
+            save = function() end,
+            state = { editingSet = sets.clone(tset, 'Slot edit'),
+                      slotEdit = { slot = 3, addId = 623 } } };   -- Head Butt, 12
+        local se = ectx.state.slotEdit;
+        sdrew = {};
+        setsuiM.slotEditorWindow(ectx);
+        check(se.addLvl ~= nil and se.addLvl[1] == '12',
+            'the add box opens filled with the spell\'s own level, not blank');
+        check(table.concat(sdrew, '\n'):find('input=12', 1, true) ~= nil,
+            'and that is what the field is actually drawn with');
+        -- handing a DIFFERENT spell over refills it, rather than leaving the
+        -- last one's number sitting there looking deliberate
+        se.addId = 513;                                            -- Venom Shell, 42
+        setsuiM.slotEditorWindow(ectx);
+        check(se.addLvl[1] == '42', 'a different spell refills the box');
+        -- ...but an edit of your own survives a redraw
+        se.addLvl[1] = '50';
+        setsuiM.slotEditorWindow(ectx);
+        check(se.addLvl[1] == '50', 'while a level you typed yourself is left alone');
+    end)();
+
     blu.currentSet, blu.effectiveLevel, blu.onBlu, blu.budget,
         blu.syncStats, blu.rungCap =
         _cur2, _eff2, _onb2, _bud2, _sync2, _rc2;
