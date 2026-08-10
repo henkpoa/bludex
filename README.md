@@ -77,6 +77,20 @@ Bludex re-adds them automatically. The amber **`castable in 58s`** in the header
 the game's own post-change cast lock, counted down for you (a chat line announces when
 it ends).
 
+The slot list underneath groups every slot by the level it opens at — the same shape
+the Slotlist editor draws — and the spells sit in **level order, lowest first**. That
+is exactly the order Apply sends them in, which makes the list readable as the level
+sync: slots close from the bottom up, so the last row is the first spell to go.
+
+```
+Lv.1-10
+   Pollen  Lv.1
+   Power Attack  Lv.4
+   (empty)
+Lv.51-60  (no slots here at Lv.42)
+   (opens at Lv.51)
+```
+
 ### One set, a build per level
 
 A set that works at 75 cannot be the set that works at 41 — the game hands out

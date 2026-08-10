@@ -204,6 +204,16 @@ function M.upgrade(set, book)
     if set.kind == 'levels' then
         if set.builds == nil then changed = true; end
         M.normalizeGroup(set);
+        -- THE LEVEL ORDER IS ADOPTED, ONCE (Henrik 2026-08-10, fifth
+        -- round). A stored flat build kept whatever order it was typed in
+        -- while the apply sorted it anyway, so the order carried no
+        -- meaning worth keeping -- and the new slot list would have read
+        -- the wrong drop order off it. Base and every band, idempotent
+        -- after the first pass.
+        if M.sortFlat(set, book) then changed = true; end
+        for _, t in ipairs(set.builds or {}) do
+            if M.sortFlat(t, book) then changed = true; end
+        end
         return changed;
     end
     local chainCount = 0;
@@ -852,6 +862,21 @@ function M.groupPick(entry, level)
     return best;
 end
 
+-- THE FLAT ORDER, in one place: spell level ascending, ties by id, and an
+-- id the data does not know sorted LAST rather than dropped. Every flat
+-- placement speaks it -- copyInto, sortedLayout on the way to the game, and
+-- sortFlat on the stored array itself.
+local function byLevel(book)
+    return function(a, b)
+        local sa = book and book.spells[a] or nil;
+        local sb = book and book.spells[b] or nil;
+        local la = (sa and sa.level) or 999;
+        local lb = (sb and sb.level) or 999;
+        if la ~= lb then return la < lb; end
+        return a < b;
+    end;
+end
+
 -- Copy a build's spells into another band, keeping what that band can
 -- actually hold: nothing above the level it can cast, lowest levels first,
 -- until its slots run out.
@@ -878,13 +903,7 @@ function M.copyInto(ids, level, book)
             end
         end
     end
-    table.sort(pick, function(a, b)
-        local sa, sb = book.spells[a], book.spells[b];
-        local la = (sa and sa.level) or 999;
-        local lb = (sb and sb.level) or 999;
-        if la ~= lb then return la < lb; end
-        return a < b;
-    end);
+    table.sort(pick, byLevel(book));
     local out = {};
     for i = 1, 20 do out[i] = pick[i] or 0; end
     local taken = #pick;
@@ -1255,6 +1274,7 @@ function M.add(set, id, book, budgetMax)
     local ok, reason = M.canAdd(set, id, book, budgetMax);
     if not ok then return false, reason; end
     set.ids[M.freeSlot(set)] = id;
+    M.sortFlat(set, book);             -- level order, always (see sortFlat)
     return true;
 end
 
@@ -1279,7 +1299,10 @@ function M.removeId(set, id)
         return;
     end
     local i = M.contains(set, id);
-    if i then set.ids[i] = 0; end
+    if i then
+        set.ids[i] = 0;
+        M.compactFlat(set);            -- no gap in the level-ordered list
+    end
 end
 
 function M.removeSlot(set, i)
@@ -1287,7 +1310,10 @@ function M.removeSlot(set, i)
         if i >= 1 and i <= 20 then set.chains[i] = {}; set.ids[i] = 0; end
         return;
     end
-    if i >= 1 and i <= 20 then set.ids[i] = 0; end
+    if i >= 1 and i <= 20 then
+        set.ids[i] = 0;
+        M.compactFlat(set);
+    end
 end
 
 -- The APPLY layout (field 2026-08-04: the game's own set list should read
@@ -1304,15 +1330,61 @@ function M.sortedLayout(ids, book)
             pick[#pick + 1] = id;
         end
     end
-    table.sort(pick, function(a, b)
-        local la = book.spells[a].level or 999;
-        local lb = book.spells[b].level or 999;
-        if la ~= lb then return la < lb; end
-        return a < b;
-    end);
+    table.sort(pick, byLevel(book));
     local T = {};
     for i = 1, 20 do T[i] = pick[i] or 0; end
     return T;
+end
+
+-- THE STORED ARRAY IN THE SAME ORDER (Henrik 2026-08-10, fifth round:
+-- "always sort the spells in level order... so people know what spells will
+-- be gotten in what order if you level sync down"). sortedLayout has always
+-- sorted a flat set on the way OUT; the editor showed insertion order, so
+-- the list you read was not the list the game got. A flat build has no
+-- per-slot authorship to protect -- only a SLOTLIST does -- so the array
+-- itself is kept sorted and the two finally agree.
+--
+-- Low levels sit in the low slots, and slots close from the top down as you
+-- sync, so the list reads bottom-up as the drop order.
+--
+-- Unlike sortedLayout this NEVER DROPS: an unlearned spell keeps its place,
+-- and an id the data does not know sorts last instead of vanishing (Read
+-- current has to stay an honest mirror of the client). Returns true when
+-- something actually moved.
+function M.sortFlat(set, book)
+    if set == nil or set.chains ~= nil or set.ids == nil then return false; end
+    local pick = {};
+    for i = 1, 20 do
+        local id = set.ids[i] or 0;
+        if id ~= 0 then pick[#pick + 1] = id; end
+    end
+    table.sort(pick, byLevel(book));
+    local moved = false;
+    for i = 1, 20 do
+        local want = pick[i] or 0;
+        if (set.ids[i] or 0) ~= want then moved = true; end
+        set.ids[i] = want;
+    end
+    return moved;
+end
+
+-- Close the holes, order untouched -- what a REMOVAL needs. Dropping one
+-- entry from a sorted list leaves it sorted, so this needs no book and
+-- cannot reorder a set behind the player's back.
+function M.compactFlat(set)
+    if set == nil or set.chains ~= nil or set.ids == nil then return false; end
+    local pick = {};
+    for i = 1, 20 do
+        local id = set.ids[i] or 0;
+        if id ~= 0 then pick[#pick + 1] = id; end
+    end
+    local moved = false;
+    for i = 1, 20 do
+        local want = pick[i] or 0;
+        if (set.ids[i] or 0) ~= want then moved = true; end
+        set.ids[i] = want;
+    end
+    return moved;
 end
 
 -- THE LAYOUT AN APPLY SENDS, per kind (field 2026-08-10, Henrik's slotlist

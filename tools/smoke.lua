@@ -88,7 +88,7 @@ local evals = sets.traitEval(s2, book);
 local found = nil;
 for _, ev in ipairs(evals) do if ev.cat == dw then found = ev; end end
 check(found ~= nil and found.tier ~= nil, 'Dual Wield tier active with all feeders set');
-print(('       (Dual Wield at weight %d: %s)'):format(found.weight, found.tierText));
+print(('       (Dual Wield at %d Points: %s)'):format(found.weight, found.tierText));
 
 local stats = sets.stats(s2, book);
 check(type(stats) == 'table', 'stats aggregate');
@@ -389,11 +389,17 @@ v1.ids[9] = 603;      -- Wild Oats 4
 check(sets.upgrade(v1, book) == true, 'a v1 set is stamped by the adopt');
 check(v1.kind == 'levels' and v1.chains == nil and #v1.builds == 0,
     'and it STAYS FLAT (the merged kind, no builds) -- no chains built');
-check(v1.ids[3] == 529 and v1.ids[9] == 603,
-    'its ids are untouched, slots and all');
+-- the adopt now also ADOPTS THE LEVEL ORDER (Henrik 2026-08-10, fifth
+-- round). A flat build's slot numbers were never authorship -- applyLayout
+-- has always sorted them on the way to the game -- so the stored array is
+-- brought into the same order and the editor's slot list finally reads the
+-- true level-sync drop order. Wild Oats (4) ahead of Bludgeon (18).
+check(v1.ids[1] == 603 and v1.ids[2] == 529,
+    'its ids are pulled into level order, holes closed');
+check(v1.ids[3] == 0 and v1.ids[9] == 0, 'and nothing is left behind');
 check(sets.upgrade(v1, book) == false, 'the stamp is idempotent');
 local rv = sets.resolveAtLevel(v1, 10, book);
-check(rv[3] == 529 and rv[9] == 603,
+check(rv[1] == 603 and rv[2] == 529,
     'a flat set resolves VERBATIM at every level (the client handles sync)');
 
 -- the Wild Oats -> Bludgeon -> empty chain, Henrik's founding example
@@ -662,12 +668,21 @@ do
 -- flat -> timeline: lossless, and the source is never touched
 local cf = sets.new('Conv', 'flat');
 sets.add(cf, 529, book, 80); sets.add(cf, 603, book, 80);
+-- ADDS LAND IN LEVEL ORDER, whatever order they are made in (Henrik
+-- 2026-08-10, fifth round): Wild Oats (4) ahead of Bludgeon (18), so the
+-- editor's slot list reads as the level-sync drop order.
+check(cf.ids[1] == 603 and cf.ids[2] == 529,
+    'a flat add sorts by level, not by when you clicked');
+local before = {};
+for i = 1, 20 do before[i] = cf.ids[i]; end
 check(#sets.convertLoss(cf, 'timeline', book) == 0,
     'a build-less flat set converts to a slotlist losslessly');
 local ct = sets.convertTo(cf, 'timeline', book);
 check(ct.kind == 'timeline' and ct.chains[1][1].id == 603,
     'flat -> timeline: sorted placement, lowest level in the lowest slot');
-check(cf.kind == 'levels' and cf.ids[1] == 529, 'the source is never mutated');
+local same = (cf.kind == 'levels');
+for i = 1, 20 do if cf.ids[i] ~= before[i] then same = false; end end
+check(same, 'the source is never mutated');
 
 -- flat -> timeline WITH builds: the base crosses; builds and a stored
 -- rule are NAMED as the loss
@@ -837,6 +852,32 @@ check(book.spells[sl[1]].level <= book.spells[sl[2]].level
     and book.spells[sl[2]].level <= book.spells[sl[3]].level,
     'sortedLayout is level-ascending');
 check(sets.sortedLayout({}, book)[1] == 0, 'sortedLayout of an empty set is all zeros');
+
+-- ...and the STORED array now speaks the same order (Henrik 2026-08-10,
+-- fifth round). sortFlat differs from sortedLayout in one way that matters:
+-- it never drops, so Read current stays an honest mirror of the client.
+local fo = sets.new('Order', 'flat');
+sets.add(fo, 719, book, 999);        -- Searing Tempest, high
+sets.add(fo, 549, book, 999);        -- Pollen, Lv.1
+sets.add(fo, 529, book, 999);        -- Bludgeon, Lv.18
+check(fo.ids[1] == 549 and fo.ids[2] == 529 and fo.ids[3] == 719,
+    'adds land in level order however they are clicked');
+sets.removeId(fo, 529);
+check(fo.ids[1] == 549 and fo.ids[2] == 719 and fo.ids[3] == 0,
+    'a removal closes the hole and leaves the order alone');
+sets.removeSlot(fo, 1);
+check(fo.ids[1] == 719 and fo.ids[2] == 0, 'and so does removing by slot');
+local keep = { name = 'Mirror', kind = 'levels', ids = {} };
+for i = 1, 20 do keep.ids[i] = 0; end
+keep.ids[1] = 999999;                -- an id the data does not know
+keep.ids[2] = 549;                   -- Pollen, Lv.1
+sets.sortFlat(keep, book);
+check(keep.ids[1] == 549 and keep.ids[2] == 999999,
+    'sortFlat KEEPS an unknown id, sorted last -- Read current loses nothing');
+local tlOrder = sets.new('Untouched');
+sets.addEntry(tlOrder, 11, 603, nil, book);
+check(sets.sortFlat(tlOrder, book) == false and tlOrder.chains[11][1].id == 603,
+    'and it refuses a slotlist outright -- those slots are authorship');
 
 print('smoke: blusets import');
 local imp = require('bludex\\lib\\blusetsimport');
@@ -1390,9 +1431,11 @@ spellsui.tooltip(tctx, 719, true);                     -- Searing Tempest
 check(tipText ~= nil and tipText:find('116 MP', 1, true) ~= nil,
     'it carries the MP cost');
 check(tipText:find('Set: 8 pts', 1, true) ~= nil, 'beside the set cost');
-check(tipText:match('Tier %d+ at %d+ weight') ~= nil
+check(tipText:match('Tier %d+: %d+/%d+ Points') ~= nil
     or tipText:find('max tier reached', 1, true) ~= nil,
     'and the tier price, in the same words the Traits tab speaks');
+check(tipText:find('weight', 1, true) == nil,
+    'and never the word "weight" (retired 2026-08-10, fifth round)');
 kit.hoverDelay = 5;
 tipText = nil;
 spellsui.tooltip(tctx, 719, true);
@@ -1605,8 +1648,10 @@ check(screen:find('<- SCH (sub job), rank 1', 1, true) ~= nil,
 check(screen:find('out of reach', 1, true) == nil
     and screen:find('is blocked', 1, true) == nil,
     'and NO rung is called out of reach or blocked (the CEXI law)');
-check(screen:find('Tier 2 at ', 1, true) ~= nil,
-    'a job-granted ladder names the next tier\'s activation weight plainly');
+check(screen:match('Tier 2: %d+/%d+ Points') ~= nil,
+    'a job-granted ladder prices the next tier plainly, have over cost');
+check(screen:find('weight', 1, true) == nil,
+    'and the whole tab is free of the word "weight"');
 check(screen:find('[your set]', 1, true) == nil,
     'a set-earned tier wears NO source tag (only jobs are attributed)');
 -- and with no job data at all the same tab still renders, claiming nothing
@@ -1811,6 +1856,22 @@ do
         'and Share beside it');
     check(screen:find('Import', 1, true) ~= nil,
         'the left column offers Import');
+    -- THE SLOT LIST, flat flavor (Henrik 2026-08-10, fifth round: "for
+    -- Normal sets, add similar list as in slotlist"): every slot the game
+    -- has, grouped by the level it opens at, empties included -- and graded
+    -- at the live level (42 here), so the top brackets read as not yet open.
+    check(screen:find('Lv.1-10', 1, true) ~= nil
+        and screen:find('Lv.41-50', 1, true) ~= nil
+        and screen:find('Lv.71-75', 1, true) ~= nil,
+        'the flat editor lists every bracket, like the slotlist does');
+    check(screen:find('(empty)', 1, true) ~= nil,
+        'and draws the empty slots rather than hiding them');
+    check(screen:find('(opens at Lv.51)', 1, true) ~= nil,
+        'a slot the level has not reached says when it opens');
+    check(screen:find('(no slots here at Lv.42)', 1, true) ~= nil,
+        'and its bracket says so at the head');
+    check(screen:match('Head Butt  Lv%.%d+') ~= nil,
+        'each spell row carries its own level -- the sort order, made legible');
 
     sdrew = {};
     setsuiM.render(rctx(sets.draft(lset, 41), 2, nil, 41));

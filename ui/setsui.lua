@@ -1500,6 +1500,10 @@ local function flatPlanner(ctx)
             local liveNow = ctx.blu.currentSet();
             if #liveNow == 20 then
                 for i = 1, 20 do set.ids[i] = liveNow[i] or 0; end
+                -- into the flat set's own order -- the game's slot numbers
+                -- are not authorship here, and Apply would re-sort anyway.
+                -- Nothing is dropped: ids the data does not know sort last.
+                ctx.sets.sortFlat(set, book);
                 local unknown = 0;
                 for i = 1, 20 do
                     if liveNow[i] ~= 0 and book.spells[liveNow[i]] == nil then
@@ -1537,48 +1541,76 @@ local function flatPlanner(ctx)
         liveIds = {};
         for i = 1, 20 do if live[i] ~= 0 then liveIds[live[i]] = true; end end
     end
+    -- EVERY SLOT THE GAME HAS, grouped by the level it opens at -- the same
+    -- list shape the slotlist editor draws (Henrik 2026-08-10, fifth round:
+    -- "for Normal sets, add similar list as in slotlist"). It reads as the
+    -- LEVEL-SYNC ORDER: the spells sit lowest-level-first (setmodel.sortFlat
+    -- keeps the array that way, and that is exactly what Apply sends), and
+    -- a sync closes slots from the bottom of this list upward.
     kit.ctext(im, kit.COL.head, 'Slots');
-    kit.tip(im, 'Named rows, like the Codex: left-click for Spell Info,\nright-click removes from the set.');
-    local nameW = math.max(kit.availWidth(im, MID_W) - 24 - 40, 120);
-    local lvl = ctx.blu.effectiveLevel();
-    local shown = 0;
-    for i = 1, 20 do
-        local id = set.ids[i] or 0;
-        if id ~= 0 then
-            shown = shown + 1;
-            local s = book.spells[id];
-            local liveTag = '';
-            if liveIds ~= nil and not liveIds[id] then
-                -- a sync-disabled spell is not WAITING for an apply -- the
-                -- game holds it and returns it when the sync ends
-                if lvl ~= nil and lvl < 75 and s ~= nil
-                    and s.level ~= nil and s.level > lvl then
-                    liveTag = '  (disabled by level sync)';
-                else
-                    liveTag = '  (not active yet)';
-                end
-            end
-            local label = ((s ~= nil) and s.name or ('#' .. id)) .. liveTag;
-            local lclick, rclick, hov = spellsui.listRow(ctx, id, 24, nameW,
-                st.selectedId == id, true, { label = label });
-            if lclick then
-                st.selectedId = id;
-                st.detailOpen[1] = true;
-                st.detailFocus = true;
-            end
-            if rclick then
-                ctx.sets.removeSlot(set, i);
-                st.applyNote = nil;
-            end
-            spellsui.tooltip(ctx, id, hov);
-        end
-    end
-    if shown == 0 then
+    kit.tip(im, 'Every slot, grouped by the level it opens at.\n\n'
+        .. 'The spells sit in LEVEL ORDER, lowest first -- which is the order\n'
+        .. 'Apply sends them, so reading up from the bottom is the order a\n'
+        .. 'level sync takes them away in.\n\n'
+        .. 'Left-click a row for Spell Info, right-click removes it.');
+    if ctx.sets.count(set) == 0 then
         kit.ctext(im, kit.COL.dim, 'The set is empty - add spells from the Codex or Traits.');
-    else
-        local free = slotMax - ctx.sets.count(set);
-        if free > 0 then
-            kit.ctext(im, kit.COL.dim, ('%d free slot%s'):format(free, free == 1 and '' or 's'));
+    end
+    local nameW = math.max(kit.availWidth(im, MID_W) - 78, 120);
+    local lvl = ctx.blu.effectiveLevel();
+    -- WHICH LEVEL GRADES THE SLOTS: a band draft is built for its own band
+    -- and is graded there whatever you happen to be right now; everything
+    -- else is graded at the level you are actually at.
+    local gradeLvl = (set.draft and set.level ~= nil) and set.level or (lvl or 75);
+    for _, g in ipairs(ctx.sets.brackets()) do
+        local locked = gradeLvl < g.floor;
+        kit.ctext(im, locked and kit.COL.dim or kit.COL.head,
+            ('Lv.%d-%d'):format(g.floor, bracketTop(g.floor)));
+        if locked then
+            if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            kit.ctext(im, kit.COL.dim, ('  (no slots here at Lv.%d)'):format(gradeLvl));
+        end
+        for _, i in ipairs(g.slots) do
+            local id = set.ids[i] or 0;
+            if id == 0 then
+                kit.ctext(im, kit.COL.dim, locked
+                    and ('   (opens at Lv.%d)'):format(g.floor)
+                    or '   (empty)');
+            else
+                local s = book.spells[id];
+                local liveTag = '';
+                if liveIds ~= nil and not liveIds[id] then
+                    -- the most specific reason it is not live, first: the
+                    -- slot may not exist at this level at all, the spell may
+                    -- be over the sync ceiling -- and neither is WAITING for
+                    -- an apply, the game returns them when the sync ends
+                    if lvl ~= nil and lvl < g.floor then
+                        liveTag = ('  (no slot until Lv.%d)'):format(g.floor);
+                    elseif lvl ~= nil and lvl < 75 and s ~= nil
+                        and s.level ~= nil and s.level > lvl then
+                        liveTag = '  (disabled by level sync)';
+                    else
+                        liveTag = '  (not active yet)';
+                    end
+                end
+                local label = ('%s  Lv.%s%s'):format(
+                    (s ~= nil) and s.name or ('#' .. id),
+                    (s ~= nil) and (s.level or '?') or '?', liveTag);
+                local lclick, rclick, hov = spellsui.listRow(ctx, id, 24, nameW,
+                    st.selectedId == id, true, { label = label });
+                if lclick then
+                    st.selectedId = id;
+                    st.detailOpen[1] = true;
+                    st.detailFocus = true;
+                end
+                if rclick then
+                    ctx.sets.removeSlot(set, i);
+                    st.applyNote = nil;
+                    return;                    -- the rows just shifted down
+                end
+                spellsui.tooltip(ctx, id, hov,
+                    { { 'right-click: remove from the set', kit.COL.dim } });
+            end
         end
     end
 end

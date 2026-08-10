@@ -47,6 +47,18 @@ kinds, amended in place through the rounds), `docs/timeline-sets-plan.md`
   "the level change wasn't detected": one bug, two faces). Adds are PER SLOT
   ONLY — `canAdd` refuses by name; the assign menu / slot editor are the way
   in. `setmodel.kindOf` answers for any table; the v4 adopt stamps and folds.
+- **A FLAT BUILD'S SLOTS ARE NOT** (Henrik 2026-08-10, fifth round). The
+  mirror image of the law above: `applyLayout` has always sorted a flat set
+  by level on the way out, so its stored order carried no meaning — and the
+  editor showed insertion order, a list that disagreed with what the game
+  got. `setmodel.sortFlat` now keeps the array itself level-ascending (adds,
+  Read current, blusets import, and a one-time pass in `upgrade`);
+  `compactFlat` closes holes on removal without reordering. sortFlat NEVER
+  DROPS — unknown ids sort last rather than vanishing, which is what lets
+  Read current stay an honest mirror — and it refuses a slotlist outright.
+  The Sets tab draws flat builds through the same bracketed 20-slot list the
+  slotlist editor uses, so the list reads bottom-up as the level-sync drop
+  order.
 
 ### The laws of the day (each smoke-pinned)
 
