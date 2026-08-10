@@ -134,7 +134,7 @@ function M.revertEditing(ctx)
     local saved = st.activeSet and cfg.sets[st.activeSet] or nil;
     if saved ~= nil then
         if st.editingSet.draft then
-            st.editingSet = ctx.sets.draft(saved, st.editingSet.level);
+            st.editingSet = ctx.sets.draft(saved, st.editingSet.level, ctx.book);
             st.applyNote = (st.editingSet.level == nil)
                 and 'Reverted to the saved base build.'
                 or ('Reverted to the saved Lv.%d build.'):format(st.editingSet.level);
@@ -318,7 +318,7 @@ local function loadBuild(ctx, index, level)
     if entry == nil then return; end
     ctx.sets.normalizeGroup(entry);
     st.activeSet, st.editLevel = index, level;
-    st.editingSet = ctx.sets.draft(entry, level);
+    st.editingSet = ctx.sets.draft(entry, level, ctx.book);
     st.applyNote = nil;
     st.addNote = nil;
     st.assignSlot = nil;
@@ -749,7 +749,7 @@ local function savedList(ctx)
                         if st.activeSet == i then
                             if ctx.sets.kindOf(entry) == 'levels' then
                                 st.editLevel = nil;
-                                st.editingSet = ctx.sets.draft(entry, nil);
+                                st.editingSet = ctx.sets.draft(entry, nil, ctx.book);
                             else
                                 st.editingSet = ctx.sets.clone(entry, entry.name);
                             end
@@ -1562,13 +1562,19 @@ local function flatPlanner(ctx)
     -- and is graded there whatever you happen to be right now; everything
     -- else is graded at the level you are actually at.
     local gradeLvl = (set.draft and set.level ~= nil) and set.level or (lvl or 75);
+    -- a band build is graded for its WHOLE band -- Lv.41-50 has the same 14
+    -- slots at either end, so naming one level of it would read as a limit
+    -- that lifts halfway through
+    local gradeText = (set.draft and set.level ~= nil)
+        and ('Lv.%s'):format(bandText(ctx, set.level))
+        or ('Lv.%d'):format(gradeLvl);
     for _, g in ipairs(ctx.sets.brackets()) do
         local locked = gradeLvl < g.floor;
         kit.ctext(im, locked and kit.COL.dim or kit.COL.head,
             ('Lv.%d-%d'):format(g.floor, bracketTop(g.floor)));
         if locked then
             if kit.isFn(im, 'SameLine') then im.SameLine(); end
-            kit.ctext(im, kit.COL.dim, ('  (no slots here at Lv.%d)'):format(gradeLvl));
+            kit.ctext(im, kit.COL.dim, ('  (no slots here at %s)'):format(gradeText));
         end
         for _, i in ipairs(g.slots) do
             local id = set.ids[i] or 0;
@@ -1725,7 +1731,7 @@ local function importPane(ctx)
             st.activeSet = #cfg.sets;
             if ctx.sets.kindOf(entry) == 'levels' then
                 st.editLevel = nil;
-                st.editingSet = ctx.sets.draft(entry, nil);
+                st.editingSet = ctx.sets.draft(entry, nil, ctx.book);
             else
                 st.editLevel = nil;
                 st.editingSet = ctx.sets.clone(entry, entry.name);

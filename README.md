@@ -106,9 +106,11 @@ Levels
   71   77 / 79   19 / 20
 ```
 
-Click one and you edit that build like any other set — the slot grid greys out the
-slots that level does not have, the codex refuses spells it cannot cast or afford,
-and hovering a row lists what is in it. `>` marks the band you are standing in.
+Click one and you edit that build like any other set — the same bracketed slot list,
+in the same level order, except graded against the band rather than the level you
+happen to be at. Brackets past the band read `(no slots here at Lv.41-50)`; the codex
+refuses spells that band cannot cast or afford, and hovering a row lists what is in
+it. `>` marks the band you are standing in.
 The totals include your CatsEyeXI learned bonus and, at 75, your Assimilation merits.
 **Remove** takes a level back off again.
 

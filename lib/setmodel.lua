@@ -917,9 +917,17 @@ end
 -- One build of a levels set as an editable DRAFT -- the shape the Sets tab
 -- edits and every computation takes (no chains, so every editing op below
 -- runs its id-array path; level carries the band ceilings into canAdd).
-function M.draft(entry, level)
-    return { kind = 'levels', draft = true, name = entry.name,
-             level = level, ids = M.groupIds(entry, level) };
+-- `book` is optional and only buys the level sort: OPENING a build is the
+-- one choke point every band build passes through on its way to the editor,
+-- whatever wrote it (copyInto, a draft save, a hand-edited settings file,
+-- an old store entry), so the list can never read out of order. Without a
+-- book the ids are left exactly as found -- guessing an order from ids
+-- alone would be worse than none.
+function M.draft(entry, level, book)
+    local d = { kind = 'levels', draft = true, name = entry.name,
+                level = level, ids = M.groupIds(entry, level) };
+    if book ~= nil then M.sortFlat(d, book); end
+    return d;
 end
 
 -- ---------------------------------------------------------------------------

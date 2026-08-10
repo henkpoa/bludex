@@ -1829,7 +1829,9 @@ do
     local lset = sets.new('Bandy', 'levels');
     sets.add(lset, 603, book, 80);
     sets.groupAdd(lset, 41);
-    sets.groupPut(lset, 41, { [1] = 529 });
+    -- written OUT OF LEVEL ORDER on purpose, and by the raw put that bypasses
+    -- every sorting entrance -- opening the build is what has to fix it
+    sets.groupPut(lset, 41, { [1] = 529, [2] = 549 });   -- Bludgeon 18, Pollen 1
     local tset = sets.new('Chained');
     sets.addEntry(tset, 1, 603, nil, book);
     rcfg.sets = { fset, lset, tset };
@@ -1874,10 +1876,28 @@ do
         'each spell row carries its own level -- the sort order, made legible');
 
     sdrew = {};
-    setsuiM.render(rctx(sets.draft(lset, 41), 2, nil, 41));
+    setsuiM.render(rctx(sets.draft(lset, 41, book), 2, nil, 41));
     screen = table.concat(sdrew, '\n');
     check(screen:find('Editing Lv.41', 1, true) ~= nil, 'the levels draft names its band');
     check(screen:find('Flat', 1, true) ~= nil, 'and its kind (the merged Flat)');
+    -- A LEVEL BUILD GETS THE SAME LIST (Henrik 2026-08-10, fifth round), and
+    -- draft() is the choke point that puts it in order: the fixture above
+    -- wrote Bludgeon (18) ahead of Pollen (1) through the raw groupPut.
+    check(screen:find('Lv.1-10', 1, true) ~= nil
+        and screen:find('Lv.71-75', 1, true) ~= nil,
+        'a level build lists every bracket too');
+    local pol, blu18 = screen:find('Pollen  Lv.1', 1, true),
+        screen:find('Bludgeon  Lv.18', 1, true);
+    check(pol ~= nil and blu18 ~= nil and pol < blu18,
+        'and opening it sorts the build into level order, whatever wrote it');
+    -- the band is graded WHOLE: Lv.41-50 holds 14 slots at either end, so
+    -- naming one level of it would read as a limit that lifts halfway
+    check(screen:find('(no slots here at Lv.41-50)', 1, true) ~= nil,
+        'the locked brackets name the BAND, not a single level in it');
+    check(screen:find('(no slots here at Lv.41)', 1, true) == nil,
+        'never the floor alone');
+    check(sets.draft(lset, 41).ids[1] == 529,
+        'and with no book draft() leaves the ids exactly as found');
 
     sdrew = {};
     setsuiM.render(rctx(sets.clone(tset, tset.name), 3));

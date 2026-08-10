@@ -59,6 +59,16 @@ kinds, amended in place through the rounds), `docs/timeline-sets-plan.md`
   The Sets tab draws flat builds through the same bracketed 20-slot list the
   slotlist editor uses, so the list reads bottom-up as the level-sync drop
   order.
+  **LEVEL BUILDS RIDE THE SAME PATH** — a draft IS the flat editor — and
+  `draft(entry, level, book)` is the choke point that orders them: every
+  band build passes through it on its way to the screen, whatever wrote it
+  (`copyInto`, a draft save, a hand-edited settings file, an old store
+  entry). The book arg is optional and buys only the sort; without it the
+  ids are left as found, since guessing an order from ids alone is worse
+  than none. Load-time `upgrade` already sorts stored builds and persists
+  it (`host.lua` saves on `migrated`), so no draft opens falsely "unsaved".
+  A band is graded WHOLE — `Lv.41-50` has the same 14 slots at either end,
+  so the locked-bracket note names the band, never one level inside it.
 
 ### The laws of the day (each smoke-pinned)
 

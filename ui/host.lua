@@ -117,7 +117,7 @@ local function adoptCfg(deps)
                 M.state.activeSet = i;
                 if deps.sets.kindOf(entry) == 'levels' then
                     M.state.editLevel = nil;
-                    M.state.editingSet = deps.sets.draft(entry, nil);
+                    M.state.editingSet = deps.sets.draft(entry, nil, deps.book);
                 else
                     M.state.editingSet = deps.sets.clone(entry, entry.name);
                 end
