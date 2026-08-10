@@ -148,9 +148,11 @@ function M.tooltip(ctx, id, hovered, extra)
                 if weight < tier.points then nextP = tier.points; nextRank = ti; break; end
             end
             if nextP then
-                add(('   %d / %d - for rank %d'):format(weight, nextP, nextRank), kit.COL.dim);
+                -- the same price idiom the Traits tab speaks (Henrik
+                -- 2026-08-10: one grammar for tier costs everywhere)
+                add(('   Tier %d at %d weight (%d now)'):format(nextRank, nextP, weight), kit.COL.dim);
             else
-                add(('   %d - max rank reached'):format(weight), kit.COL.ok);
+                add(('   %d weight - max tier reached'):format(weight), kit.COL.ok);
             end
         end
         -- the job's stake in the ladder, one short line (Henrik 2026-08-10,

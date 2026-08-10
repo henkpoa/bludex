@@ -1390,6 +1390,9 @@ spellsui.tooltip(tctx, 719, true);                     -- Searing Tempest
 check(tipText ~= nil and tipText:find('116 MP', 1, true) ~= nil,
     'it carries the MP cost');
 check(tipText:find('Set: 8 pts', 1, true) ~= nil, 'beside the set cost');
+check(tipText:match('Tier %d+ at %d+ weight') ~= nil
+    or tipText:find('max tier reached', 1, true) ~= nil,
+    'and the tier price, in the same words the Traits tab speaks');
 kit.hoverDelay = 5;
 tipText = nil;
 spellsui.tooltip(tctx, 719, true);
