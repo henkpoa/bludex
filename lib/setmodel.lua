@@ -860,6 +860,79 @@ function M.draft(entry, level)
 end
 
 -- ---------------------------------------------------------------------------
+-- KIND CONVERSION (docs/set-types-plan.md 6): a saved set may become
+-- another kind, in place. THE FLAT PROJECTION IS THE BRIDGE -- what the
+-- set plans at the cap (a flat set's ids, a levels set's BASE build, a
+-- timeline's level-75 mirror) -- and whatever the projection cannot carry
+-- is dropped: convertLoss NAMES it so the UI can say so before the click.
+-- ---------------------------------------------------------------------------
+
+local function flatProjection(set, book)
+    if M.kindOf(set) == 'timeline' then
+        return M.resolveAtLevel(set, 75, book);
+    end
+    return copyIds(set.ids);
+end
+
+-- What converting this set to `kind` would drop, as reader-facing phrases.
+-- Empty = lossless.
+function M.convertLoss(set, kind, book)
+    local from = M.kindOf(set);
+    local out = {};
+    if from == kind then return out; end
+    if from == 'levels' then
+        local n = #(set.builds or {});
+        if n > 0 then
+            out[#out + 1] = ('its %d level build%s'):format(n, (n == 1) and '' or 's');
+        end
+        if M.RULE_KEYS[set.rule or ''] then
+            out[#out + 1] = ('its stored level-change rule (%s)'):format(set.rule);
+        end
+    elseif from == 'timeline' then
+        if not M.isFlat(set, book) then
+            local entries, markers = 0, 0;
+            for slot = 1, 20 do
+                for _, e in ipairs((set.chains or {})[slot] or {}) do
+                    if e.id == 0 then markers = markers + 1;
+                    else entries = entries + 1; end
+                end
+            end
+            local beyond = (entries - M.countIds(set.ids or {})) + markers;
+            if beyond > 0 then
+                out[#out + 1] = ('its timeline (%d entr%s beyond the Lv.75 plan)')
+                    :format(beyond, (beyond == 1) and 'y' or 'ies');
+            else
+                -- every spell survives, but not its timing: activation
+                -- levels are authorship the flat projection cannot carry
+                out[#out + 1] = 'its activation levels (the spells survive, the timing does not)';
+            end
+        end
+        local nb = #(set.backups or {});
+        if nb > 0 then
+            out[#out + 1] = ('its %d backup%s'):format(nb, (nb == 1) and '' or 's');
+        end
+    end
+    return out;
+end
+
+-- A NEW set of `kind` built from this one's flat projection, same name.
+-- Never mutates the source -- the caller decides what replaces what.
+function M.convertTo(set, kind, book)
+    if M.kindOf(set) == kind then return M.clone(set, set.name); end
+    local ids = flatProjection(set, book);
+    local c = M.new(set.name, kind);
+    if kind == 'timeline' then
+        -- sorted placement, one entry per spell at its own level -- the
+        -- same faithful layout the v2 migration used
+        c.chains = M.buildChains(ids, book);
+        M.syncLegacyIds(c, book);
+    else
+        c.ids = ids;
+    end
+    return c;
+end
+
+-- ---------------------------------------------------------------------------
 -- flat readers -- every one takes a v2 set (reads its ids mirror = the
 -- level-75 resolution) OR a plain 20-id array (a resolveAtLevel result),
 -- so level-aware callers pass the resolution for the level they preview

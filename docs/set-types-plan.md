@@ -109,10 +109,28 @@ wording verbatim), and the quiet-why line beneath it says which of the
 three silences is happening: the beat not arriving (`watchAlive`), nothing
 applied yet, or another set being the followed one.
 
-## 6. Still not in this slice
+## 6. Kind conversion in place (built in the third slice, same day)
 
-1. Kind conversion in place.
-2. Backups for flat/levels sets.
+A SAVED set may become another kind — **Convert...** under the name box.
+THE FLAT PROJECTION IS THE BRIDGE: what the set plans at the cap (a flat
+set's ids, a levels set's BASE build, a timeline's Lv.75 mirror) crosses;
+whatever it cannot carry is dropped, and `setmodel.convertLoss` NAMES it —
+a levels set's band builds and stored rule, a timeline's beyond-the-plan
+entries (or, when every spell survives, its activation timing) and its
+backups — as warn lines under each target button and again in the note
+after. A lossy convert takes two clicks (the 4s confirm, the Read-current
+pattern); a lossless one takes one. Converting works from the SAVED set,
+so unsaved edits must be settled first (the panel says so instead of
+guessing). `convertTo` never mutates its source; flat → timeline lays out
+by sorted placement, exactly the old v2 migration. The followed-set name
+survives conversion, so the level-change watcher simply obeys the new
+kind from then on.
+
+This replaces the "Read current into a new set" escape hatch named in §3.
+
+## 6b. Still not in any slice
+
+1. Backups for flat/levels sets.
 
 ## 7. Proof
 

@@ -64,9 +64,13 @@ never two writers on one change. The quiet-why line (watch alive /
 nothing applied / another set followed) sits under the rule combo.
 Driven end to end against a stub client (`smoke: the level-change rule`,
 21 checks) — **this is the packet-sending feature: its field round is
-the one that matters most**. Still queued: (d) the job-traits field
-round, (e) the field checklist below (§0), once per kind, plus one live
-band-crossing under Lvl Set Switch.
+the one that matters most**. AND (fourth slice, same day) **KIND
+CONVERSION IN PLACE** (plan §6): Convert... under the name box, the flat
+projection as the bridge (`setmodel.convertTo`/`convertLoss`), losses
+named before the two-click confirm, unsaved edits must settle first,
+source never mutated. Still queued: (d) the job-traits field round,
+(e) the field checklist below (§0), once per kind, plus one live
+band-crossing under Lvl Set Switch and one conversion round-trip.
 
 ---
 

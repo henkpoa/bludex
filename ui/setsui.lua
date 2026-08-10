@@ -712,6 +712,73 @@ local function savedList(ctx)
         end
     end
 
+    -- CONVERT IN PLACE (docs/set-types-plan.md 6): a SAVED set may become
+    -- another kind. The flat projection is the bridge -- the base/Lv.75
+    -- plan crosses, and whatever cannot is NAMED before the click that
+    -- drops it (which is why a lossy convert takes two clicks).
+    local convEntry = st.activeSet and cfg.sets[st.activeSet] or nil;
+    if convEntry ~= nil then
+        if kit.litButton(im, 'Convert...', st.convertOpen == true, LEFT_W - 20, 20) then
+            st.convertOpen = not st.convertOpen or nil;
+            st.convertConfirm = nil;
+        end
+        kit.tip(im, 'Turn this saved set into another kind. What the new kind\n'
+            .. 'cannot carry is listed -- and dropped -- when you do.');
+    end
+    if st.convertOpen and convEntry ~= nil then
+        if M.unsaved(ctx) then
+            kit.ctext(im, kit.COL.warn, 'Save or Revert your edits first.');
+            kit.tip(im, 'Converting works from the SAVED set; unsaved edits\nwould be lost silently. Settle them first.');
+        else
+            local fromKind = ctx.sets.kindOf(convEntry);
+            for _, k in ipairs(M.KIND_ORDER) do
+                if k ~= fromKind then
+                    local loss = ctx.sets.convertLoss(convEntry, k, ctx.book);
+                    local confirming = st.convertConfirm ~= nil
+                        and st.convertConfirm.kind == k
+                        and os.clock() < st.convertConfirm.till;
+                    if st.convertConfirm ~= nil and st.convertConfirm.kind == k
+                        and not confirming then
+                        st.convertConfirm = nil;       -- the 4s window closed
+                    end
+                    local label = confirming and 'Confirm convert?'
+                        or ('To ' .. M.KIND_INFO[k].label);
+                    if kit.litButton(im, label, confirming, LEFT_W - 20, 20,
+                        confirming and kit.PAL.go or nil) then
+                        if not confirming and #loss > 0 then
+                            st.convertConfirm = { kind = k, till = os.clock() + 4.0 };
+                        else
+                            st.convertConfirm = nil;
+                            local conv = ctx.sets.convertTo(convEntry, k, ctx.book);
+                            cfg.sets[st.activeSet] = conv;
+                            if k == 'levels' then
+                                loadBuild(ctx, st.activeSet, nil);
+                            else
+                                st.editLevel = nil;
+                                st.editingSet = ctx.sets.clone(conv, conv.name);
+                                st.assignSlot = nil;
+                            end
+                            st.convertOpen = nil;
+                            if ctx.save then ctx.save(); end
+                            st.applyNote = (#loss == 0)
+                                and ('"%s" is a %s set now.'):format(
+                                    conv.name, M.KIND_INFO[k].label)
+                                or ('"%s" is a %s set now. Dropped: %s.'):format(
+                                    conv.name, M.KIND_INFO[k].label,
+                                    table.concat(loss, ', '));
+                        end
+                    end
+                    kit.tip(im, M.KIND_INFO[k].blurb .. '\n\n'
+                        .. ((#loss == 0) and 'Nothing is lost in this conversion.'
+                            or ('One click arms it, a second converts.')));
+                    for _, L in ipairs(loss) do
+                        kit.ctext(im, kit.COL.warn, '  drops ' .. L);
+                    end
+                end
+            end
+        end
+    end
+
     if ekind == 'timeline' then
         -- the built-for floor (plan 2.5): where budget ENFORCEMENT starts.
         -- 75 = an endgame set (nothing below is its problem); 1 = a leveling

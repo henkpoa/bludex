@@ -650,6 +650,54 @@ check(sets.upgrade(raw, book) == true and raw.kind == 'levels',
     'a builds-shaped store entry is stamped levels');
 check(sets.upgrade(raw, book) == false, 'and the stamp is idempotent');
 
+print('smoke: kind conversion (the flat projection is the bridge)');
+-- flat -> anywhere: lossless, and the source is never touched
+local cf = sets.new('Conv', 'flat');
+sets.add(cf, 529, book, 80); sets.add(cf, 603, book, 80);
+check(#sets.convertLoss(cf, 'levels', book) == 0
+    and #sets.convertLoss(cf, 'timeline', book) == 0,
+    'a flat set converts anywhere losslessly');
+local cl = sets.convertTo(cf, 'levels', book);
+check(cl.kind == 'levels' and cl.name == 'Conv' and cl.ids[1] == 529
+    and #cl.builds == 0, 'flat -> levels: the ids become the base build');
+local ct = sets.convertTo(cf, 'timeline', book);
+check(ct.kind == 'timeline' and ct.chains[1][1].id == 603,
+    'flat -> timeline: sorted placement, lowest level in the lowest slot');
+check(cf.kind == 'flat' and cf.ids[1] == 529, 'the source is never mutated');
+
+-- levels -> flat: the base crosses; builds and a stored rule are NAMED
+sets.groupAdd(cl, 41);
+sets.groupPut(cl, 41, { [1] = 549 });
+cl.rule = 'switch';
+local closs = sets.convertLoss(cl, 'flat', book);
+check(#closs == 2 and closs[1]:find('1 level build', 1, true) ~= nil
+    and closs[2]:find('switch', 1, true) ~= nil,
+    'levels -> flat names the build and the stored rule it drops');
+local cback = sets.convertTo(cl, 'flat', book);
+check(cback.kind == 'flat' and cback.ids[1] == 529 and cback.builds == nil,
+    'and the base build is what crosses');
+
+-- timeline -> flat: flat-shaped crosses clean; a real timeline is named
+check(#sets.convertLoss(ct, 'flat', book) == 0,
+    'a flat-shaped timeline converts back losslessly');
+local deep = sets.new('Deep');
+check(sets.addEntry(deep, 1, 603, nil, book)
+    and sets.addEntry(deep, 1, 529, nil, book), 'conversion fixture stacks a chain');
+local dloss = sets.convertLoss(deep, 'flat', book);
+check(#dloss == 1 and dloss[1]:find('1 entry beyond', 1, true) ~= nil,
+    'timeline -> flat counts the entries the Lv.75 plan leaves behind');
+sets.pushBackup(deep, deep, 1000);
+check(#sets.convertLoss(deep, 'levels', book) == 2,
+    'and the backups are named too');
+local dflat = sets.convertTo(deep, 'flat', book);
+check(dflat.kind == 'flat' and dflat.ids[1] == 529,
+    'what crosses is the Lv.75 plan (Bludgeon, not the retired Wild Oats)');
+
+-- same kind = a plain clone: timeline detail and backups survive intact
+local dsame = sets.convertTo(deep, 'timeline', book);
+check(dsame.chains[1][2] ~= nil and #(dsame.backups or {}) == 1,
+    'convert to the same kind is a full clone, nothing projected away');
+
 print('smoke: sorted apply layout');
 local slIds = { 623, 513, 0, 719 };   -- Head Butt, Sandspin, empty, Searing Tempest
 local sl = sets.sortedLayout(slIds, book);
@@ -1542,6 +1590,8 @@ do
     local screen = table.concat(sdrew, '\n');
     check(#sdrew > 5, ('the flat editor drew (%d strings)'):format(#sdrew));
     check(screen:find('Flat', 1, true) ~= nil, 'the flat kind is named by the name box');
+    check(screen:find('Convert', 1, true) ~= nil,
+        'a saved set offers Convert under its name');
 
     sdrew = {};
     setsuiM.render(rctx(sets.draft(lset, 41), 2, nil, 41));
