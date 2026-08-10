@@ -369,23 +369,27 @@ local br = sets.brackets();
 check(#br == 8 and #br[1].slots == 6 and br[2].floor == 11 and br[8].floor == 71,
     'brackets(): 6 slots at 1, seven pairs after');
 
--- a new set is v2; a v1 set upgrades by SORTED placement (the migration is
--- the sorted apply layout made visible: lowest level in the lowest slot)
+-- a new (kindless) set is a timeline; a v1 set STAYS FLAT under the v3
+-- adopt (docs/set-types-plan.md 1: the kinds stamp, nothing converts --
+-- the v2 chains-for-everyone migration is repealed)
 local v2 = sets.new('V2');
 check(v2.builtFor == 75 and v2.chains ~= nil and #v2.chains[1] == 0,
     'new sets carry builtFor 75 and empty chains');
+check(sets.kindOf(v2) == 'timeline', 'and they are timeline kind');
 check(sets.upgrade(v2, book) == false, 'upgrade is a no-op on a fresh v2 set');
 local v1 = { name = 'Old', ids = {} };
 for i = 1, 20 do v1.ids[i] = 0; end
 v1.ids[3] = 529;      -- Bludgeon 18
 v1.ids[9] = 603;      -- Wild Oats 4
-check(sets.upgrade(v1, book) == true, 'a flat set migrates');
-check(v1.chains[1][1].id == 603 and v1.chains[1][1].from == 4
-    and v1.chains[2][1].id == 529 and v1.chains[2][1].from == 18,
-    'migration sorts lowest level into the lowest slot, from = spell level');
-check(v1.ids[1] == 603 and v1.ids[2] == 529 and v1.ids[3] == 0,
-    'the ids mirror re-derives as the level-75 resolution');
-check(sets.isFlat(v1, book), 'a migrated set is flat (no timeline chrome)');
+check(sets.upgrade(v1, book) == true, 'a v1 set is stamped by the v3 adopt');
+check(v1.kind == 'flat' and v1.chains == nil,
+    'and it STAYS FLAT -- no chains are built for it');
+check(v1.ids[3] == 529 and v1.ids[9] == 603,
+    'its ids are untouched, slots and all');
+check(sets.upgrade(v1, book) == false, 'the stamp is idempotent');
+local rv = sets.resolveAtLevel(v1, 10, book);
+check(rv[3] == 529 and rv[9] == 603,
+    'a flat set resolves VERBATIM at every level (the client handles sync)');
 
 -- the Wild Oats -> Bludgeon -> empty chain, Henrik's founding example
 local tl = sets.new('Leveling');
@@ -566,9 +570,85 @@ local fi = sets.fromIds('Imported', { [1] = 529, [2] = 603 }, book);
 check(fi.chains[1][1].id == 603 and fi.chains[2][1].id == 529,
     'fromIds sorts like the migration');
 local legacy = { name = 'L', ids = { [1] = 529 } };
+check(sets.kindOf(legacy) == 'flat', 'a bare-ids table reads as a flat set');
 check(sets.resolveAtLevel(legacy, 75, book)[1] == 529
-    and sets.resolveAtLevel(legacy, 17, book)[1] == 0,
-    'an un-upgraded set still resolves (built on the fly)');
+    and sets.resolveAtLevel(legacy, 17, book)[1] == 529,
+    'and it resolves VERBATIM at every level (kinds era: no on-the-fly chains)');
+
+print('smoke: the three set kinds (docs/set-types-plan.md)');
+-- kindOf: an explicit kind wins; otherwise the shape speaks
+check(sets.kindOf({ name = 'x', ids = {} }) == 'flat'
+    and sets.kindOf({ name = 'x', ids = {}, builds = {} }) == 'levels'
+    and sets.kindOf({ name = 'x', chains = {} }) == 'timeline',
+    'kindOf infers by shape: bare ids flat, builds levels, chains timeline');
+local fl = sets.new('Flatty', 'flat');
+check(fl.kind == 'flat' and fl.chains == nil and fl.builds == nil,
+    'new flat: ids only, no chains, no builds');
+local lv = sets.new('Bandy', 'levels');
+check(lv.kind == 'levels' and lv.chains == nil and #lv.builds == 0,
+    'new levels: ids (the base build) plus an empty build list');
+check(sets.new('T').kind == 'timeline', 'new without a kind stays timeline');
+
+-- the rungs (the 2026-08-06 law, back with the levels kind)
+check(sets.rungFor(40) == 31 and sets.rungFor(75) == 71 and sets.rungFor(1) == 1,
+    'rungFor: 40 -> 31, 75 -> 71, 1 -> 1');
+check(sets.rungFor(nil) == nil and sets.rungFor(0) == nil, 'no level, no rung');
+check(sets.bandTop(41) == 50 and sets.bandTop(71) == 75 and sets.bandTop(nil) == 75,
+    'bands: 41-50, 71-75, and level-less reaches the cap');
+
+-- flat editing runs the id-array path end to end
+check(sets.add(fl, 623, book, 80) and fl.ids[1] == 623,
+    'flat add lands in the first free slot');
+check(sets.resolveAtLevel(fl, 5, book)[1] == 623,
+    'and resolves verbatim below the spell\'s level');
+local flc = sets.clone(fl, fl.name);
+check(flc.kind == 'flat' and sets.equal(fl, flc), 'flat clone equals its source');
+flc.ids[2] = 603;
+check(not sets.equal(fl, flc), 'one id apart is not equal');
+check(not sets.equal(fl, lv), 'kinds never compare equal across each other');
+
+-- the group API: band-else-base, exactly the old semantics
+check(sets.add(lv, 603, book, 999), 'the base build takes adds (level nil)');
+check(sets.groupAdd(lv, 41) and sets.groupBuild(lv, 41) ~= nil,
+    'a band is added on purpose');
+check(not sets.groupAdd(lv, 45), 'a level that is not a rung is not a band');
+check(sets.groupPick(lv, 45) == nil,
+    'an added-but-EMPTY band is not picked - the base answers');
+sets.groupPut(lv, 41, { [1] = 529 });
+check(sets.groupPick(lv, 45) == 41, 'the band with its own build answers for 41-50');
+check(sets.groupPick(lv, 25) == nil, 'an unbuilt band falls back to the base');
+check(sets.resolveAtLevel(lv, 45, book)[1] == 529
+    and sets.resolveAtLevel(lv, 25, book)[1] == 603,
+    'resolveAtLevel speaks groupPick: the band build at 45, the base at 25');
+local lvEmpty = sets.new('NoBase', 'levels');
+sets.groupAdd(lvEmpty, 21);
+sets.groupPut(lvEmpty, 21, { [1] = 603 });
+check(sets.groupPick(lvEmpty, 45) == 21 and sets.groupPick(lvEmpty, 5) == 21,
+    'an EMPTY base falls back to the nearest built band, either side');
+local lvc = sets.clone(lv, lv.name);
+check(sets.equal(lv, lvc), 'levels clone equals its source, builds included');
+sets.groupPut(lvc, 71, { [1] = 623 });
+check(not sets.equal(lv, lvc), 'a new band build is authorship');
+
+-- the draft: one build as the editing surface, its band's ceilings live
+local d = sets.draft(lv, 41);
+check(d.kind == 'levels' and d.draft == true and d.ids[1] == 529,
+    'draft carries the band\'s ids and names itself a draft');
+check(sets.slotMax(d) == 14, 'a Lv.41 draft owns its band\'s 14 slots');
+check(sets.slotMax(sets.draft(lv, nil)) == 20, 'the base draft keeps all 20');
+local d1 = sets.draft(lv, 1);
+check(select(2, sets.canAdd(d1, 529, book, 999))
+    == 'needs Lv.18 - this set stops at 10',
+    'the band-top ceiling: Bludgeon has no business in a Lv.1 build');
+for i = 1, 6 do d1.ids[i] = 100 + i; end
+check(select(2, sets.canAdd(d1, 603, book, 999)) == 'no free slot (Lv.1 has 6)',
+    'the slot ceiling: Lv.1 has six, and the seventh is refused by name');
+
+-- upgrade stamps kinds and is idempotent, per shape
+local raw = { name = 'L', ids = {}, builds = { { level = 41, ids = {} } } };
+check(sets.upgrade(raw, book) == true and raw.kind == 'levels',
+    'a builds-shaped store entry is stamped levels');
+check(sets.upgrade(raw, book) == false, 'and the stamp is idempotent');
 
 print('smoke: sorted apply layout');
 local slIds = { 623, 513, 0, 719 };   -- Head Butt, Sandspin, empty, Searing Tempest
@@ -647,6 +727,38 @@ check(#sl == 2 and sl[1].name == 'Solo DD' and sl[1].ids[7] == 700
     and sl[2].ids[1] == 0, 'sets codec roundtrip');
 check(dm._codec.decodeSets('')[1] == nil and dm._codec.decodeIds(nil)[20] == 0,
     'codec tolerates empty and nil');
+-- the legacy decoder and the kinds: bare lines stay flat, build lines mean
+-- levels (a pre-timeline store with level lines must adopt as that kind)
+check(dm._codec.decodeSets('Solo\t' .. dm._codec.encodeIds(ids))[1].builds == nil,
+    'a bare legacy line decodes with NO builds table (reads as flat)');
+local lvLegacy = dm._codec.decodeSets(
+    'Climb\t' .. dm._codec.encodeIds(ids) .. '\n'
+    .. 'Climb\t41\t' .. dm._codec.encodeIds(ids) .. '\n'
+    .. 'Climb\trule\tswitch');
+check(lvLegacy[1].builds ~= nil and lvLegacy[1].builds[1].level == 41
+    and lvLegacy[1].rule == 'switch',
+    'legacy level and rule lines decode into a levels-shaped entry');
+
+-- the KINDS grammar (sets3): one line per set, kind first, lossless for
+-- all three -- and tolerant of lines it does not know
+local trio = {
+    { kind = 'flat', name = 'F', ids = ids },
+    { kind = 'levels', name = 'L', ids = ids, rule = 'switch',
+      builds = { { level = 41, ids = ids } } },
+    { kind = 'timeline', name = 'T', builtFor = 30,
+      chains = { { { id = 623, from = 5 } } } },
+};
+local rt3 = dm._codec.decodeSets3(dm._codec.encodeSets3(trio));
+check(#rt3 == 3, 'sets3 round-trips all three kinds');
+check(rt3[1].kind == 'flat' and rt3[1].ids[7] == 700, 'the flat line survives');
+check(rt3[2].kind == 'levels' and rt3[2].rule == 'switch'
+    and rt3[2].builds[1].level == 41 and rt3[2].builds[1].ids[1] == 623,
+    'the levels line carries base, rule and builds');
+check(rt3[3].kind == 'timeline' and rt3[3].builtFor == 30
+    and rt3[3].chains[1][1].id == 623 and rt3[3].chains[1][1].from == 5,
+    'the timeline line is the sets2 line, tagged');
+check(#dm._codec.decodeSets3('#v3\nwibble\tX\t1,2,3') == 0,
+    'an unknown kind drops the line, never the file');
 
 -- the TIMELINE grammar (sets2/sets2bak, plan 7): lossless round-trip of
 -- chains, builtFor and backups -- and the legacy key stays a usable flat
@@ -733,7 +845,7 @@ check(blu.learnedBonus == 24 and blu.meritPts == 10,
 check(aCfg.sets[1].chains ~= nil and aCfg.sets[1].chains[1][1] ~= nil
     and aCfg.sets[1].chains[1][1].id == 623 and aCfg.sets[1].builtFor == 75,
     'adopt migrates stored flat sets to chains (builtFor 75)');
-check(aCfg.setsModelVer == 2, 'and stamps setsModelVer 2');
+check(aCfg.setsModelVer == 3, 'and stamps setsModelVer 3 (the kinds era)');
 check(aCfg.replan == 'manual', 'the retired autoRestore maps to replan=manual');
 check(host.state.editingSet.chains ~= nil, 'the editing clone speaks chains too');
 -- LOG OFF: the defaults profile swaps in. The working state stays put (the
@@ -959,18 +1071,22 @@ check(#host.deps.cfg.sets == 1 and host.deps.cfg.sets[1].name == 'Solo',
     'first login: the bridge re-decodes the character file');
 check(host.state.editingSet.name == 'Solo' and host.state.editingSet.ids[1] == 700,
     'and the host adopts it (the active set is restored)');
-check(host.deps.cfg.sets[1].chains ~= nil,
-    'a legacy dlac store migrates to chains through the same adopt');
+check(host.deps.cfg.sets[1].chains == nil
+    and sets.kindOf(host.deps.cfg.sets[1]) == 'flat',
+    'a legacy dlac store adopts as FLAT (kinds era: nothing converts)');
 check(blu.learnedBonus == 24 and blu.meritPts == 10,
     'the budget halves now persist through the dlac store too');
 -- a save now round-trips the real list, not the empty init snapshot --
--- and writes BOTH grammars: sets2 as the truth, sets as the flat mirror
+-- and writes EVERY grammar: sets3 the truth, sets2 the timeline sets only
+-- (this one is flat, so sets2 stays empty), sets the tolerant mirror
 host.deps.save();
 check(dm._codec.decodeSets(disk['A\\'].sets)[1].name == 'Solo',
     'a save after login keeps the character file (no empty-snapshot clobber)');
-check(dm._codec.decodeSets2(disk['A\\'].sets2)[1] ~= nil
-    and dm._codec.decodeSets2(disk['A\\'].sets2)[1].chains[1][1].id == 700,
-    'the save writes the timeline grammar alongside the legacy key');
+local v3rt = dm._codec.decodeSets3(disk['A\\'].sets3);
+check(v3rt[1] ~= nil and v3rt[1].kind == 'flat' and v3rt[1].ids[1] == 700,
+    'the save writes the kinds grammar (sets3) as the truth');
+check(#dm._codec.decodeSets2(disk['A\\'].sets2) == 0,
+    'and sets2 carries timeline sets only (a flat set has no line there)');
 -- character B: their own file (none yet) -- nothing of A may leak
 storeDir = 'B\\';
 dm._syncStore();
@@ -978,12 +1094,13 @@ check(#host.deps.cfg.sets == 0 and host.state.activeSet == nil,
     'character switch: B starts from their own file, not A\'s bridge');
 check(blu.learnedBonus == nil and blu.meritPts == nil,
     'and A\'s budget is not inherited');
--- back to A: this login must decode the TIMELINE grammar (sets2 written by
--- the save above outranks the legacy key)
+-- back to A: this login must decode the KINDS grammar (sets3 written by
+-- the save above outranks both older keys) -- and the set is still flat
 storeDir = 'A\\';
 dm._syncStore();
-check(host.deps.cfg.sets[1].chains ~= nil and host.deps.cfg.sets[1].chains[1][1].id == 700,
-    'a return to A decodes the timeline grammar directly');
+check(sets.kindOf(host.deps.cfg.sets[1]) == 'flat'
+    and host.deps.cfg.sets[1].ids[1] == 700,
+    'a return to A decodes the kinds grammar directly, flat staying flat');
 check(host.state.editingSet.name == 'Solo',
     'and the active set restores from it as before');
 blu.forgetBudget();
@@ -1243,5 +1360,80 @@ traitsui.render(tctx2);
 check(#drew > 20, 'it renders without the job side too');
 check(table.concat(drew, '\n'):find('blocked', 1, true) == nil,
     'and blocks nothing it cannot know about');
+
+print('smoke: the Sets tab renders (the chooser and all three kinds)');
+-- the same law as the Traits tab render: an unknown Lua name is a silent
+-- nil GLOBAL until the line runs, and in game the tab draws inside pcall.
+-- Drive the REAL render against the stub binding and let a typo throw HERE
+-- -- the chooser, the flat planner, the levels draft and the timeline all
+-- take their own code paths now.
+do
+    local sdrew = {};
+    local sIm = {};
+    for k, v in pairs(stubIm) do sIm[k] = v; end
+    sIm.Text = function(s) sdrew[#sdrew + 1] = tostring(s); end
+    sIm.TextColored = function(_, s) sdrew[#sdrew + 1] = tostring(s); end
+    sIm.Selectable = function(label) sdrew[#sdrew + 1] = tostring(label); return false; end
+    sIm.Button = function(label) sdrew[#sdrew + 1] = tostring(label); return false; end
+    sIm.InputText = function() return false; end
+    sIm.SliderInt = function() return false; end
+    sIm.BeginChild = function() return true; end
+    sIm.EndChild = function() end;
+
+    local _cur2, _eff2, _onb2, _bud2, _sync2, _rc2 =
+        blu.currentSet, blu.effectiveLevel, blu.onBlu, blu.budget,
+        blu.syncStats, blu.rungCap;
+    blu.currentSet = function() return {}; end
+    blu.effectiveLevel = function() return 42; end
+    blu.onBlu = function() return true; end
+    blu.budget = function() return 60; end
+    blu.syncStats = function() return nil; end
+
+    local rcfg = mkcfg();
+    local fset = sets.new('Flatty', 'flat');
+    sets.add(fset, 623, book, 80);
+    local lset = sets.new('Bandy', 'levels');
+    sets.add(lset, 603, book, 80);
+    sets.groupAdd(lset, 41);
+    sets.groupPut(lset, 41, { [1] = 529 });
+    local tset = sets.new('Chained');
+    sets.addEntry(tset, 1, 603, nil, book);
+    rcfg.sets = { fset, lset, tset };
+    local function rctx(editing, active, pick, editLevel)
+        return { im = sIm, book = book, blu = blu, sets = sets, cfg = rcfg,
+            save = function() end,
+            state = { editingSet = editing, activeSet = active,
+                editLevel = editLevel, pickKind = pick,
+                nameBuf = { '' }, open = { true } },
+            budgetMax = function() return 60; end };
+    end
+
+    sdrew = {};
+    setsuiM.render(rctx(sets.clone(fset, fset.name), 1));   -- unguarded ON PURPOSE
+    local screen = table.concat(sdrew, '\n');
+    check(#sdrew > 5, ('the flat editor drew (%d strings)'):format(#sdrew));
+    check(screen:find('Flat', 1, true) ~= nil, 'the flat kind is named by the name box');
+
+    sdrew = {};
+    setsuiM.render(rctx(sets.draft(lset, 41), 2, nil, 41));
+    screen = table.concat(sdrew, '\n');
+    check(screen:find('Editing Lv.41', 1, true) ~= nil, 'the levels draft names its band');
+    check(screen:find('Lvl Subsets', 1, true) ~= nil, 'and its kind');
+
+    sdrew = {};
+    setsuiM.render(rctx(sets.clone(tset, tset.name), 3));
+    check(#sdrew > 5, 'the timeline editor still renders');
+
+    sdrew = {};
+    setsuiM.render(rctx(sets.new('N', 'flat'), nil, true));
+    screen = table.concat(sdrew, '\n');
+    check(screen:find('Slotlist', 1, true) ~= nil
+        and screen:find('Lvl Subsets', 1, true) ~= nil,
+        'the chooser offers all three kinds by name');
+
+    blu.currentSet, blu.effectiveLevel, blu.onBlu, blu.budget,
+        blu.syncStats, blu.rungCap =
+        _cur2, _eff2, _onb2, _bud2, _sync2, _rc2;
+end
 
 print('smoke: all green');

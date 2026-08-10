@@ -32,11 +32,43 @@
     later pair at 11/21/31/41/51/61/71 (bracketFloor agrees with slotsAtLevel
     at every level -- the smoke suite pins it). A chain is inert below its
     slot's floor whatever its entries say.
+
+    THE THREE KINDS (design settled 2026-08-10, docs/set-types-plan.md): the
+    timeline is one of three systems a saved set can be, chosen at creation:
+
+        { kind='flat',     name, ids={20} }
+        { kind='levels',   name, ids={20 base build},
+                           builds={ {level,ids}.. }, rule=nil|'restore'|.. }
+        { kind='timeline', name, builtFor, chains, ids mirror, backups }
+
+    kindOf answers for any table (explicit kind, else inferred by shape);
+    the editing surface and resolveAtLevel dispatch on it, so everything
+    downstream keeps speaking flat 20-id arrays and never learns which
+    system it is talking to. A v1 set stays FLAT -- the v2 adopt used to
+    build chains for it; the v3 adopt stamps kinds and converts nothing.
 ]]--
 
 local M = {};
 
 M.BACKUP_CAP = 5;       -- backups kept per saved set, newest first
+
+-- ---------------------------------------------------------------------------
+-- the three kinds
+-- ---------------------------------------------------------------------------
+M.KINDS = { 'flat', 'levels', 'timeline' };
+M.KIND_LABELS = { flat = 'Flat', levels = 'Lvl Subsets', timeline = 'Slotlist' };
+local KIND_OK = { flat = true, levels = true, timeline = true };
+
+-- The one authority on what a set table IS. An explicit valid kind wins;
+-- otherwise the shape speaks: chains -> timeline, builds -> levels, else
+-- flat -- which is exactly what every stored generation of set decodes to.
+function M.kindOf(set)
+    if type(set) ~= 'table' then return 'flat'; end
+    if KIND_OK[set.kind] then return set.kind; end
+    if set.chains ~= nil then return 'timeline'; end
+    if set.builds ~= nil then return 'levels'; end
+    return 'flat';
+end
 
 -- ---------------------------------------------------------------------------
 -- construction, cloning, migration
@@ -59,18 +91,53 @@ local function copyChains(chains)
     return c;
 end
 
-function M.new(name)
+local function zeroIds()
     local ids = {};
     for i = 1, 20 do ids[i] = 0; end
+    return ids;
+end
+
+local function copyIds(ids)
+    local c = {};
+    for i = 1, 20 do c[i] = tonumber(ids and ids[i]) or 0; end
+    return c;
+end
+
+-- A fresh set of a KIND. No kind (or 'timeline') builds the timeline shape,
+-- so every pre-kinds caller keeps getting what it always got.
+function M.new(name, kind)
+    name = name or 'New Set';
+    if kind == 'flat' then
+        return { kind = 'flat', name = name, ids = zeroIds() };
+    end
+    if kind == 'levels' then
+        return { kind = 'levels', name = name, ids = zeroIds(), builds = {} };
+    end
     return {
-        name = name or 'New Set',
+        kind = 'timeline',
+        name = name,
         builtFor = 75,
         chains = emptyChains(),
-        ids = ids,
+        ids = zeroIds(),
     };
 end
 
 function M.clone(set, name)
+    local kind = M.kindOf(set);
+    if kind == 'flat' then
+        local c = M.new(name or (set.name .. ' copy'), 'flat');
+        c.ids = copyIds(set.ids);
+        return c;
+    end
+    if kind == 'levels' then
+        local c = M.new(name or (set.name .. ' copy'), 'levels');
+        c.ids = copyIds(set.ids);
+        for _, t in ipairs(set.builds or {}) do
+            c.builds[#c.builds + 1] = { level = t.level, ids = copyIds(t.ids) };
+        end
+        c.rule = set.rule;
+        return c;
+    end
     local c = M.new(name or (set.name .. ' copy'));
     c.builtFor = set.builtFor or 75;
     c.chains = copyChains(set.chains);
@@ -123,40 +190,51 @@ function M.fromIds(name, ids, book)
     return set;
 end
 
--- Upgrade a stored set in place to the chain model. Returns true when it
--- changed anything. Two shapes need it: a v1 set (no chains field), and a
--- hand-built/legacy-decoded set whose chains are all empty while ids are
--- not (the ids are then the truth and the chains the artifact).
+-- Upgrade a stored set in place to the KIND model (v3): stamp the kind its
+-- shape says it is, then tidy that kind's own fields. Returns true when it
+-- changed anything. NOTHING is converted -- a v1 flat set stays flat (the
+-- v2 adopt used to build chains for it; that stopped with the kinds). The
+-- one rebuild kept: a decoded timeline whose chains are all empty while
+-- its ids are not (the ids are then the truth and the chains the artifact).
 function M.upgrade(set, book)
-    local hasChains = set.chains ~= nil;
+    local changed = false;
+    if set.kind ~= M.kindOf(set) then
+        set.kind = M.kindOf(set);
+        changed = true;
+    end
+    if set.kind == 'flat' then
+        if type(set.ids) ~= 'table' then set.ids = zeroIds(); changed = true; end
+        return changed;
+    end
+    if set.kind == 'levels' then
+        M.normalizeGroup(set);
+        return changed;
+    end
     local chainCount = 0;
-    if hasChains then
-        for i = 1, 20 do
-            if #(set.chains[i] or {}) > 0 then chainCount = chainCount + 1; end
-        end
+    for i = 1, 20 do
+        if #(set.chains[i] or {}) > 0 then chainCount = chainCount + 1; end
     end
     local idCount = 0;
     for i = 1, 20 do
         if (set.ids and set.ids[i] or 0) ~= 0 then idCount = idCount + 1; end
     end
-    if hasChains and (chainCount > 0 or idCount == 0) then
-        -- already v2; just make sure the shape is complete (a store decode
-        -- arrives without the ids mirror -- re-derive it here)
-        local changed = false;
-        if set.builtFor == nil then set.builtFor = 75; changed = true; end
-        for i = 1, 20 do
-            if set.chains[i] == nil then set.chains[i] = {}; changed = true; end
-        end
-        if set.ids == nil then
-            M.syncLegacyIds(set, book);
-            changed = true;
-        end
-        return changed;
+    if chainCount == 0 and idCount > 0 then
+        set.chains = M.buildChains(set.ids, book);
+        set.builtFor = set.builtFor or 75;
+        M.syncLegacyIds(set, book);
+        return true;
     end
-    set.chains = M.buildChains(set.ids or {}, book);
-    set.builtFor = set.builtFor or 75;
-    M.syncLegacyIds(set, book);
-    return true;
+    -- make sure the shape is complete (a store decode arrives without the
+    -- ids mirror -- re-derive it here)
+    if set.builtFor == nil then set.builtFor = 75; changed = true; end
+    for i = 1, 20 do
+        if set.chains[i] == nil then set.chains[i] = {}; changed = true; end
+    end
+    if set.ids == nil then
+        M.syncLegacyIds(set, book);
+        changed = true;
+    end
+    return changed;
 end
 
 -- ---------------------------------------------------------------------------
@@ -180,12 +258,26 @@ function M.brackets()
     return out;
 end
 
--- Collapse the timeline to the flat 20-id array for a level: per chain, the
--- entry with the highest activation at or below the level wins (an empty
--- marker wins as 0); a chain below its slot's floor is inert. Everything
+-- Collapse ANY set to the flat 20-id array for a level. Everything
 -- downstream (points, stats, traits, sortedLayout, applyDiff) takes this.
+-- Per kind:
+--   flat      the ids verbatim -- a flat set is level-independent; the
+--             client's own sync-disable handles over-level spells (the
+--             field-proven pre-timeline behavior)
+--   levels    the band's own build when it has one, else the base build
+--             (groupPick carries the full rule, empty-base fallback included)
+--   timeline  per chain, the entry with the highest activation at or below
+--             the level wins (an empty marker wins as 0); a chain below its
+--             slot's floor is inert
 function M.resolveAtLevel(set, level, book)
     level = level or 75;
+    local kind = M.kindOf(set);
+    if kind == 'flat' then
+        return copyIds(set.ids);
+    end
+    if kind == 'levels' then
+        return M.groupIds(set, M.groupPick(set, level));
+    end
     local chains = set.chains;
     if chains == nil then
         -- a set that never went through upgrade(): resolve the flat ids the
@@ -411,7 +503,11 @@ function M.clearChain(set, slot, book)
 end
 
 function M.clear(set)
-    set.chains = emptyChains();
+    if M.kindOf(set) == 'timeline' and set.chains ~= nil then
+        set.chains = emptyChains();
+    end
+    -- non-timeline: only the ids being edited (a levels draft's band, a
+    -- flat set's list) -- never a levels entry's other builds
     for i = 1, 20 do set.ids[i] = 0; end
 end
 
@@ -433,10 +529,33 @@ function M.isFlat(set, book)
     return true;
 end
 
--- Deep equality of what the player authored: name, builtFor, chains.
--- Backups and the derived ids mirror are bookkeeping, not authorship.
+-- Deep equality of what the player authored, per kind. Backups and the
+-- derived ids mirror are bookkeeping, not authorship.
+local function idsEqual(a, b)
+    for i = 1, 20 do
+        if (a and a[i] or 0) ~= (b and b[i] or 0) then return false; end
+    end
+    return true;
+end
+
 function M.equal(a, b)
+    local kind = M.kindOf(a);
+    if kind ~= M.kindOf(b) then return false; end
     if tostring(a.name) ~= tostring(b.name) then return false; end
+    if kind == 'flat' then
+        return idsEqual(a.ids, b.ids);
+    end
+    if kind == 'levels' then
+        if not idsEqual(a.ids, b.ids) then return false; end
+        if a.rule ~= b.rule then return false; end
+        local ba, bb = a.builds or {}, b.builds or {};
+        if #ba ~= #bb then return false; end
+        for i = 1, #ba do
+            if ba[i].level ~= bb[i].level then return false; end
+            if not idsEqual(ba[i].ids, bb[i].ids) then return false; end
+        end
+        return true;
+    end
     if (a.builtFor or 75) ~= (b.builtFor or 75) then return false; end
     local ca = a.chains or {};
     local cb = b.chains or {};
@@ -476,6 +595,268 @@ function M.restoreBackup(set, i, book, ts)
     set.chains = copyChains(b.chains);
     M.syncLegacyIds(set, book);
     return true;
+end
+
+-- ---------------------------------------------------------------------------
+-- THE LEVELS KIND (built 2026-08-06, back from history 2026-08-10): a build
+-- per level band under one name, the base build the fallback everywhere no
+-- band is built. THE RUNGS: the server's two set rules -- how many slots
+-- and how many base points -- both step every ten levels from 1, so one
+-- build serves a whole band: a set made for Lv.41 is the same set at 50.
+-- Eight rungs, each named for the level its band opens at. 71 is the last:
+-- 71-75 share a base, and the Assimilation merits land inside it, at 75.
+-- ---------------------------------------------------------------------------
+M.LEVELS = { 1, 11, 21, 31, 41, 51, 61, 71 };
+M.TOP    = 71;
+
+-- The rung a level belongs to: 40 -> 31, 75 -> 71, 1 -> 1. nil off BLU.
+function M.rungFor(level)
+    if level == nil or level < 1 then return nil; end
+    local r = math.floor((level - 1) / 10) * 10 + 1;
+    if r > M.TOP then r = M.TOP; end
+    return r;
+end
+
+-- The top level a rung's band reaches: 41 -> 50, 71 -> 75 (the cap). A build
+-- may hold any spell its band can cast, not only what the rung level can --
+-- points and slots are flat across a band, spell levels are not.
+function M.bandTop(level)
+    if level == nil or level >= M.TOP then return 75; end
+    return level + 9;
+end
+
+-- Slots this build may fill: its band's server slot count. A level-less one
+-- is the flat shape, and keeps all 20.
+function M.slotMax(set)
+    if set == nil or set.level == nil then return 20; end
+    return M.slotsAtLevel(set.level);
+end
+
+function M.countIds(ids)
+    local n = 0;
+    for i = 1, 20 do if (ids[i] or 0) ~= 0 then n = n + 1; end end
+    return n;
+end
+
+-- The level a build actually becomes usable at: the highest spell level in
+-- it. nil when it holds nothing the data knows a level for.
+function M.usableFrom(ids, book)
+    local top = nil;
+    for i = 1, 20 do
+        local s = book.spells[ids[i] or 0];
+        if s and s.level and (top == nil or s.level > top) then top = s.level; end
+    end
+    return top;
+end
+
+local function sortBuilds(entry)
+    table.sort(entry.builds, function(a, b) return (a.level or 0) < (b.level or 0); end);
+end
+
+-- Bring a saved levels entry to shape WITHOUT converting anything. All this
+-- does is give it an empty build list and tidy any builds it does have --
+-- levels snapped to real rungs, duplicates dropped -- so a hand-edited
+-- settings file cannot surprise anything downstream.
+--
+-- An EMPTY build is kept: bands are added on purpose (groupAdd) and one you
+-- added but have not filled yet is a real thing, not a leftover.
+-- Idempotent: the UI runs it over every entry it draws.
+function M.normalizeGroup(entry)
+    if type(entry) ~= 'table' then return entry; end
+    entry.ids = copyIds(entry.ids);
+    if not M.RULE_KEYS[entry.rule] then entry.rule = nil; end   -- back to derived
+    local seen, keep = {}, {};
+    for _, t in ipairs(entry.builds or {}) do
+        local lvl = M.rungFor(tonumber(t.level) or 0);
+        if lvl ~= nil and type(t.ids) == 'table' and not seen[lvl] then
+            seen[lvl] = true;
+            keep[#keep + 1] = { level = lvl, ids = copyIds(t.ids) };
+        end
+    end
+    entry.builds = keep;
+    sortBuilds(entry);
+    return entry;
+end
+
+function M.groupBuild(entry, level)
+    for _, t in ipairs((entry and entry.builds) or {}) do
+        if t.level == level then return t; end
+    end
+    return nil;
+end
+
+-- A build's ids, always 20 long -- level nil is the base build, and an
+-- unbuilt rung answers all zeros rather than nil.
+function M.groupIds(entry, level)
+    local src = (level == nil) and entry or M.groupBuild(entry, level);
+    return copyIds(src and src.ids);
+end
+
+-- Write a build back, empty or not: emptying a band is not the same as not
+-- having one, and only groupRemove takes a band away.
+function M.groupPut(entry, level, ids)
+    local copy = copyIds(ids);
+    if level == nil then entry.ids = copy; return; end
+    entry.builds = entry.builds or {};
+    for _, t in ipairs(entry.builds) do
+        if t.level == level then t.ids = copy; return; end
+    end
+    entry.builds[#entry.builds + 1] = { level = level, ids = copy };
+    sortBuilds(entry);
+end
+
+-- BANDS ARE ADDED ON PURPOSE (Henrik 2026-08-06). Offering all eight under
+-- every set reads as eight things you are behind on; a set has the levels
+-- you said it has, and none to begin with. Returns true when this added one.
+function M.groupAdd(entry, level)
+    -- nil is the base build, which every set already has, and a level that
+    -- is not a band start is not a band at all
+    if level == nil or M.rungFor(level) ~= level then return false; end
+    if M.groupBuild(entry, level) ~= nil then return false; end
+    entry.builds = entry.builds or {};
+    entry.builds[#entry.builds + 1] = { level = level, ids = zeroIds() };
+    sortBuilds(entry);
+    return true;
+end
+
+function M.groupRemove(entry, level)
+    for i, t in ipairs((entry and entry.builds) or {}) do
+        if t.level == level then table.remove(entry.builds, i); return true; end
+    end
+    return false;
+end
+
+-- THE LEVEL-CHANGE RULE BELONGS TO THE SET (Henrik 2026-08-07): "Solo
+-- follows my level" is a fact about Solo. Unset, the rule is DERIVED from
+-- the set's shape -- restore while it is flat, switch once it has levels --
+-- so the default follows what you build; a stored pick stands. NOTE: nothing
+-- arms these yet in the kinds era -- the levels watcher is the next slice
+-- (docs/set-types-plan.md 5) -- but the model keeps the vocabulary so
+-- stored rules survive the round trip.
+M.RULE_KEYS = { restore = true, switch = true, manual = true };
+
+function M.ruleOf(entry)
+    if type(entry) ~= 'table' then return 'restore'; end
+    if M.RULE_KEYS[entry.rule] then return entry.rule; end
+    return (#(entry.builds or {}) > 0) and 'switch' or 'restore';
+end
+
+function M.setRule(entry, rule)
+    if type(entry) ~= 'table' or not M.RULE_KEYS[rule] then return false; end
+    entry.rule = rule;
+    return true;
+end
+
+-- The bands not yet added, ascending -- what the Add list offers.
+function M.groupFree(entry)
+    local out = {};
+    for _, lvl in ipairs(M.LEVELS) do
+        if M.groupBuild(entry, lvl) == nil then out[#out + 1] = lvl; end
+    end
+    return out;
+end
+
+-- The rungs that HAVE a build, ascending, empty ones included (the base
+-- build is not one of them).
+function M.groupLevels(entry)
+    local out = {};
+    for _, t in ipairs((entry and entry.builds) or {}) do out[#out + 1] = t.level; end
+    table.sort(out);
+    return out;
+end
+
+-- The highest built rung, or nil when only the base build exists.
+function M.groupTop(entry)
+    local lv = M.groupLevels(entry);
+    return lv[#lv];
+end
+
+-- The build to use AT a level -- the one rule the levels kind turns on
+-- (Henrik 2026-08-06):
+--
+--   the band's OWN build when there is one; otherwise THE BASE BUILD.
+--
+-- The base build is the set's backup, and it stays the answer everywhere no
+-- band build has been made. It does NOT fill forward: a Lv.31 build is for
+-- Lv.31-40 and nowhere else, so walking out of a sync goes back to the base
+-- set rather than dragging a level-31 build to 75. Copy it up a band if you
+-- want it to keep serving (setsui's Copy).
+--
+-- Returns the rung, or nil for the base build. The one exception is the set
+-- with an EMPTY base build: there is no backup to fall back on, so the
+-- nearest build below answers rather than nothing at all.
+-- A band that was added but never filled is NOT a build to pick: it means
+-- "I will get to this", not "wear nothing here".
+function M.groupPick(entry, level)
+    local rung = M.rungFor(level);
+    if rung == nil then return nil; end
+    local own = M.groupBuild(entry, rung);
+    if own ~= nil and M.countIds(own.ids) > 0 then return rung; end
+    if M.countIds((entry and entry.ids) or {}) > 0 then return nil; end
+    local best = nil;
+    for _, t in ipairs((entry and entry.builds) or {}) do
+        if M.countIds(t.ids) > 0 and t.level <= rung
+            and (best == nil or t.level > best) then best = t.level; end
+    end
+    if best == nil then
+        for _, t in ipairs((entry and entry.builds) or {}) do
+            if M.countIds(t.ids) > 0 and (best == nil or t.level < best) then
+                best = t.level;
+            end
+        end
+    end
+    return best;
+end
+
+-- Copy a build's spells into another band, keeping what that band can
+-- actually hold: nothing above the level it can cast, lowest levels first,
+-- until its slots run out.
+--
+-- The POINT budget is deliberately NOT enforced. Coming in over budget is
+-- the workflow -- you see the red meter and cut what you can spare, which
+-- is a judgement only the player can make; a copy that quietly dropped the
+-- spells it happened to like least would take that away and look tidy
+-- doing it.
+--
+-- Returns ids{20}, report { taken, tooHigh, noSlot }.
+function M.copyInto(ids, level, book)
+    local slots = (level == nil) and 20 or M.slotsAtLevel(level);
+    local top = M.bandTop(level);
+    local pick, tooHigh = {}, 0;
+    for i = 1, 20 do
+        local id = ids[i] or 0;
+        if id ~= 0 then
+            local s = book.spells[id];
+            if s ~= nil and s.level ~= nil and s.level > top then
+                tooHigh = tooHigh + 1;
+            else
+                pick[#pick + 1] = id;
+            end
+        end
+    end
+    table.sort(pick, function(a, b)
+        local sa, sb = book.spells[a], book.spells[b];
+        local la = (sa and sa.level) or 999;
+        local lb = (sb and sb.level) or 999;
+        if la ~= lb then return la < lb; end
+        return a < b;
+    end);
+    local out = {};
+    for i = 1, 20 do out[i] = pick[i] or 0; end
+    local taken = #pick;
+    if taken > slots then
+        for i = slots + 1, 20 do out[i] = 0; end
+        taken = slots;
+    end
+    return out, { taken = taken, tooHigh = tooHigh, noSlot = #pick - taken };
+end
+
+-- One build of a levels set as an editable DRAFT -- the shape the Sets tab
+-- edits and every computation takes (no chains, so every editing op below
+-- runs its id-array path; level carries the band ceilings into canAdd).
+function M.draft(entry, level)
+    return { kind = 'levels', draft = true, name = entry.name,
+             level = level, ids = M.groupIds(entry, level) };
 end
 
 -- ---------------------------------------------------------------------------
@@ -530,8 +911,10 @@ function M.freeSlot(set)
         end
         return nil;
     end
+    -- id-array path: a levels draft only owns its band's slots (slotMax);
+    -- a flat set (level nil) keeps all 20
     local ids = flatIds(set);
-    for i = 1, 20 do if (ids[i] or 0) == 0 then return i; end end
+    for i = 1, M.slotMax(set) do if (ids[i] or 0) == 0 then return i; end end
     return nil;
 end
 
@@ -555,28 +938,59 @@ function M.usedMP(setOrIds, book)
     return n;
 end
 
--- Can this spell go into the set at all? The convenience add: a NEW chain in
--- the lowest free slot (floors ascend with the index, so the first free slot
--- is also the earliest-activating home it can have). Deliberate stacking
--- onto an existing chain is addEntry with an explicit slot. Returns ok,
--- reason -- reasons match canAddEntry plus the whole-set gates.
+-- Can this spell go into the set at all? Returns ok, reason. Dispatches on
+-- kind:
+--   timeline    the convenience add -- a NEW chain in the lowest free slot
+--               (floors ascend with the index, so the first free slot is
+--               also the earliest-activating home it can have); deliberate
+--               stacking onto an existing chain is addEntry with an
+--               explicit slot. Reasons match canAddEntry + whole-set gates.
+--   flat/draft  the id-array add. A LEVELS DRAFT adds its band's three
+--               ceilings over a flat set (set.level): the slot count, the
+--               budget the caller passes for that rung, and the highest
+--               spell level its band can cast (a Lv.41 plan reaches 50, so
+--               a Lv.62 spell has no business in it).
 function M.canAdd(set, id, book, budgetMax)
     local s = book.spells[id];
     if s == nil then return false, 'unknown spell'; end
     if M.contains(set, id) then return false, 'already in set'; end
-    local slot = M.freeSlot(set);
-    if slot == nil then return false, 'no free slot'; end
-    if budgetMax and budgetMax > 0 and s.setPoints ~= nil
+    if M.kindOf(set) == 'timeline' and set.chains ~= nil then
+        local slot = M.freeSlot(set);
+        if slot == nil then return false, 'no free slot'; end
+        if budgetMax and budgetMax > 0 and s.setPoints ~= nil
+            and M.usedPoints(set, book) + s.setPoints > budgetMax then
+            return false, 'over the point budget';
+        end
+        return M.canAddEntry(set, slot, id, nil, book);
+    end
+    if not s.castable then return false, 'not castable at 75'; end
+    if s.unbridled then return false, 'Unbridled spells cannot be set'; end
+    if not book.learned(id) then return false, 'not learned'; end
+    if s.setPoints == nil then return false, 'set cost unknown'; end
+    local top = M.bandTop(set.level);
+    if s.level ~= nil and s.level > top then
+        return false, ('needs Lv.%d - this set stops at %d'):format(s.level, top);
+    end
+    if M.freeSlot(set) == nil then
+        local n = M.slotMax(set);
+        if n < 20 then return false, ('no free slot (Lv.%d has %d)'):format(set.level, n); end
+        return false, 'no free slot';
+    end
+    if budgetMax and budgetMax > 0
         and M.usedPoints(set, book) + s.setPoints > budgetMax then
         return false, 'over the point budget';
     end
-    return M.canAddEntry(set, slot, id, nil, book);
+    return true;
 end
 
 function M.add(set, id, book, budgetMax)
     local ok, reason = M.canAdd(set, id, book, budgetMax);
     if not ok then return false, reason; end
-    return M.addEntry(set, M.freeSlot(set), id, nil, book);
+    if M.kindOf(set) == 'timeline' and set.chains ~= nil then
+        return M.addEntry(set, M.freeSlot(set), id, nil, book);
+    end
+    set.ids[M.freeSlot(set)] = id;
+    return true;
 end
 
 -- Remove a spell wherever it is assigned (every entry of it, all chains).
@@ -678,6 +1092,9 @@ end
 -- never merged across that boundary, so the flag is band-wide).
 -- ---------------------------------------------------------------------------
 function M.bandViolations(set, book, budgetFn)
+    -- the sweep is timeline math (builtFor, chains, the breakpoint walk);
+    -- the other kinds carry their own meters and are never hard-blocked
+    if M.kindOf(set) ~= 'timeline' then return {}; end
     local bf = set.builtFor or 75;
     local bpset = { [1] = true, [75] = true };
     for _, t in ipairs({ 11, 21, 31, 41, 51, 61, 71 }) do bpset[t] = true; end

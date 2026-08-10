@@ -37,10 +37,23 @@ kept both sides: the trait attribution + hover gate + widget theme work,
 the SoA wiki traits (now with per-tier `traitId` and `traitNames` entries —
 generator unified), and the timeline's whole Sets tab.
 
-**The work queue from here:** (a) the per-set TYPE at creation + the
-priority setting; (b) port Lvl Subsets back as a type on the timeline-era
-storage; (c) finish the job-traits work (field round still owed); (d) the
-timeline field checklist below (§0) still stands.
+**The work queue from here:** (a) ~~the per-set TYPE at creation + the
+priority setting~~ and (b) ~~port Lvl Subsets back as a type~~ — **BUILT
+2026-08-10, same day** (docs/set-types-plan.md is the design): `kind` on
+every set (`setmodel.kindOf`, adopt stamps by shape, NOTHING converts — a
+v1 store now adopts flat, the repeal of the v2 chains-for-everyone
+migration), the whole group API back from history and kind-dispatched
+through one editing surface, the New chooser (three kinds, Henrik's
+wording, `cfg.newSetKind` = "New sets start as" in Settings orders it),
+levels sets edited through drafts (`setmodel.draft`) with the band
+ceilings and `blu.rungCap` restored, the dlac `sets3` grammar (truth;
+sets2 = timeline-only; legacy stays the tolerant mirror, levels lines
+included). Suite-proven end to end incl. real stub renders of the chooser
+and all three editors (364 checks) — **field round owed on all of it**.
+Still queued: (c) the LEVELS-KIND LEVEL-CHANGE WATCHER (plan §5.1 — the
+old restore/switch rules stay parked; `replan` is gated to timeline sets),
+(d) the job-traits field round, (e) the timeline field checklist below
+(§0), which now runs once per kind.
 
 ---
 

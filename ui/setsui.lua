@@ -28,6 +28,36 @@ local LEFT_W  = 210;
 local MID_W   = 330;
 
 -- ---------------------------------------------------------------------------
+-- the three systems a set can be (docs/set-types-plan.md). The blurbs are
+-- the chooser's copy -- Henrik's recommendations, in plain words. Order is
+-- canonical; the chooser floats cfg.newSetKind to the top.
+-- ---------------------------------------------------------------------------
+M.KIND_ORDER = { 'flat', 'levels', 'timeline' };
+M.KIND_INFO = {
+    flat = {
+        label = 'Flat',
+        blurb = 'One spell per slot, applied as-is.\n'
+            .. 'Recommended for level 75 when you are not interested in\n'
+            .. 'level sync. The simplest kind, and the one every other\n'
+            .. 'tool speaks.',
+    },
+    levels = {
+        label = 'Lvl Subsets',
+        blurb = 'A dedicated build per level range (31-40, 41-50, ...)\n'
+            .. 'under one name. Recommended when you want dedicated sets\n'
+            .. 'per level range. Falls back to the base build wherever no\n'
+            .. 'range is built.',
+    },
+    timeline = {
+        label = 'Slotlist',
+        blurb = 'A list of spells per slot, each taking over at its own\n'
+            .. 'level. Recommended when you want granular control over\n'
+            .. 'which spells go to which slot at specific levels. The most\n'
+            .. 'capable kind: one set can plan the whole climb to 75.',
+    },
+};
+
+-- ---------------------------------------------------------------------------
 -- the set actions -- ONE definition each, shared by the Sets tab buttons and
 -- the window header's Save / Apply / Revert (host.renderBody)
 -- ---------------------------------------------------------------------------
@@ -50,10 +80,28 @@ function M.budgetFn(ctx)
 end
 
 -- Save the editing set into the saved list (the active entry, or a new
--- one). Overwriting a DIFFERENT saved state banks it on the set's backup
--- ring first (cap 5, newest first) -- the save is undoable.
+-- one). A LEVELS DRAFT saves through groupPut -- one build written back,
+-- the entry's other builds untouched. Overwriting a DIFFERENT timeline
+-- state banks it on the set's backup ring first (cap 5, newest first) --
+-- that save is undoable (backups stay a timeline feature for now).
 function M.saveEditing(ctx)
     local st, cfg = ctx.state, ctx.cfg;
+    if st.editingSet.draft then
+        local level = st.editingSet.level;
+        local entry = st.activeSet and cfg.sets[st.activeSet] or nil;
+        if entry == nil then
+            entry = ctx.sets.new(st.editingSet.name, 'levels');
+            table.insert(cfg.sets, entry);
+            st.activeSet = #cfg.sets;
+        end
+        entry.name = st.editingSet.name;
+        ctx.sets.groupPut(entry, level, st.editingSet.ids);
+        cfg.activeSetName = entry.name;            -- remembered across loads
+        if ctx.save then ctx.save(); end
+        st.applyNote = (level == nil) and 'Saved.'
+            or ('Saved %s, Lv.%d.'):format(entry.name, level);
+        return;
+    end
     local copy = ctx.sets.clone(st.editingSet, st.editingSet.name);
     copy.name = st.editingSet.name;
     if st.activeSet and cfg.sets[st.activeSet] then
@@ -62,9 +110,11 @@ function M.saveEditing(ctx)
         -- snapshot from selection time, so adopting it here would reset the
         -- ring to depth one on every save (review 2026-08-08). Carry the
         -- entry's own ring forward, then bank the state being replaced.
-        copy.backups = old.backups;
-        if not ctx.sets.equal(old, copy) then
-            ctx.sets.pushBackup(copy, old, os.time());
+        if ctx.sets.kindOf(copy) == 'timeline' then
+            copy.backups = old.backups;
+            if not ctx.sets.equal(old, copy) then
+                ctx.sets.pushBackup(copy, old, os.time());
+            end
         end
         cfg.sets[st.activeSet] = copy;
     else
@@ -77,15 +127,24 @@ function M.saveEditing(ctx)
 end
 
 -- Revert the editing set to its saved copy (or to a fresh empty set when
--- nothing is saved yet) -- removes ALL unsaved changes.
+-- nothing is saved yet) -- removes ALL unsaved changes. A levels draft
+-- reverts to ITS build's saved state, no other build is touched.
 function M.revertEditing(ctx)
     local st, cfg = ctx.state, ctx.cfg;
     local saved = st.activeSet and cfg.sets[st.activeSet] or nil;
     if saved ~= nil then
-        st.editingSet = ctx.sets.clone(saved, saved.name);
-        st.applyNote = 'Reverted to the saved set.';
+        if st.editingSet.draft then
+            st.editingSet = ctx.sets.draft(saved, st.editingSet.level);
+            st.applyNote = (st.editingSet.level == nil)
+                and 'Reverted to the saved base build.'
+                or ('Reverted to the saved Lv.%d build.'):format(st.editingSet.level);
+        else
+            st.editingSet = ctx.sets.clone(saved, saved.name);
+            st.applyNote = 'Reverted to the saved set.';
+        end
     else
-        st.editingSet = ctx.sets.new(('Set %d'):format(#cfg.sets + 1));
+        st.editingSet = ctx.sets.new(('Set %d'):format(#cfg.sets + 1),
+            ctx.sets.kindOf(st.editingSet));
         st.applyNote = 'Reverted - empty set.';
     end
     st.addNote = nil;
@@ -135,12 +194,21 @@ end
 
 -- Does the editing set differ from its SAVED copy? Drives the header's
 -- green Save and the Revert. With no active saved set, any content counts.
--- Chains, builtFor and the name are authorship; backups are not.
+-- A levels draft compares against ITS build in the saved entry; whole-set
+-- authorship (chains, builtFor, name) compares through sets.equal.
 function M.unsaved(ctx)
     local st, cfg = ctx.state, ctx.cfg;
     local saved = st.activeSet and cfg.sets[st.activeSet] or nil;
     if saved == nil then
         return ctx.sets.count(st.editingSet) > 0;
+    end
+    if st.editingSet.draft then
+        if tostring(saved.name) ~= tostring(st.editingSet.name) then return true; end
+        local was = ctx.sets.groupIds(saved, st.editingSet.level);
+        for i = 1, 20 do
+            if was[i] ~= (st.editingSet.ids[i] or 0) then return true; end
+        end
+        return false;
     end
     return not ctx.sets.equal(saved, st.editingSet);
 end
@@ -194,6 +262,59 @@ local function bracketTop(floor)
     return math.min(floor + 9, 75);
 end
 
+-- 41 -> '41-50', 71 -> '71-75' (the levels kind's band naming)
+local function bandText(ctx, level)
+    return ('%d-%d'):format(level, ctx.sets.bandTop(level));
+end
+
+-- Selectable in a color of our choosing (a row's color IS its state here:
+-- dim = nothing built, accent = a build that fits, red = one that cannot).
+local function tintedSelectable(im, col, label, selected)
+    local pushed = false;
+    if kit.isFn(im, 'PushStyleColor') and kit.isFn(im, 'PopStyleColor') then
+        pushed = pcall(im.PushStyleColor, 0, col);         -- ImGuiCol_Text
+    end
+    local ok, clicked = pcall(im.Selectable, kit.esc(label), selected);
+    if pushed then pcall(im.PopStyleColor, 1); end
+    return ok and clicked or false;
+end
+
+-- THE BUDGET FOR ONE RUNG, and where the number came from (the 2026-08-06
+-- law, back with the levels kind). The model (blu.rungCap) answers at every
+-- rung once the learned bonus is measured; the client's own number only
+-- ever describes the level it was computed at, so it may speak for the rung
+-- you are standing in and no other.
+local function rungBudget(ctx, level)
+    local cap, src = ctx.blu.rungCap(level);
+    if src == 'model' then return cap, 'model'; end
+    local here = ctx.sets.rungFor(ctx.blu.effectiveLevel());
+    if level == nil or here == nil or level == here then
+        local live = ctx.blu.budget();
+        if live then return live, 'live'; end
+        local ov = ctx.cfg.budgetOverride;
+        if ov and ov > 0 then return ov, 'live'; end
+    end
+    return cap, src;                   -- 'base', or nil,nil with no rung at all
+end
+
+-- Load one build of one saved LEVELS set into the editor as a draft (level
+-- nil = its base build). This is the ONE way a levels draft is created, so
+-- every path remembers the same things.
+local function loadBuild(ctx, index, level)
+    local st, cfg = ctx.state, ctx.cfg;
+    local entry = cfg.sets[index];
+    if entry == nil then return; end
+    ctx.sets.normalizeGroup(entry);
+    st.activeSet, st.editLevel = index, level;
+    st.editingSet = ctx.sets.draft(entry, level);
+    st.applyNote = nil;
+    st.addNote = nil;
+    st.assignSlot = nil;
+    cfg.activeSetName = entry.name;                -- remembered across loads
+    if ctx.save then ctx.save(); end
+end
+M.loadBuild = loadBuild;
+
 -- ---------------------------------------------------------------------------
 -- saved sets (left column): select, badge, backups, name, built-for
 -- ---------------------------------------------------------------------------
@@ -201,6 +322,151 @@ end
 -- per frame is pure GC churn inside a render hook (review 2026-08-08) --
 -- sets only change on explicit edits, and a one-second-stale badge is fine
 local badgeCache = { at = -10, viols = {} };
+
+-- One band row of the selected LEVELS set: '>41  12 / 30   8 / 14' -- the
+-- band you stand in marked, points against the rung's budget, spells
+-- against the rung's slots. Click = edit that build.
+local function rungRow(ctx, index, entry, level, here)
+    local im, st, book = ctx.im, ctx.state, ctx.book;
+    local ids   = ctx.sets.groupIds(entry, level);
+    local used  = ctx.sets.usedPoints(ids, book);
+    local n     = ctx.sets.countIds(ids);
+    local slots = ctx.sets.slotsAtLevel(level);
+    local cap, src = rungBudget(ctx, level);
+    -- '79' the number we stand behind, '45+' the base rule with this
+    -- character's bonus still unmeasured, '?' nothing known at all
+    local capTxt = (cap ~= nil and cap > 0)
+        and (tostring(cap) .. (src == 'base' and '+' or '')) or '?';
+    local over = (n > slots) or (cap ~= nil and cap > 0 and src ~= 'base' and used > cap);
+    local col = kit.COL.dim;
+    if over then col = kit.COL.err; elseif n > 0 then col = kit.COL.accent; end
+
+    local label = ('%s%2d   %2d / %-4s %2d / %2d##bdxrung%d_%d'):format(
+        (here == level) and '>' or ' ', level, used, capTxt, n, slots, index, level);
+    local selected = (st.activeSet == index and st.editingSet.draft
+        and st.editingSet.level == level);
+    if tintedSelectable(im, col, label, selected) then
+        loadBuild(ctx, index, level);
+    end
+
+    -- the hover: the rung's own rules first, then what is actually in it
+    local lines = {
+        ('Lv.%s -- the build for levels %s'):format(level, bandText(ctx, level)),
+        ('%d point%s, %d slot%s'):format(cap or 0, (cap == 1) and '' or 's',
+            slots, (slots == 1) and '' or 's'),
+    };
+    if src == 'base' then
+        lines[2] = ('%d points (the base rule -- your learned bonus is not\n'
+            .. 'measured yet, so the real total is higher), %d slots'):format(cap or 0, slots);
+    elseif cap == nil then
+        lines[2] = ('point total unknown, %d slots'):format(slots);
+    end
+    if n == 0 then
+        lines[#lines + 1] = '';
+        lines[#lines + 1] = 'Nothing built here yet -- click to start.';
+    else
+        local from = ctx.sets.usableFrom(ids, book);
+        if from ~= nil and from > level then
+            lines[#lines + 1] = ('complete from Lv.%d (its highest spell)'):format(from);
+        end
+        if over then
+            lines[#lines + 1] = 'OVER what this level allows -- remove something.';
+        end
+        lines[#lines + 1] = '';
+        for i = 1, 20 do
+            local s = book.spells[ids[i] or 0];
+            if s ~= nil then
+                lines[#lines + 1] = ('  %s  (%d pts)'):format(s.name, s.setPoints or 0);
+            elseif (ids[i] or 0) ~= 0 then
+                lines[#lines + 1] = ('  #%d'):format(ids[i]);
+            end
+        end
+    end
+    kit.tip(im, table.concat(lines, '\n'));
+end
+
+-- The Levels section under the name box, LEVELS sets only. Only the bands
+-- actually ADDED are listed. A set opens with none; eight rows offered up
+-- front read as eight things you are behind on.
+local function levelsSection(ctx)
+    local im, st, cfg = ctx.im, ctx.state, ctx.cfg;
+    local entry = st.activeSet and cfg.sets[st.activeSet] or nil;
+    if kit.isFn(im, 'Separator') then im.Separator(); end
+    kit.helpLabel(im, 'Levels',
+        'Here you can add subsets for your set.\n'
+        .. 'These subsets have designated level ranges, e.g., 31-40.\n'
+        .. 'The set uses that subset at those levels, so it can adapt\n'
+        .. 'perfectly as you level.\n\n'
+        .. 'Where no level range is built, the BASE build (the set\'s\n'
+        .. 'name row) answers instead.');
+    if entry == nil then
+        kit.ctext(im, kit.COL.dim, 'save the set first');
+        return;
+    end
+    ctx.sets.normalizeGroup(entry);
+    local here = ctx.sets.rungFor(ctx.blu.effectiveLevel());
+    local levels = ctx.sets.groupLevels(entry);
+    if #levels == 0 then
+        kit.ctext(im, kit.COL.dim, 'none yet - only the base build');
+    else
+        kit.ctext(im, kit.COL.dim, '  Lv   points    slots');
+        kit.tip(im, 'What each build costs against what its level allows.\n'
+            .. '">" is the band you are standing in right now.');
+        for _, lvl in ipairs(levels) do
+            rungRow(ctx, st.activeSet, entry, lvl, here);
+        end
+    end
+
+    -- add: only the bands this set does not have yet, plus all of them at once
+    local free = ctx.sets.groupFree(entry);
+    local rowW = kit.measure(im, { 'Remove' }, 66);
+    if #free > 0 then
+        local choices = {};
+        for _, lvl in ipairs(free) do
+            choices[#choices + 1] = ('Lv.%s'):format(bandText(ctx, lvl));
+        end
+        if #free > 1 then choices[#choices + 1] = 'All of them'; end
+        st.addLevel = st.addLevel or {};
+        if kit.combo(im, '##bdxaddlvl', st.addLevel, choices, 'Add a level',
+                     LEFT_W - 24 - rowW) then
+            local pickIdx = nil;
+            for i, c in ipairs(choices) do if c == st.addLevel.value then pickIdx = i; end end
+            st.addLevel.value = nil;                  -- back to the prompt
+            if pickIdx == #choices and #free > 1 then
+                for _, lvl in ipairs(free) do ctx.sets.groupAdd(entry, lvl); end
+                st.applyNote = ('Added every level to "%s".'):format(entry.name);
+                if ctx.save then ctx.save(); end
+            elseif pickIdx ~= nil and free[pickIdx] ~= nil then
+                local lvl = free[pickIdx];
+                ctx.sets.groupAdd(entry, lvl);
+                if ctx.save then ctx.save(); end
+                loadBuild(ctx, st.activeSet, lvl);    -- open what you just made
+                st.applyNote = ('Added Lv.%d. Build it, or copy one you have into it.'):format(lvl);
+            end
+        end
+        kit.tip(im, 'Give this set a build of its own for one more level band.\n'
+            .. 'It starts empty, and opens for editing straight away.');
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    end
+    -- remove: the band being edited, and only ever that one
+    local editing = st.editingSet.draft and st.editingSet.level or nil;
+    local canRemove = (editing ~= nil) and (ctx.sets.groupBuild(entry, editing) ~= nil);
+    if kit.litButton(im, 'Remove', false, rowW, 20, canRemove and nil or kit.PAL.off)
+        and canRemove then
+        local n = ctx.sets.countIds(ctx.sets.groupIds(entry, editing));
+        ctx.sets.groupRemove(entry, editing);
+        if ctx.save then ctx.save(); end
+        loadBuild(ctx, st.activeSet, nil);            -- back to the base build
+        st.applyNote = (n > 0)
+            and ('Removed the Lv.%d build and its %d spell%s.'):format(
+                editing, n, (n == 1) and '' or 's')
+            or ('Removed Lv.%d.'):format(editing);
+    end
+    kit.tip(im, canRemove
+        and ('Take Lv.%d away from this set, spells and all.\n'
+            .. 'The set falls back to its base build at those levels again.'):format(editing)
+        or 'Open one of the levels above to remove it.');
+end
 
 local function savedList(ctx)
     local im, st, cfg = ctx.im, ctx.state, ctx.cfg;
@@ -217,23 +483,42 @@ local function savedList(ctx)
     end
     if kit.isFn(im, 'Selectable') then
         for i, entry in ipairs(cfg.sets) do
-            local label = ('%s (%d)##bdxset%d'):format(entry.name, ctx.sets.count(entry), i);
+            local kind = ctx.sets.kindOf(entry);
+            local tag = tostring(ctx.sets.count(entry));
+            if kind == 'levels' then
+                local built = ctx.sets.groupLevels(entry);
+                if #built > 0 then
+                    tag = ('%d, %d level%s'):format(ctx.sets.countIds(entry.ids),
+                        #built, (#built == 1) and '' or 's');
+                else
+                    tag = tostring(ctx.sets.countIds(entry.ids));
+                end
+            end
+            local label = ('%s (%s)##bdxset%d'):format(entry.name, tag, i);
             local ok, clicked = pcall(im.Selectable, kit.esc(label), st.activeSet == i);
             local rclicked = false;
             if kit.isFn(im, 'IsItemClicked') then
                 local okc, rc = pcall(im.IsItemClicked, 1);
                 rclicked = okc and rc or false;
             end
-            kit.tip(im, 'Left-click: edit this set.\nRight-click: its backups.');
+            kit.tip(im, ('%s -- a %s set.\nLeft-click: edit it.%s'):format(
+                entry.name, M.KIND_INFO[kind].label,
+                (kind == 'timeline') and '\nRight-click: its backups.'
+                    or ((kind == 'levels') and '\nIts level builds list under the name box.' or '')));
             if ok and clicked then
-                st.activeSet = i;
-                st.editingSet = ctx.sets.clone(entry, entry.name);
-                st.applyNote = nil;
-                st.assignSlot = nil;
-                cfg.activeSetName = entry.name;    -- remembered across loads
-                if ctx.save then ctx.save(); end
+                if kind == 'levels' then
+                    loadBuild(ctx, i, nil);        -- the row IS the base build
+                else
+                    st.activeSet = i;
+                    st.editLevel = nil;
+                    st.editingSet = ctx.sets.clone(entry, entry.name);
+                    st.applyNote = nil;
+                    st.assignSlot = nil;
+                    cfg.activeSetName = entry.name;    -- remembered across loads
+                    if ctx.save then ctx.save(); end
+                end
             end
-            if rclicked then
+            if rclicked and kind == 'timeline' then
                 st.backupsFor = (st.backupsFor == i) and nil or i;
             end
             -- the badge (plan 2.6): a saved set carrying an enforced band
@@ -280,11 +565,13 @@ local function savedList(ctx)
     if kit.isFn(im, 'Separator') then im.Separator(); end
 
     local rowW = kit.measure(im, { 'New', 'Save', 'Delete' }, 50);
-    if kit.litButton(im, 'New', false, rowW, 22) then
-        st.editingSet = ctx.sets.new(('Set %d'):format(#cfg.sets + 1));
-        st.activeSet = nil;
-        st.assignSlot = nil;
+    if kit.litButton(im, 'New', st.pickKind == true, rowW, 22) then
+        -- the chooser takes over the middle column: a new set IS its kind
+        -- from the first click (docs/set-types-plan.md 3)
+        st.pickKind = not st.pickKind or nil;
     end
+    kit.tip(im, 'Start a new set. You pick which of the three kinds it is\n'
+        .. '(Flat / Lvl Subsets / Slotlist) before anything is created.');
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     if kit.litButton(im, 'Save', false, rowW, 22) then
         M.saveEditing(ctx);
@@ -294,6 +581,7 @@ local function savedList(ctx)
         if st.activeSet and cfg.sets[st.activeSet] then
             table.remove(cfg.sets, st.activeSet);
             st.activeSet = nil;
+            st.editLevel = nil;
             st.backupsFor = nil;
             cfg.activeSetName = '';
             if ctx.save then ctx.save(); end
@@ -312,8 +600,14 @@ local function savedList(ctx)
         .. '(config/addons/blusets/*.txt) as bludex saved sets.\n'
         .. 'A set name that already exists here is skipped.');
 
-    -- name box
+    -- name box, with the set's kind beside the label -- the one fact about
+    -- a set that never changes after the chooser
+    local ekind = ctx.sets.kindOf(st.editingSet);
     kit.ctext(im, kit.COL.dim, 'Name');
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    kit.ctext(im, kit.COL.accent, ('  %s'):format(M.KIND_INFO[ekind].label));
+    kit.tip(im, M.KIND_INFO[ekind].blurb
+        .. '\n\nA set keeps its kind for life; New makes one of another kind.');
     if kit.isFn(im, 'SetNextItemWidth') then im.SetNextItemWidth(LEFT_W - 20); end
     if kit.isFn(im, 'InputText') then
         st.nameBuf[1] = st.editingSet.name;
@@ -322,28 +616,32 @@ local function savedList(ctx)
         end
     end
 
-    -- the built-for floor (plan 2.5): where budget ENFORCEMENT starts.
-    -- 75 = an endgame set (nothing below is its problem); 1 = a leveling
-    -- set that must fit everywhere.
-    kit.helpLabel(im, 'Built for Lv.',
-        'The level this set must actually FIT from. The point budget is\n'
-        .. 'enforced from here up to 75: violations below only inform\n'
-        .. '(grey bands), violations at or above BLOCK Apply (red).\n\n'
-        .. '75 = an endgame set -- over-budget at lower levels is fine,\n'
-        .. 'you never play it there. 1 = a leveling set that must fit at\n'
-        .. 'every level. Anything between works too.', kit.COL.dim);
-    if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    st.builtForBuf = st.builtForBuf or { '' };
-    st.builtForBuf[1] = tostring(st.editingSet.builtFor or 75);
-    if kit.isFn(im, 'SetNextItemWidth') then im.SetNextItemWidth(40); end
-    if kit.isFn(im, 'InputText') then
-        if pcall(im.InputText, '##bdxbuiltfor', st.builtForBuf, 3) then
-            local n = tonumber(st.builtForBuf[1]);
-            if n ~= nil and n >= 1 and n <= 75 then
-                n = math.floor(n);
-                if n ~= st.editingSet.builtFor then st.editingSet.builtFor = n; end
+    if ekind == 'timeline' then
+        -- the built-for floor (plan 2.5): where budget ENFORCEMENT starts.
+        -- 75 = an endgame set (nothing below is its problem); 1 = a leveling
+        -- set that must fit everywhere.
+        kit.helpLabel(im, 'Built for Lv.',
+            'The level this set must actually FIT from. The point budget is\n'
+            .. 'enforced from here up to 75: violations below only inform\n'
+            .. '(grey bands), violations at or above BLOCK Apply (red).\n\n'
+            .. '75 = an endgame set -- over-budget at lower levels is fine,\n'
+            .. 'you never play it there. 1 = a leveling set that must fit at\n'
+            .. 'every level. Anything between works too.', kit.COL.dim);
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        st.builtForBuf = st.builtForBuf or { '' };
+        st.builtForBuf[1] = tostring(st.editingSet.builtFor or 75);
+        if kit.isFn(im, 'SetNextItemWidth') then im.SetNextItemWidth(40); end
+        if kit.isFn(im, 'InputText') then
+            if pcall(im.InputText, '##bdxbuiltfor', st.builtForBuf, 3) then
+                local n = tonumber(st.builtForBuf[1]);
+                if n ~= nil and n >= 1 and n <= 75 then
+                    n = math.floor(n);
+                    if n ~= st.editingSet.builtFor then st.editingSet.builtFor = n; end
+                end
             end
         end
+    elseif ekind == 'levels' then
+        levelsSection(ctx);
     end
 end
 
@@ -696,6 +994,277 @@ local function slotPlanner(ctx)
 end
 
 -- ---------------------------------------------------------------------------
+-- THE KIND CHOOSER -- what New opens (docs/set-types-plan.md 3): three
+-- rows, each a kind and its recommendation, cfg.newSetKind listed first
+-- and lit. Nothing exists until a kind is clicked; Cancel walks away.
+-- ---------------------------------------------------------------------------
+local function kindChooser(ctx)
+    local im, st, cfg = ctx.im, ctx.state, ctx.cfg;
+    kit.header(im, 'New set - what kind?');
+    kit.ctext(im, kit.COL.dim, 'The kind decides how the set thinks about levels.\nIt is chosen once, here.');
+    if kit.isFn(im, 'Separator') then im.Separator(); end
+
+    local order = {};
+    local first = cfg.newSetKind;
+    if M.KIND_INFO[first] ~= nil then order[1] = first; end
+    for _, k in ipairs(M.KIND_ORDER) do
+        if k ~= first then order[#order + 1] = k; end
+    end
+
+    local w = math.max(140, kit.availWidth(im, MID_W) - 16);
+    for _, k in ipairs(order) do
+        local info = M.KIND_INFO[k];
+        local isDefault = (k == cfg.newSetKind);
+        if kit.litButton(im, info.label .. (isDefault and '  (your default)' or ''),
+            isDefault, w, 26) then
+            st.editingSet = ctx.sets.new(('Set %d'):format(#cfg.sets + 1), k);
+            st.activeSet = nil;
+            st.editLevel = nil;
+            st.assignSlot = nil;
+            st.applyNote = nil;
+            st.pickKind = nil;
+        end
+        kit.tip(im, info.blurb);
+        for line in info.blurb:gmatch('[^\n]+') do
+            kit.ctext(im, kit.COL.dim, '  ' .. line);
+        end
+        if kit.isFn(im, 'NewLine') then im.NewLine(); end
+    end
+
+    if kit.litButton(im, 'Cancel', false, kit.measure(im, { 'Cancel' }, 60), 22) then
+        st.pickKind = nil;
+    end
+    kit.ctext(im, kit.COL.dim, 'Which kind is offered first lives in\nSettings - "New sets start as".');
+end
+
+-- ---------------------------------------------------------------------------
+-- the middle column, FLAT flavor -- flat sets and levels drafts: the
+-- id-array editor (codex-grammar rows, right-click removes), its meters,
+-- and the game actions. The timeline keeps slotPlanner below.
+-- ---------------------------------------------------------------------------
+local function flatPlanner(ctx)
+    local im, st, book = ctx.im, ctx.state, ctx.book;
+    local set = st.editingSet;
+    st.detailOpen = st.detailOpen or { false };
+    local slotMax = ctx.sets.slotMax(set);
+
+    -- WHICH BUILD this is (levels drafts only). The set name lives in the
+    -- box on the left; this is the one thing that changes what the editor
+    -- allows.
+    if set.draft then
+        kit.ctext(im, kit.COL.head, (set.level == nil)
+            and 'Editing the base build'
+            or ('Editing Lv.%d - levels %s'):format(set.level, bandText(ctx, set.level)));
+        kit.tip(im, (set.level == nil)
+            and 'The build the set falls back to wherever no level range\nis built. The set\'s level builds list under its name.'
+            or ('The game gives the same %d slots and the same points\n'
+                .. 'anywhere in Lv.%s, so one build serves the whole band.\n\n'
+                .. 'Other levels of this set are under its name on the left.'):format(
+                slotMax, bandText(ctx, set.level)));
+        if kit.isFn(im, 'Separator') then im.Separator(); end
+    end
+
+    -- Copy from: an EMPTY band offers its neighbors (base, nearest below,
+    -- nearest above) as one-click sources -- the 2026-08-06 workflow
+    if set.draft and set.level ~= nil and ctx.sets.count(set) == 0 then
+        local entry = st.activeSet and ctx.cfg.sets[st.activeSet] or nil;
+        if entry ~= nil then
+            local srcs = {};
+            if ctx.sets.countIds(entry.ids) > 0 then
+                srcs[#srcs + 1] = { level = nil, label = 'the base' };
+            end
+            local below, above = nil, nil;
+            for _, lvl in ipairs(ctx.sets.groupLevels(entry)) do
+                if ctx.sets.countIds(ctx.sets.groupIds(entry, lvl)) > 0 then
+                    if lvl < set.level then below = lvl;
+                    elseif lvl > set.level and above == nil then above = lvl; end
+                end
+            end
+            if below ~= nil then srcs[#srcs + 1] = { level = below, label = ('Lv.%d'):format(below) }; end
+            if above ~= nil then srcs[#srcs + 1] = { level = above, label = ('Lv.%d'):format(above) }; end
+            if #srcs > 0 then
+                kit.ctext(im, kit.COL.dim, 'Copy from:');
+                for _, src in ipairs(srcs) do
+                    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+                    local w = kit.measure(im, { src.label }, 44);
+                    if kit.litButton(im, src.label, false, w, 18) then
+                        local from = ctx.sets.groupIds(entry, src.level);
+                        local ids, rep = ctx.sets.copyInto(from, set.level, ctx.book);
+                        for i = 1, 20 do set.ids[i] = ids[i]; end
+                        local parts = { ('Copied %d spell%s from %s.'):format(
+                            rep.taken, (rep.taken == 1) and '' or 's', src.label) };
+                        if rep.tooHigh > 0 then
+                            parts[#parts + 1] = ('%d need%s a higher level than Lv.%s reaches.'):format(
+                                rep.tooHigh, (rep.tooHigh == 1) and 's' or '', bandText(ctx, set.level));
+                        end
+                        if rep.noSlot > 0 then
+                            parts[#parts + 1] = ('%d had no slot (Lv.%d has %d).'):format(
+                                rep.noSlot, set.level, slotMax);
+                        end
+                        st.applyNote = table.concat(parts, ' ');
+                    end
+                    kit.tip(im, ('Fill this build from %s: lowest spell levels first,\n'
+                        .. 'only what Lv.%s can cast, only as many as its %d slots\n'
+                        .. 'hold. It can land OVER the point budget -- that is yours\n'
+                        .. 'to trim, not mine to guess at.'):format(
+                        src.label, bandText(ctx, set.level), slotMax));
+                end
+                if kit.isFn(im, 'Separator') then im.Separator(); end
+            end
+        end
+    end
+
+    -- what the CLIENT has set right now, for the per-row live tags
+    local liveIds = nil;
+    local live = ctx.blu.currentSet();
+    if #live == 20 then
+        liveIds = {};
+        for i = 1, 20 do if live[i] ~= 0 then liveIds[live[i]] = true; end end
+    end
+
+    kit.ctext(im, kit.COL.head, 'Slots');
+    kit.tip(im, 'Named rows, like the Codex: left-click for Spell Info,\nright-click removes from the set.');
+    if kit.isFn(im, 'Separator') then im.Separator(); end
+    local nameW = math.max(kit.availWidth(im, MID_W) - 24 - 40, 120);
+    local lvl = ctx.blu.effectiveLevel();
+    local shown = 0;
+    for i = 1, 20 do
+        local id = set.ids[i] or 0;
+        if id ~= 0 then
+            shown = shown + 1;
+            local s = book.spells[id];
+            local liveTag = '';
+            if liveIds ~= nil and not liveIds[id] then
+                -- a sync-disabled spell is not WAITING for an apply -- the
+                -- game holds it and returns it when the sync ends
+                if lvl ~= nil and lvl < 75 and s ~= nil
+                    and s.level ~= nil and s.level > lvl then
+                    liveTag = '  (disabled by level sync)';
+                else
+                    liveTag = '  (not active yet)';
+                end
+            end
+            local label = ((s ~= nil) and s.name or ('#' .. id)) .. liveTag;
+            local lclick, rclick, hov = spellsui.listRow(ctx, id, 24, nameW,
+                st.selectedId == id, true, { label = label });
+            if lclick then
+                st.selectedId = id;
+                st.detailOpen[1] = true;
+                st.detailFocus = true;
+            end
+            if rclick then
+                ctx.sets.removeSlot(set, i);
+                st.applyNote = nil;
+            end
+            spellsui.tooltip(ctx, id, hov);
+        end
+    end
+    if shown == 0 then
+        kit.ctext(im, kit.COL.dim, 'The set is empty - add spells from the Codex or Traits.');
+    else
+        local free = slotMax - ctx.sets.count(set);
+        if free > 0 then
+            kit.ctext(im, kit.COL.dim, ('%d free slot%s'):format(free, free == 1 and '' or 's'));
+        end
+    end
+
+    -- meters: the BUILD against ITS OWN allowance -- a Lv.41 draft against
+    -- the Lv.41 budget and slots, everything else against the live budget
+    if kit.isFn(im, 'Separator') then im.Separator(); end
+    local cap, src;
+    if set.draft and set.level ~= nil then
+        cap, src = rungBudget(ctx, set.level);
+    else
+        cap = ctx.budgetMax();
+    end
+    local capShown = cap;
+    if src == 'base' then capShown = nil; end      -- a floor is not a total
+    kit.meter(im, 'Points', ctx.sets.usedPoints(set, book), capShown, '');
+    if src == 'base' then
+        kit.tip(im, ('At least %d (the base rule) - your learned bonus is not\nmeasured yet, so the real total is higher.'):format(cap or 0));
+    end
+    kit.meter(im, 'Slots ', ctx.sets.count(set), slotMax, '');
+    kit.ctext(im, kit.COL.dim, ('Total MP %d'):format(ctx.sets.usedMP(set, book)));
+
+    -- game actions (widths measured -- the clipping law)
+    if kit.isFn(im, 'Separator') then im.Separator(); end
+    local astate = M.applyState(ctx);
+    local applyW = kit.measure(im, { 'Apply in game', 'Applying...' }, 100);
+    local readW  = kit.measure(im, { 'Read current', 'Confirm read?' }, 90);
+    local clearW = kit.measure(im, { 'Clear' }, 50);
+    local pal = nil;
+    if not ctx.blu.applying then
+        if astate == 'dirty' then pal = kit.PAL.go;
+        elseif astate ~= nil then pal = kit.PAL.off; end
+    end
+    if kit.litButton(im, ctx.blu.applying and 'Applying...' or 'Apply in game', false, applyW, 26, pal) then
+        if astate == 'clean' then
+            st.applyNote = 'Already up to date - nothing to apply.';
+        else
+            M.applyEditing(ctx);
+        end
+    end
+    kit.tip(im, set.draft and (set.level == nil
+            and 'Send the base build - only the changed slots.'
+            or ('Send this Lv.%d build - only the changed slots.'):format(set.level))
+        or 'Send this set - only the changed slots.');
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    -- Read current: TWO clicks (plan 2.11 -- too easy to overwrite)
+    local confirming = st.readConfirm ~= nil and os.clock() < st.readConfirm;
+    if not confirming then st.readConfirm = nil; end
+    if kit.litButton(im, confirming and 'Confirm read?' or 'Read current', false, readW, 26,
+        confirming and kit.PAL.go or nil) then
+        if not confirming then
+            st.readConfirm = os.clock() + 4.0;
+        else
+            st.readConfirm = nil;
+            local liveNow = ctx.blu.currentSet();
+            if #liveNow == 20 then
+                for i = 1, 20 do set.ids[i] = liveNow[i] or 0; end
+                local unknown = 0;
+                for i = 1, 20 do
+                    if liveNow[i] ~= 0 and book.spells[liveNow[i]] == nil then
+                        unknown = unknown + 1;
+                    end
+                end
+                st.applyNote = unknown == 0
+                    and 'Read the live set.'
+                    or ('Read the live set; %d slot(s) hold ids the data does not know.'):format(unknown);
+            else
+                st.applyNote = 'Could not read the live set.';
+            end
+        end
+    end
+    kit.tip(im, confirming
+        and 'Click again to REPLACE this build with what the game holds.'
+        or 'Copy the in-game set here. Takes TWO clicks, because it\nreplaces this build.');
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    if kit.litButton(im, 'Clear', false, clearW, 26) then
+        ctx.sets.clear(st.editingSet);
+        st.applyNote = nil;
+    end
+
+    if not ctx.blu.onBlu() then
+        kit.ctext(im, kit.COL.warn, 'BLU is not your main or sub job.');
+    end
+    if st.applyNote then kit.ctext(im, kit.COL.dim, st.applyNote); end
+end
+
+-- the middle column, dispatched: the chooser while New is deciding, then
+-- the editor the editing set's kind calls for
+local function midColumn(ctx)
+    if ctx.state.pickKind then
+        kindChooser(ctx);
+        return;
+    end
+    if ctx.sets.kindOf(ctx.state.editingSet) == 'timeline' then
+        slotPlanner(ctx);
+    else
+        flatPlanner(ctx);
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- the right column: Stats (default) | Assign (the picker for one slot)
 -- ---------------------------------------------------------------------------
 local function statsPanel(ctx)
@@ -836,6 +1405,12 @@ end
 
 local function rightPanel(ctx)
     local im, st = ctx.im, ctx.state;
+    -- the Assign pane is chain machinery -- timeline sets only; the other
+    -- kinds add from the Codex/Traits rows (right-click), as they always did
+    if ctx.sets.kindOf(st.editingSet) ~= 'timeline' then
+        statsPanel(ctx);
+        return;
+    end
     st.rightTab = st.rightTab or 'Stats';
     local w = kit.measure(im, { 'Stats', 'Assign' }, 64);
     if kit.litButton(im, 'Stats', st.rightTab ~= 'Assign', w, 20) then
@@ -872,13 +1447,13 @@ function M.render(ctx)
         if im.BeginChild('bdxsaved', { LEFT_W, 0 }, true) then savedList(ctx); end
         im.EndChild();
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        if im.BeginChild('bdxslots', { MID_W, 0 }, true) then slotPlanner(ctx); end
+        if im.BeginChild('bdxslots', { MID_W, 0 }, true) then midColumn(ctx); end
         im.EndChild();
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
         if im.BeginChild('bdxstats', { 0, 0 }, true) then rightPanel(ctx); end
         im.EndChild();
     else
-        savedList(ctx); slotPlanner(ctx); rightPanel(ctx);
+        savedList(ctx); midColumn(ctx); rightPanel(ctx);
     end
 end
 

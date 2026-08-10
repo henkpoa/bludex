@@ -209,9 +209,21 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
             return;
         end
         for _, entry in ipairs(cfg.sets) do
+            local kind = sets.kindOf(entry);
             local n = 0;
             for i = 1, 20 do if (entry.ids[i] or 0) ~= 0 then n = n + 1; end end
-            msg(('  %s (%d spells)'):format(entry.name, n));
+            if kind == 'levels' then
+                local parts = { ('%d spells'):format(n) };
+                for _, lvl in ipairs(sets.groupLevels(entry)) do
+                    parts[#parts + 1] = ('Lv.%d: %d'):format(
+                        lvl, sets.countIds(sets.groupIds(entry, lvl)));
+                end
+                msg(('  %s (%s - %s)'):format(entry.name, sets.KIND_LABELS[kind],
+                    table.concat(parts, ', ')));
+            else
+                msg(('  %s (%s - %d spells)'):format(entry.name,
+                    sets.KIND_LABELS[kind], n));
+            end
         end
         return;
     end

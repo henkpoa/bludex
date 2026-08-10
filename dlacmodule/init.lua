@@ -51,26 +51,29 @@ end
 -- ---------------------------------------------------------------------------
 -- scalar codec: the framework store holds strings/numbers/booleans only.
 --
--- TWO GRAMMARS live side by side (docs/timeline-sets-plan.md 7):
+-- THREE GRAMMARS live side by side (docs/set-types-plan.md 4, which the
+-- timeline-only docs/timeline-sets-plan.md 7 pair predates):
 --
---   'sets' (legacy)   'name<TAB>id,id,...' per line -- a FLAT list. Still
---                     WRITTEN on every save (from each set's level-75 ids
---                     mirror) so an older module reading this store sees a
---                     usable flat set instead of nothing: the old decoder
---                     turns any unknown token into 0, so changing this
---                     grammar in place would silently EMPTY every set.
---   'sets2' (v2)      the timeline. '#v2' header line, then per set:
---                         name<TAB>builtFor<TAB>chains
+--   'sets' (legacy)   'name<TAB>id,id,...' per line -- a FLAT list, plus
+--                     the levels-era extras ('name<TAB>level<TAB>ids',
+--                     'name<TAB>rule<TAB>key'). Still WRITTEN on every save
+--                     so an older module reading this store sees usable
+--                     sets instead of nothing: the old decoder turns any
+--                     unknown token into 0, so changing this grammar in
+--                     place would silently EMPTY every set.
+--   'sets2' (v2)      the timeline sets only. '#v2' header line, then per
+--                     set: name<TAB>builtFor<TAB>chains
 --                     chains = 20 ';'-joined chain tokens (empties kept);
 --                     chain  = ','-joined entries; entry = id@from
 --                     (id 0 = the deliberate empty marker).
+--   'sets3' (v3)      THE TRUTH -- every set, kind-tagged (see the codec).
 --   'sets2bak'        backups, per line: name<TAB>ts<TAB>builtFor<TAB>chains
---                     (newest first, <= 5 per set name).
+--                     (newest first, <= 5 per set name; timeline sets only).
 --   'lastApplied2'    'level<TAB>id,id,...' -- the level the apply was FOR.
 --                     'lastApplied' (bare csv) stays dual-written.
 --
--- Readers prefer v2 and fall back; every decode is tolerant -- a bad token
--- drops the entry, never the file.
+-- Readers prefer v3, then v2, then legacy; every decode is tolerant -- a
+-- bad token drops the entry, never the file.
 -- ---------------------------------------------------------------------------
 local codec = {};
 
@@ -136,6 +139,12 @@ function codec.decodeSets(s)
             end
         end
     end
+    -- the kinds law (docs/set-types-plan.md): a set with no build lines and
+    -- no rule is a FLAT set and must decode as one -- an empty builds table
+    -- would read as the levels kind downstream
+    for _, g in ipairs(out) do
+        if #g.builds == 0 and g.rule == nil then g.builds = nil; end
+    end
     return out;
 end
 
@@ -193,9 +202,15 @@ end
 function codec.encodeSets2(list)
     local recs = { '#v2' };
     for _, e in ipairs(list or {}) do
-        local name = tostring(e.name or '?'):gsub('[\t\n]', ' ');
-        recs[#recs + 1] = name .. '\t' .. tostring(tonumber(e.builtFor) or 75)
-            .. '\t' .. codec.encodeChains(e.chains);
+        -- timeline sets only: this key's grammar is chains, and the flat /
+        -- levels kinds have no honest line in it -- the 'sets' mirror is
+        -- what an older module reads for those (no field module ever
+        -- shipped a sets2 reader, so nothing is losing data here)
+        if e.chains ~= nil then
+            local name = tostring(e.name or '?'):gsub('[\t\n]', ' ');
+            recs[#recs + 1] = name .. '\t' .. tostring(tonumber(e.builtFor) or 75)
+                .. '\t' .. codec.encodeChains(e.chains);
+        end
     end
     return table.concat(recs, '\n');
 end
@@ -216,6 +231,77 @@ function codec.decodeSets2(s)
                     builtFor = n,
                     chains = codec.decodeChains(chains),
                 };
+            end
+        end
+    end
+    return out;
+end
+
+-- THE v3 GRAMMAR (docs/set-types-plan.md 4): one line per set, the KIND is
+-- the first token, '#v3' header. Kind-specific tails:
+--   flat<TAB>name<TAB>id,id,...
+--   levels<TAB>name<TAB>id,id,...[<TAB>rule:key][<TAB>41:id,id,...]...
+--   timeline<TAB>name<TAB>builtFor<TAB>chains      (the sets2 line, tagged)
+-- Decode is tolerant per line and per token: an unknown kind drops the
+-- line, a bad build token drops the token, never the file.
+function codec.encodeSets3(list)
+    local recs = { '#v3' };
+    for _, e in ipairs(list or {}) do
+        local name = tostring(e.name or '?'):gsub('[\t\n]', ' ');
+        if e.chains ~= nil then
+            recs[#recs + 1] = 'timeline\t' .. name
+                .. '\t' .. tostring(tonumber(e.builtFor) or 75)
+                .. '\t' .. codec.encodeChains(e.chains);
+        elseif e.builds ~= nil or e.rule ~= nil then
+            local parts = { 'levels', name, codec.encodeIds(e.ids) };
+            if e.rule ~= nil then
+                parts[#parts + 1] = 'rule:' .. tostring(e.rule);
+            end
+            for _, t in ipairs(e.builds or {}) do
+                parts[#parts + 1] = ('%d:%s'):format(
+                    tonumber(t.level) or 71, codec.encodeIds(t.ids));
+            end
+            recs[#recs + 1] = table.concat(parts, '\t');
+        else
+            recs[#recs + 1] = 'flat\t' .. name .. '\t' .. codec.encodeIds(e.ids);
+        end
+    end
+    return table.concat(recs, '\n');
+end
+
+function codec.decodeSets3(s)
+    local out = {};
+    for line in tostring(s or ''):gmatch('[^\n]+') do
+        if line:sub(1, 1) ~= '#' then
+            local f = {};
+            for tok in (line .. '\t'):gmatch('([^\t]*)\t') do f[#f + 1] = tok; end
+            local kind, name = f[1], f[2];
+            if name ~= nil and name ~= '' then
+                if kind == 'flat' and f[3] ~= nil then
+                    out[#out + 1] = { kind = 'flat', name = name,
+                        ids = codec.decodeIds(f[3]) };
+                elseif kind == 'levels' and f[3] ~= nil then
+                    local e = { kind = 'levels', name = name,
+                        ids = codec.decodeIds(f[3]), builds = {} };
+                    for i = 4, #f do
+                        local rule = f[i]:match('^rule:(%a+)$');
+                        local lvl, csv = f[i]:match('^(%d+):(.*)$');
+                        if rule ~= nil then
+                            e.rule = rule;
+                        elseif lvl ~= nil then
+                            e.builds[#e.builds + 1] = {
+                                level = tonumber(lvl),
+                                ids = codec.decodeIds(csv),
+                            };
+                        end
+                    end
+                    out[#out + 1] = e;
+                elseif kind == 'timeline' and f[4] ~= nil then
+                    local n = tonumber(f[3]) or 75;
+                    if n < 1 or n > 75 then n = 75; end
+                    out[#out + 1] = { kind = 'timeline', name = name,
+                        builtFor = n, chains = codec.decodeChains(f[4]) };
+                end
             end
         end
     end
@@ -285,9 +371,15 @@ local function loadCfg(S)
     -- v2 first; a store that predates the timeline (empty sets2) falls back
     -- to the legacy flat key, and host.adoptCfg upgrades the entries after
     -- the swap. The first save then writes both grammars.
+    -- readers prefer the newest grammar: sets3 (kinds) -> sets2 (timeline)
+    -- -> sets (the legacy lines, levels grammar included)
+    local sets3raw = S.cfg.get('sets3');
     local sets2raw = S.cfg.get('sets2');
     local setsList;
-    if type(sets2raw) == 'string' and sets2raw ~= '' then
+    if type(sets3raw) == 'string' and sets3raw ~= '' then
+        setsList = codec.decodeSets3(sets3raw);
+        codec.attachBackups(setsList, S.cfg.get('sets2bak'));
+    elseif type(sets2raw) == 'string' and sets2raw ~= '' then
         setsList = codec.decodeSets2(sets2raw);
         codec.attachBackups(setsList, S.cfg.get('sets2bak'));
     else
@@ -305,6 +397,7 @@ local function loadCfg(S)
         sets           = setsList,
         lastApplied    = lastApplied,
         activeSetName  = S.cfg.get('activeSetName'),
+        newSetKind     = S.cfg.get('newSetKind'),
         tooltipDelay   = S.cfg.get('tooltipDelay'),
         codexDensity   = S.cfg.get('codexDensity'),
         traitsDensity  = S.cfg.get('traitsDensity'),
@@ -330,9 +423,12 @@ end
 local function saveCfg()
     if cfg == nil or Sref == nil or Sref.cfg == nil then return; end
     pcall(function()
-        -- both grammars, every save: sets2 is the truth, the legacy key is
-        -- each set's flat level-75 mirror so an OLDER module reading this
-        -- store still sees usable sets (its decoder zeroes unknown tokens)
+        -- every grammar, every save: sets3 is the truth; sets2 carries the
+        -- timeline sets for the one unreleased module generation that reads
+        -- it; the legacy key is each set's flat/levels lines so an OLDER
+        -- module reading this store still sees usable sets (its decoder
+        -- zeroes unknown tokens)
+        Sref.cfg.set('sets3', codec.encodeSets3(cfg.sets));
         Sref.cfg.set('sets2', codec.encodeSets2(cfg.sets));
         Sref.cfg.set('sets2bak', codec.encodeBackups(cfg.sets));
         Sref.cfg.set('sets', codec.encodeSets(cfg.sets));
@@ -342,6 +438,7 @@ local function saveCfg()
         Sref.cfg.set('lastApplied',
             (la and la.ids) and codec.encodeIds(la.ids) or '');
         Sref.cfg.set('activeSetName', tostring(cfg.activeSetName or ''));
+        Sref.cfg.set('newSetKind', tostring(cfg.newSetKind or 'flat'));
         Sref.cfg.set('tooltipDelay', tonumber(cfg.tooltipDelay) or 0.5);
         Sref.cfg.set('codexDensity', tostring(cfg.codexDensity or 'normal'));
         Sref.cfg.set('traitsDensity', tostring(cfg.traitsDensity or 'normal'));
@@ -351,7 +448,7 @@ local function saveCfg()
         Sref.cfg.set('budgetOverride', tonumber(cfg.budgetOverride) or 0);
         Sref.cfg.set('replan', tostring(cfg.replan or 'manual'));
         Sref.cfg.set('autoRestore', cfg.autoRestore == true);
-        Sref.cfg.set('setsModelVer', tonumber(cfg.setsModelVer) or 2);
+        Sref.cfg.set('setsModelVer', tonumber(cfg.setsModelVer) or 3);
         Sref.cfg.set('capModelVer', tonumber(cfg.capModelVer) or 3);
         Sref.cfg.set('capLearnedBonus', tonumber(cfg.capLearnedBonus) or -1);
         Sref.cfg.set('capMeritPoints', tonumber(cfg.capMeritPoints) or -1);
@@ -402,13 +499,16 @@ return {
 
     config = {
         keys = {
-            -- sets2/sets2bak/lastApplied2 are the timeline grammar; sets and
-            -- lastApplied stay dual-written so an older module still reads a
-            -- usable flat list (see the codec block). setsLayout and
-            -- autoRestore are retired, kept one release for tolerance.
-            sets = 'string', sets2 = 'string', sets2bak = 'string',
+            -- sets3 is the kinds grammar (the truth); sets2/sets2bak/
+            -- lastApplied2 are the timeline grammar; sets and lastApplied
+            -- stay dual-written so an older module still reads a usable
+            -- list (see the codec block). setsLayout and autoRestore are
+            -- retired, kept one release for tolerance.
+            sets = 'string', sets2 = 'string', sets3 = 'string',
+            sets2bak = 'string',
             lastApplied = 'string', lastApplied2 = 'string',
             activeSetName = 'string',
+            newSetKind = 'string',
             tooltipDelay = 'number',
             codexDensity = 'string', traitsDensity = 'string', setsLayout = 'string',
             applyMode = 'string', replan = 'string',
@@ -422,15 +522,16 @@ return {
             capLearnedBonus = 'number', capMeritPoints = 'number',
         },
         defaults = {
-            sets = '', sets2 = '', sets2bak = '',
+            sets = '', sets2 = '', sets3 = '', sets2bak = '',
             lastApplied = '', lastApplied2 = '',
             activeSetName = '',
+            newSetKind = 'flat',
             tooltipDelay = 0.5,
             codexDensity = 'normal', traitsDensity = 'normal', setsLayout = 'grid',
             applyMode = 'safe', replan = 'manual',
             applyDelay = 1.1, budgetOverride = 0,
             autoRestore = false,
-            setsModelVer = 2,
+            setsModelVer = 3,
             capModelVer = 3, capLearnedBonus = -1, capMeritPoints = -1,
         },
     },

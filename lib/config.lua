@@ -20,11 +20,15 @@ end
 -- mutates what it is given.
 function M.defaults()
     return TT{
-        -- Saved sets, TIMELINE shape (setsModelVer 2, docs/timeline-sets-plan.md):
-        -- { name, builtFor, chains = {20 x { {id, from}, ... }}, ids = {20},
-        --   backups = {<=5} } -- ids is the derived level-75 mirror; a stored
-        -- v1 entry ({ name, ids }) is upgraded in place by host.adoptCfg.
+        -- Saved sets, KIND-shaped (setsModelVer 3, docs/set-types-plan.md):
+        --   { kind='flat',     name, ids={20} }
+        --   { kind='levels',   name, ids, builds={{level,ids}..}, rule? }
+        --   { kind='timeline', name, builtFor, chains, ids mirror, backups }
+        -- host.adoptCfg stamps a missing kind by shape; nothing converts
+        -- (a v1 entry stays flat).
         sets = TT{ },
+        newSetKind = 'flat',      -- the type the New chooser offers first
+                                  -- ('flat' | 'levels' | 'timeline')
         budgetOverride = 0,       -- shown when the live budget is unavailable
         applyDelay = 1.1,         -- seconds between set-spell packets
         applyMode = 'safe',       -- 'safe' (client-paced) | 'fast' (injected)
@@ -40,9 +44,10 @@ function M.defaults()
         codexDensity = 'normal',  -- codex list size: 'big'|'medium'|'normal'|'compact'
         traitsDensity = 'normal', -- traits spell-row size, same four choices
         setsLayout = 'grid',      -- RETIRED (the grid is gone); kept one release
-        -- Set model version: 2 = timeline chains. Bumped when the stored
-        -- meaning changes; adoptCfg migrates older shapes in place.
-        setsModelVer = 2,
+        -- Set model version: 3 = the three kinds (2 was timeline chains).
+        -- Bumped when the stored meaning changes; adoptCfg migrates older
+        -- shapes in place.
+        setsModelVer = 3,
         -- The point budget: cap = base(level) + learnedBonus + merits, with
         -- merits counting only at level 75. Bumped when the meaning changes,
         -- so readings taken under older rules are discarded, not reused.

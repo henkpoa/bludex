@@ -75,17 +75,23 @@ local function adoptCfg(deps)
         deps.cfg.capLearnedBonus, deps.cfg.capMeritPoints = -1, -1;
         if deps.save then deps.save(); end
     end
-    -- the timeline migration (setsModelVer 2): every stored flat set gains
-    -- chains -- sorted placement, one entry per spell at its own level,
-    -- builtFor 75 so nothing existing turns red. Runs at init AND on every
-    -- swap, so both flavors and every store shape funnel through here.
+    -- the kinds migration (setsModelVer 3, docs/set-types-plan.md): every
+    -- stored set is STAMPED with the kind its shape says it is -- chains ->
+    -- timeline, builds -> levels, else flat -- and nothing converts (the v2
+    -- chains-for-everyone migration is repealed; a set that arrived with
+    -- chains keeps them). Runs at init AND on every swap, so both flavors
+    -- and every store shape funnel through here.
     local migrated = false;
     for _, entry in ipairs(deps.cfg.sets) do
         if deps.sets.upgrade(entry, deps.book) then migrated = true; end
     end
-    if migrated or (deps.cfg.setsModelVer or 0) < 2 then
-        deps.cfg.setsModelVer = 2;
+    if migrated or (deps.cfg.setsModelVer or 0) < 3 then
+        deps.cfg.setsModelVer = 3;
         if deps.save then deps.save(); end
+    end
+    -- the chooser's default must always be a real kind
+    if deps.sets.KIND_LABELS[deps.cfg.newSetKind] == nil then
+        deps.cfg.newSetKind = 'flat';
     end
     -- the replan setting replaces the retired adds-only autoRestore; the
     -- meaning changed (auto may now UNSET), so everyone starts at 'manual'
@@ -97,13 +103,20 @@ local function adoptCfg(deps)
     deps.blu.learnedBonus = known(deps.cfg.capLearnedBonus);
     deps.blu.meritPts     = known(deps.cfg.capMeritPoints);
     -- restore the last active saved set (matched by name -- indices shift
-    -- when sets are deleted), exactly as if it had been clicked
+    -- when sets are deleted), exactly as if it had been clicked. A levels
+    -- set is edited THROUGH A DRAFT of one build (its base here) -- saving
+    -- a draft writes that one build back and can never clobber the others.
     local want = deps.cfg.activeSetName;
     if want ~= nil and want ~= '' then
         for i, entry in ipairs(deps.cfg.sets) do
             if entry.name == want then
                 M.state.activeSet = i;
-                M.state.editingSet = deps.sets.clone(entry, entry.name);
+                if deps.sets.kindOf(entry) == 'levels' then
+                    M.state.editLevel = nil;
+                    M.state.editingSet = deps.sets.draft(entry, nil);
+                else
+                    M.state.editingSet = deps.sets.clone(entry, entry.name);
+                end
                 break;
             end
         end
@@ -184,6 +197,20 @@ function M.isOpen()
 end
 
 local function budgetMax(deps)
+    -- A LEVELS DRAFT is planned at ITS OWN rung, not at the level you happen
+    -- to stand at -- that is what makes a Lv.41 build a Lv.41 plan. The
+    -- model (blu.rungCap) answers there once the learned bonus is measured;
+    -- a bare base-rule floor must not gate adds as if it were the total.
+    local st = M.state;
+    local dLevel = st and st.editingSet and st.editingSet.draft
+        and st.editingSet.level or nil;
+    if dLevel ~= nil then
+        local cap, src = deps.blu.rungCap(dLevel);
+        if src == 'model' then return cap; end
+        local here = deps.sets.rungFor(deps.blu.effectiveLevel());
+        if here ~= nil and here ~= dLevel then return nil; end
+        -- planning the band you stand in: the live number may speak
+    end
     -- blu.budget prefers the client's own number while it is trustworthy and
     -- falls back to the measured model for the level we are actually at --
     -- the client only recomputes its cap when the native Set Spells menu
@@ -327,6 +354,14 @@ function M.checkReplan()
     -- off BLU the nudge is moot -- clear it, or a job change leaves a
     -- stale float with a button that can never work (review 2026-08-08)
     if not deps.blu.onBlu() then st.replanPending = nil; return; end
+    -- the re-plan is TIMELINE behavior (docs/set-types-plan.md 5): a flat
+    -- set plans the same spells at every level, and the levels kind gets
+    -- its own watcher in its own slice -- it is the one that sends packets
+    -- on its own, and it returns deliberately, not as a side effect
+    if deps.sets.kindOf(st.editingSet) ~= 'timeline' then
+        st.replanPending = nil;
+        return;
+    end
     if deps.blu.applying then return; end
     local ctx = tabCtx(deps.im, st, deps, false);
     local state, lvl = setsui.applyState(ctx);
@@ -390,13 +425,15 @@ local function renderBody(im, st, deps, embedded)
         and 'Points used by the set you are editing (its level-75 plan) /\nyour total from the game client (CatsEyeXI bonuses included).'
         or 'Points used by the set you are editing (its level-75 plan).\nThe total appears when you are on BLU (or set budgetOverride).');
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    -- SLOTS the level-75 plan occupies (the ids mirror), NOT chain entries:
-    -- a Wild Oats -> Bludgeon stack is one slot, not two (review 2026-08-08)
+    -- SLOTS the plan occupies (the ids mirror), NOT chain entries: a Wild
+    -- Oats -> Bludgeon stack is one slot, not two (review 2026-08-08). The
+    -- ceiling follows the build being edited -- a Lv.41 draft owns its
+    -- band's 14, everything else the full 20 (slotMax knows).
     local slots75 = 0;
     for i = 1, 20 do
         if ((st.editingSet.ids or {})[i] or 0) ~= 0 then slots75 = slots75 + 1; end
     end
-    kit.meter(im, '   Slots:', slots75, 20, '');
+    kit.meter(im, '   Slots:', slots75, deps.sets.slotMax(st.editingSet), '');
     -- the level-sync line (Henrik 2026-08-06): the meters above stay the
     -- PLAN (the editing set at full level); when the effective BLU level is
     -- under the 75 cap this shows what the client holds RIGHT NOW -- the

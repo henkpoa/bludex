@@ -190,6 +190,33 @@ function M.render(ctx)
             end
         end
     end
+
+    -- WHICH KIND COMES FIRST (docs/set-types-plan.md 3): the New chooser
+    -- lists this one on top, preselected. It never converts a set.
+    local KINDS = { 'flat', 'levels', 'timeline' };
+    kit.helpLabel(im, 'New sets start as:',
+        'The set type the New chooser offers first.\n\n'
+        .. 'Flat: one spell per slot, applied as-is. For level 75 when\n'
+        .. 'level sync does not interest you.\n'
+        .. 'Lvl Subsets: a dedicated build per level range, falling back\n'
+        .. 'to the base build where none is built.\n'
+        .. 'Slotlist: a list of spells per slot, each taking over at its\n'
+        .. 'own level - the most granular control.\n\n'
+        .. 'You still choose per set - this only orders the chooser.');
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    local klabels = {};
+    for _, k in ipairs(KINDS) do klabels[#klabels + 1] = ctx.sets.KIND_LABELS[k]; end
+    local kstate = { value = ctx.sets.KIND_LABELS[cfg.newSetKind] or 'Flat' };
+    if kit.combo(im, '##bdxnewkind', kstate, klabels, nil,
+                 kit.measure(im, klabels, 80) + 24) then
+        for _, k in ipairs(KINDS) do
+            if ctx.sets.KIND_LABELS[k] == kstate.value then
+                cfg.newSetKind = k;
+                if ctx.save then ctx.save(); end
+                break;
+            end
+        end
+    end
 end
 
 return M;

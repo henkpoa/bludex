@@ -398,6 +398,23 @@ function M.expectedCap(level)
     return total + M.meritPts;
 end
 
+-- The budget to PLAN A RUNG with (setmodel.LEVELS: 1/11/.../71). A rung is a
+-- band -- 41 covers 41-50 -- and a band shares one base, so the rung's own
+-- level answers for all of it. The top band is the exception: it runs 71-75
+-- and the Assimilation merits switch on at 75, so that is the level it is
+-- planned at (a Lv.71 build IS the level-75 build).
+--
+-- Returns cap, source:
+--   'model'  both parts known -- ours, and right at every rung
+--   'base'   the server's base rule alone, a FLOOR: this character's learned
+--            bonus is not measured yet, so the real cap is higher than this.
+function M.rungCap(level)
+    if level == nil or level < 1 then return nil, nil; end
+    local est = M.expectedCap(level >= setmodel.TOP and 75 or level);
+    if est ~= nil then return est, 'model'; end
+    return setmodel.baseCapAtLevel(level), 'base';
+end
+
 -- The budget to SHOW. The client's own number while it is trustworthy;
 -- otherwise the model for the level we are actually standing at.
 -- Returns value, source: 'live' | 'model' | 'stale' (nothing better known).

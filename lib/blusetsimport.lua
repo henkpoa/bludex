@@ -1,9 +1,10 @@
 --[[
     bludex/lib/blusetsimport.lua -- one-way import of `blusets` spell lists
     (config/addons/blusets/<name>.txt -- one spell name per line, blank line
-    = empty slot) into bludex saved sets. Imports land as TIMELINE sets
-    (setmodel.fromIds: flat one-entry chains, sorted placement) so a
-    mid-session import never waits on the next adopt to be usable.
+    = empty slot) into bludex saved sets. Imports land as FLAT sets -- the
+    faithful shape: blusets has no notion of level, and under the kinds
+    model (docs/set-types-plan.md) a flat set is first-class, nothing waits
+    on an adopt to convert it.
 
     parse() is pure given the book; everything touching AshitaCore or the
     filesystem is guarded, so the module loads headless (smoke test).
@@ -98,7 +99,9 @@ function M.importAll(cfg, book, only)
                 local lines = readLines(f.path);
                 if lines ~= nil then
                     local ids, unknown = M.parse(lines, book);
-                    table.insert(cfg.sets, setmodel.fromIds(f.name, ids, book));
+                    local set = setmodel.new(f.name, 'flat');
+                    for i = 1, 20 do set.ids[i] = ids[i] or 0; end
+                    table.insert(cfg.sets, set);
                     have[book.norm(f.name)] = true;
                     res.imported[#res.imported + 1] = f.name;
                     for _, u in ipairs(unknown) do
