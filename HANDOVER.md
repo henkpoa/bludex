@@ -53,10 +53,15 @@ kinds, amended in place through the rounds), `docs/timeline-sets-plan.md`
 1. **The CEXI trait law** (field fact over the base-LSB code reading —
    `lib/traitsource.lua`'s header records the reversal): a job trait GIVES
    its tier (never "blocks", nothing is "out of reach"); the blue ladder
-   counts its own weight from zero and a higher blue tier applies at its
-   full threshold. Tier thresholds are TOTALS (tier 2 at 4 total weight —
+   counts its own points from zero and a higher blue tier applies at its
+   full threshold. Tier thresholds are TOTALS (tier 2 at 4 total points —
    Henrik questioned, then confirmed). One price grammar everywhere:
-   "Tier N at X weight (Y now)". "(game says no)" only where the 0x0AC bit
+   **"Tier N: X/Y Points"** (Henrik 2026-08-10, fifth round — the word
+   "weight" is retired from every user-facing string; `trait.weight` stays
+   the data field name because the server calls it that). Feeder rows read
+   "+N Point(s) / Set: M pts" — the two numbers named apart, since bare
+   "pts" means SET points everywhere else in the addon.
+   "(game says no)" only where the 0x0AC bit
    can know (job-sourced, or the editing set actually worn).
 2. **The level-change watcher** (`ui/host.lua`): the behavior belongs to the
    set you last APPLIED (`cfg.lastAppliedSet`; an unsaved draft clears it).

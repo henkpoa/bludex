@@ -135,8 +135,10 @@ function M.tooltip(ctx, id, hovered, extra)
     end
     if s.trait then
         local cat = s.trait.category;
-        add(('Trait: %s  (weight %d)'):format(book.traitName(cat), s.trait.weight), kit.COL.accent);
-        -- the editing set's progress on that ladder: weight / next threshold
+        local tw = s.trait.weight or 0;
+        add(('Trait: %s  (+%d Point%s)'):format(
+            book.traitName(cat), tw, tw == 1 and '' or 's'), kit.COL.accent);
+        -- the editing set's progress on that ladder: points / next threshold
         local weight = 0;
         for _, ev in ipairs(ctx.sets.traitEval(ctx.state.editingSet, book)) do
             if ev.cat == cat then weight = ev.weight; break; end
@@ -150,9 +152,9 @@ function M.tooltip(ctx, id, hovered, extra)
             if nextP then
                 -- the same price idiom the Traits tab speaks (Henrik
                 -- 2026-08-10: one grammar for tier costs everywhere)
-                add(('   Tier %d at %d weight (%d now)'):format(nextRank, nextP, weight), kit.COL.dim);
+                add(('   Tier %d: %d/%d Points'):format(nextRank, weight, nextP), kit.COL.dim);
             else
-                add(('   %d weight - max tier reached'):format(weight), kit.COL.ok);
+                add(('   %d Points - max tier reached'):format(weight), kit.COL.ok);
             end
         end
         -- the job's stake in the ladder, one short line (Henrik 2026-08-10,
@@ -302,8 +304,9 @@ function M.detail(ctx, id)
         kit.kv(im, 'Set cost', ('%d point%s'):format(s.setPoints, s.setPoints == 1 and '' or 's'));
     end
     if s.trait then
-        kit.kv(im, 'Trait', ('%s  (weight %d)'):format(
-            book.traitName(s.trait.category), s.trait.weight));
+        kit.kv(im, 'Trait', ('%s  (+%d Point%s)'):format(
+            book.traitName(s.trait.category), s.trait.weight or 0,
+            (s.trait.weight or 0) == 1 and '' or 's'));
         -- and the job's stake in that ladder, one short line
         local bl = M.ladderBlocks(ctx, s.trait.category);
         if bl ~= nil and #bl.blocks > 0 then

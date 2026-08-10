@@ -1778,7 +1778,7 @@ local function statsPanel(ctx)
     kit.header(im, 'Traits');
     local evals = ctx.sets.traitEval(ids, book);
     if #evals == 0 then
-        kit.ctext(im, kit.COL.dim, 'no trait weight at this level');
+        kit.ctext(im, kit.COL.dim, 'no trait points at this level');
     end
     for _, ev in ipairs(evals) do
         -- what the SET earns is not always what you GET: a job trait of the
@@ -1788,12 +1788,12 @@ local function statsPanel(ctx)
         local v = ctx.verdict and ctx.verdict(ev.cat, ev.weight) or nil;
         if v ~= nil and v.deadWeight and v.blocker ~= nil then
             -- given, not blocked (the CEXI law, field 2026-08-10): the job
-            -- grants this tier already; the weight buys nothing NEW, and a
-            -- higher tier is still reachable for its full weight
+            -- grants this tier already; the points buy nothing NEW, and a
+            -- higher tier is still reachable for its full points
             kit.ctext(im, kit.COL.dim, ('%s: from %s (rank %d)'):format(
                 ev.name, v.blocker.code or 'your job', v.blocker.rank));
             kit.tip(im, ('%s grants %s at rank %d whatever this set does, so the %d\n'
-                .. 'weight buys nothing new. Feeding PAST that tier still climbs --\n'
+                .. 'points buy nothing new. Feeding PAST that tier still climbs --\n'
                 .. 'a higher blue tier takes over. See the Traits tab.'):format(
                 v.blocker.name or 'Your job', ev.name, v.blocker.rank, ev.weight));
         elseif ev.tier then
@@ -1802,7 +1802,7 @@ local function statsPanel(ctx)
             kit.ctext(im, kit.COL.dim, ('%s: below tier 1'):format(ev.name));
         end
         if ev.nextPoints then
-            kit.ctext(im, kit.COL.dim, ('   %d more weight -> %s'):format(
+            kit.ctext(im, kit.COL.dim, ('   %d more Points -> %s'):format(
                 ev.nextPoints - ev.weight, ev.nextText or 'next tier'));
         end
     end

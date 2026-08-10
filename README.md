@@ -34,7 +34,7 @@ Bludex combines what `blucheck` and `blusets` did — and goes further:
 - **It knows which traits your jobs already give you** — a job trait and a blue trait
   can be the same trait, and the server does not add them together or keep the better
   one: it keeps the *job* one and throws the blue one away, whatever its tier. So on
-  BLU/DRG the weight you feed Accuracy Bonus buys nothing. Bludex says where each trait
+  BLU/DRG the points you feed Accuracy Bonus buy nothing. Bludex says where each trait
   actually comes from, marks the rungs your jobs have taken, and warns you in the spell
   tooltip before the points are spent.
 
@@ -127,7 +127,8 @@ once it has levels. Nothing is sent when what you are wearing already matches, a
 ![The Traits tab — Dual Wield expanded](docs/screenshots/traits.png)
 
 Every blue trait as a ladder: which tiers exist, which one your set has active
-(green), and how much weight the next needs. Expand a trait to see its feeder spells —
+(green), and how many points the next needs — priced as `Tier 2: 1/4 Points`, what you
+have over what it costs. Expand a trait to see its feeder spells —
 green ones are in your set, red ones you haven't learned — and right-click to add or
 remove them on the spot. The same tooltips, densities, and Spell Info clicks as the
 codex: one grammar everywhere.
