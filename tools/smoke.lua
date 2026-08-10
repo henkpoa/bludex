@@ -1663,6 +1663,8 @@ do
     for k, v in pairs(stubIm) do sIm[k] = v; end
     sIm.Text = function(s) sdrew[#sdrew + 1] = tostring(s); end
     sIm.TextColored = function(_, s) sdrew[#sdrew + 1] = tostring(s); end
+    sIm.TextWrapped = function(s) sdrew[#sdrew + 1] = tostring(s); end
+    sIm.SetTooltip = function(s) sdrew[#sdrew + 1] = tostring(s); end
     sIm.Selectable = function(label) sdrew[#sdrew + 1] = tostring(label); return false; end
     sIm.Button = function(label) sdrew[#sdrew + 1] = tostring(label); return false; end
     sIm.InputText = function() return false; end
@@ -1726,6 +1728,24 @@ do
     check(screen:find('Slotlist', 1, true) ~= nil
         and screen:find('Lvl Subsets', 1, true) ~= nil,
         'the chooser offers all three kinds by name');
+
+    sdrew = {};
+    local shctx = rctx(sets.clone(fset, fset.name), 1);
+    shctx.state.shareOpen = true;
+    setsuiM.render(shctx);
+    screen = table.concat(sdrew, '\n');
+    check(screen:find('Share "Flatty"', 1, true) ~= nil
+        and screen:find('sent whole', 1, true) ~= nil,
+        'the share pane renders, guidance wrapped');
+
+    sdrew = {};
+    local imctx = rctx(sets.clone(fset, fset.name), 1);
+    imctx.state.importOpen = true;
+    setsuiM.render(imctx);
+    screen = table.concat(sdrew, '\n');
+    check(screen:find('Import from text', 1, true) ~= nil
+        and screen:find('blusets', 1, true) ~= nil,
+        'the import pane renders, the blusets pull tucked inside it');
 
     blu.currentSet, blu.effectiveLevel, blu.onBlu, blu.budget,
         blu.syncStats, blu.rungCap =

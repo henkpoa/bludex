@@ -698,24 +698,16 @@ local function savedList(ctx)
         end
     end
 
-    -- one-way pull from the blusets addon's saved lists; existing bludex
-    -- names are skipped, never overwritten -- safe to click repeatedly
-    if kit.litButton(im, 'Import blusets', false, LEFT_W - 20, 20) then
-        local res = blusetsimport.importAll(cfg, ctx.book);
-        if #res.imported > 0 and ctx.save then ctx.save(); end
-        st.applyNote = blusetsimport.describe(res);
-    end
-    kit.tip(im, 'Import every blusets spell list\n'
-        .. '(config/addons/blusets/*.txt) as bludex saved sets.\n'
-        .. 'A set name that already exists here is skipped.');
-
-    -- the friend-share pair (docs/set-types-plan.md 8, the dlac flow scaled
-    -- to a set): one line out, one line in
+    -- ONE import door (Henrik 2026-08-10, from the field: two import
+    -- buttons read as clutter): the pane behind it takes a pasted line
+    -- AND carries the blusets file pull at its bottom
     if kit.litButton(im, 'Import from text', st.importOpen == true, LEFT_W - 20, 20) then
         st.importOpen = not st.importOpen or nil;
         st.shareOpen, st.pickKind, st.convertOpen = nil, nil, nil;
     end
-    kit.tip(im, 'Paste a set someone sent you (a BDXSET1 line) and\nsave it as your own.');
+    kit.tip(im, 'Paste a set someone sent you (a BDXSET1 line) and\n'
+        .. 'save it as your own. Importing from the old blusets\n'
+        .. 'addon\'s files lives in there too.');
 
     -- name box, with the set's kind beside the label -- the one fact about
     -- a set that never changes after the chooser
@@ -757,7 +749,7 @@ local function savedList(ctx)
     end
     if st.convertOpen and convEntry ~= nil then
         if M.unsaved(ctx) then
-            kit.ctext(im, kit.COL.warn, 'Save or Revert your edits first.');
+            kit.wrapped(im, kit.COL.warn, 'Save or Revert your edits first.');
             kit.tip(im, 'Converting works from the SAVED set; unsaved edits\nwould be lost silently. Settle them first.');
         else
             local fromKind = ctx.sets.kindOf(convEntry);
@@ -807,7 +799,7 @@ local function savedList(ctx)
                         .. ((#loss == 0) and 'Nothing is lost in this conversion.'
                             or ('One click arms it, a second converts.')));
                     for _, L in ipairs(loss) do
-                        kit.ctext(im, kit.COL.warn, '  drops ' .. L);
+                        kit.wrapped(im, kit.COL.warn, 'drops ' .. L);
                     end
                 end
             end
@@ -1168,7 +1160,7 @@ local function slotPlanner(ctx)
     if not ctx.blu.onBlu() then
         kit.ctext(im, kit.COL.warn, 'BLU is not your main or sub job.');
     end
-    if st.applyNote then kit.ctext(im, kit.COL.dim, st.applyNote); end
+    if st.applyNote then kit.wrapped(im, kit.COL.dim, st.applyNote); end
 
     -- level-change behavior (plan 2.7-2.8): the timeline may plan different
     -- spells for a new level; auto applies by itself, manual nudges
@@ -1204,7 +1196,9 @@ end
 local function kindChooser(ctx)
     local im, st, cfg = ctx.im, ctx.state, ctx.cfg;
     kit.header(im, 'New set - what kind?');
-    kit.ctext(im, kit.COL.dim, 'The kind decides how the set thinks about levels.\nIt is chosen once, here.');
+    -- WRAPPED, never clipped (Henrik 2026-08-10, from the field: the blurb
+    -- lines ran off the column edge)
+    kit.wrapped(im, kit.COL.dim, 'The kind decides how the set thinks about levels. It is chosen once, here.');
     if kit.isFn(im, 'Separator') then im.Separator(); end
 
     local order = {};
@@ -1228,16 +1222,14 @@ local function kindChooser(ctx)
             st.pickKind = nil;
         end
         kit.tip(im, info.blurb);
-        for line in info.blurb:gmatch('[^\n]+') do
-            kit.ctext(im, kit.COL.dim, '  ' .. line);
-        end
+        kit.wrapped(im, kit.COL.dim, (info.blurb:gsub('\n', ' ')));
         if kit.isFn(im, 'NewLine') then im.NewLine(); end
     end
 
     if kit.litButton(im, 'Cancel', false, kit.measure(im, { 'Cancel' }, 60), 22) then
         st.pickKind = nil;
     end
-    kit.ctext(im, kit.COL.dim, 'Which kind is offered first lives in\nSettings - "New sets start as".');
+    kit.wrapped(im, kit.COL.dim, 'Which kind is offered first lives in Settings - "New sets start as".');
 end
 
 -- ---------------------------------------------------------------------------
@@ -1450,7 +1442,7 @@ local function flatPlanner(ctx)
     if not ctx.blu.onBlu() then
         kit.ctext(im, kit.COL.warn, 'BLU is not your main or sub job.');
     end
-    if st.applyNote then kit.ctext(im, kit.COL.dim, st.applyNote); end
+    if st.applyNote then kit.wrapped(im, kit.COL.dim, st.applyNote); end
 end
 
 -- ---------------------------------------------------------------------------
@@ -1464,22 +1456,27 @@ local function sharePane(ctx)
     local entry = st.activeSet and cfg.sets[st.activeSet] or nil;
     if entry == nil then st.shareOpen = nil; return; end
     kit.header(im, ('Share "%s"'):format(entry.name));
-    kit.ctext(im, kit.COL.dim, 'One line, sent whole: chat, Discord, anywhere.\n'
-        .. 'The other side pastes it under Import from text.\n'
+    -- WRAPPED, never clipped (Henrik 2026-08-10, from the field: the
+    -- guidance lines ran off the column edge)
+    kit.wrapped(im, kit.COL.dim, 'One line, sent whole: chat, Discord, anywhere. '
+        .. 'The other side pastes it under Import from text. '
         .. 'Backups stay home - the text is the set, not its history.');
     if M.unsaved(ctx) then
-        kit.ctext(im, kit.COL.warn, 'Unsaved edits are NOT in this text - Save to include them.');
+        kit.wrapped(im, kit.COL.warn, 'Unsaved edits are NOT in this text - Save to include them.');
     end
     if kit.isFn(im, 'Separator') then im.Separator(); end
     local text = ctx.sets.shareText(entry);
-    -- a copy SOURCE, rebuilt every frame -- not an editor
-    if kit.isFn(im, 'SetNextItemWidth') then
-        im.SetNextItemWidth(kit.availWidth(im, MID_W) - 8);
-    end
-    if kit.isFn(im, 'InputText') then
+    -- a copy SOURCE, rebuilt every frame -- not an editor. The pane owns
+    -- the whole width while it is open (the render drops the right panel),
+    -- so the box gets room to show a real stretch of the line.
+    local boxW = kit.availWidth(im, MID_W) - 8;
+    if kit.isFn(im, 'InputTextMultiline') then
+        pcall(im.InputTextMultiline, '##bdxsharetext', { text }, #text + 8, { boxW, 110 });
+    elseif kit.isFn(im, 'InputText') then
+        if kit.isFn(im, 'SetNextItemWidth') then im.SetNextItemWidth(boxW); end
         pcall(im.InputText, '##bdxsharetext', { text }, #text + 8);
     else
-        kit.ctext(im, kit.COL.text or kit.COL.dim, text);
+        kit.wrapped(im, kit.COL.dim, text);
     end
     if kit.isFn(im, 'SetClipboardText') then
         if kit.litButton(im, 'Copy to clipboard', false,
@@ -1495,13 +1492,13 @@ local function sharePane(ctx)
     if kit.litButton(im, 'Back', false, kit.measure(im, { 'Back' }, 50), 24) then
         st.shareOpen = nil;
     end
-    if st.applyNote then kit.ctext(im, kit.COL.dim, st.applyNote); end
+    if st.applyNote then kit.wrapped(im, kit.COL.dim, st.applyNote); end
 end
 
 local function importPane(ctx)
     local im, st, cfg = ctx.im, ctx.state, ctx.cfg;
     kit.header(im, 'Import from text');
-    kit.ctext(im, kit.COL.dim, 'Paste the whole BDXSET1 line someone sent you.\n'
+    kit.wrapped(im, kit.COL.dim, 'Paste the whole BDXSET1 line someone sent you. '
         .. 'Chat framing around it is fine - the line is found inside.');
     if kit.isFn(im, 'Separator') then im.Separator(); end
     st.importBuf = st.importBuf or { '' };
@@ -1532,7 +1529,7 @@ local function importPane(ctx)
         elseif kind == 'timeline' then
             extra = (', built for Lv.%d'):format(inc.builtFor or 75);
         end
-        kit.ctext(im, kit.COL.ok, ('Recognized: "%s" - a %s set, %d spell%s%s.'):format(
+        kit.wrapped(im, kit.COL.ok, ('Recognized: "%s" - a %s set, %d spell%s%s.'):format(
             inc.name, M.KIND_INFO[kind].label, ctx.sets.count(inc),
             (ctx.sets.count(inc) == 1) and '' or 's', extra));
         -- a name collision imports under a numbered name, never clobbers
@@ -1549,7 +1546,7 @@ local function importPane(ctx)
             n = n + 1;
         end
         if final ~= inc.name then
-            kit.ctext(im, kit.COL.warn, ('The name is taken - it will import as "%s".'):format(final));
+            kit.wrapped(im, kit.COL.warn, ('The name is taken - it will import as "%s".'):format(final));
         end
         if kit.litButton(im, 'Import', false, kit.measure(im, { 'Import' }, 70), 24, kit.PAL.go) then
             local entry = ctx.sets.clone(inc, final);
@@ -1573,12 +1570,28 @@ local function importPane(ctx)
         end
         kit.tip(im, 'Saves it as your own set and opens it for editing.');
     elseif st.importWhy ~= nil then
-        kit.ctext(im, kit.COL.warn, st.importWhy);
+        kit.wrapped(im, kit.COL.warn, st.importWhy);
     end
     if kit.isFn(im, 'SameLine') and st.importSet ~= nil then im.SameLine(); end
     if kit.litButton(im, 'Back', false, kit.measure(im, { 'Back' }, 50), 24) then
         st.importOpen = nil;
     end
+
+    -- the OTHER import, tucked in here rather than crowding the left
+    -- column (Henrik 2026-08-10): the one-way pull from the old blusets
+    -- addon's saved lists; existing bludex names are skipped, never
+    -- overwritten -- safe to click repeatedly
+    if kit.isFn(im, 'Separator') then im.Separator(); end
+    kit.wrapped(im, kit.COL.dim, 'Coming from the blusets addon instead? Its saved '
+        .. 'spell lists (config/addons/blusets/*.txt) import in one click:');
+    if kit.litButton(im, 'Import blusets files', false,
+        kit.measure(im, { 'Import blusets files' }, 130), 22) then
+        local res = blusetsimport.importAll(cfg, ctx.book);
+        if #res.imported > 0 and ctx.save then ctx.save(); end
+        st.applyNote = blusetsimport.describe(res);
+    end
+    kit.tip(im, 'Every blusets list becomes a bludex saved set.\nA set name that already exists here is skipped.');
+    if st.applyNote then kit.wrapped(im, kit.COL.dim, st.applyNote); end
 end
 
 -- the middle column, dispatched: the chooser while New is deciding, the
@@ -1804,17 +1817,24 @@ function M.render(ctx)
     local levelRow = kit.measure(im, { 'Level change:' }, 60)
         + kit.measure(im, { 'Auto-apply', 'Manual' }, 64) * 2;
     MID_W = math.max(340, gameRow + 34, levelRow + 34);
+    -- while the share/import panes are up they own EVERYTHING right of the
+    -- saved list (Henrik 2026-08-10, from the field: "we have ample space")
+    -- -- the stats panel has nothing to say about a text box anyway
+    local wide = ctx.state.shareOpen or ctx.state.importOpen;
     if kit.isFn(im, 'BeginChild') and kit.isFn(im, 'EndChild') then
         if im.BeginChild('bdxsaved', { LEFT_W, 0 }, true) then savedList(ctx); end
         im.EndChild();
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        if im.BeginChild('bdxslots', { MID_W, 0 }, true) then midColumn(ctx); end
+        if im.BeginChild('bdxslots', { wide and 0 or MID_W, 0 }, true) then midColumn(ctx); end
         im.EndChild();
-        if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        if im.BeginChild('bdxstats', { 0, 0 }, true) then rightPanel(ctx); end
-        im.EndChild();
+        if not wide then
+            if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            if im.BeginChild('bdxstats', { 0, 0 }, true) then rightPanel(ctx); end
+            im.EndChild();
+        end
     else
-        savedList(ctx); midColumn(ctx); rightPanel(ctx);
+        savedList(ctx); midColumn(ctx);
+        if not wide then rightPanel(ctx); end
     end
 end
 
