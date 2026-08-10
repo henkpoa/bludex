@@ -216,11 +216,19 @@ local function budgetMax(deps)
         if here ~= nil and here ~= dLevel then return nil; end
         -- planning the band you stand in: the live number may speak
     end
+    -- PLANNING IS DONE AT THE LEVEL YOU REALLY ARE, not the one a sync has
+    -- you standing at (Henrik 2026-08-10, sixth round: "I still want to be
+    -- able to do that planning even though I am level synced"). A synced 75
+    -- is building a 75 set; refusing adds past the Lv.40 budget made the
+    -- editor useless for the hours a sync lasts. Nothing is lost by it --
+    -- what the game will actually WEAR is the bracket greying and the live
+    -- pair in the header, both of which still speak the effective level.
+    --
     -- blu.budget prefers the client's own number while it is trustworthy and
-    -- falls back to the measured model for the level we are actually at --
-    -- the client only recomputes its cap when the native Set Spells menu
-    -- opens, so after a level change its number describes the level we left.
-    local max = deps.blu.budget();
+    -- falls back to the measured model otherwise -- the client only
+    -- recomputes its cap when the native Set Spells menu opens, so after a
+    -- level change its number describes the level we left.
+    local max = deps.blu.budget(deps.blu.planLevel());
     if max then return max; end
     if deps.cfg.budgetOverride and deps.cfg.budgetOverride > 0 then
         return deps.cfg.budgetOverride;
@@ -597,19 +605,26 @@ local function renderBody(im, st, deps, embedded)
     -- at read as permanently over ('67 / 49 pts' at Lv.40). It is priced at
     -- 75 now, and what the game holds right now rides along in brackets --
     -- which is the whole sync line, folded into the space it belongs in.
-    local planLvl = (st.editingSet.draft and st.editingSet.level) or 75;
+    local planLvl = (st.editingSet.draft and st.editingSet.level)
+        or deps.blu.planLevel() or 75;
     local max = deps.blu.budget(planLvl) or budgetMax(deps);
     local ss = deps.blu.syncStats(deps.book);
-    local synced = (ss ~= nil and ss.level < 75) and ss or nil;
+    -- the brackets are worth drawing whenever the game is holding you below
+    -- the level you are planning at -- a sync, or simply not being 75 yet
+    local synced = (ss ~= nil and ss.level < planLvl) and ss or nil;
     local liveMax = synced and deps.blu.budget() or nil;
     kit.meter(im, '   Set:', deps.sets.usedPoints(st.editingSet, deps.book), max, ' pts',
         synced and synced.activePoints or nil, liveMax);
     kit.tip(im, (max ~= nil
-        and 'Points used by the set you are editing / the budget it is\nplanned against.'
+        and ('Points used by the set you are editing / the budget it is\nplanned against (Lv.%d).'):format(planLvl)
         or 'Points used by the set you are editing.\nThe total appears when you are on BLU (or set budgetOverride).')
         .. (synced and ('\n\nIn brackets: what the game holds RIGHT NOW at Lv.%d,\n'
-            .. 'against the budget for that level. The rest of the set is\n'
-            .. 'disabled by the game itself and comes back with the level.'):format(synced.level) or ''));
+            .. 'against the budget for that level.%s\n'
+            .. 'The rest of the set is disabled by the game itself and\n'
+            .. 'comes back with the level -- and you can go on planning\n'
+            .. 'the whole thing meanwhile.'):format(synced.level,
+            deps.blu.syncedFrom() and ('\nYou are level synced from Lv.%d; Bludex budgets at %d.'):format(
+                planLvl, planLvl) or '') or ''));
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     -- SLOTS the plan occupies (the ids mirror), NOT chain entries: a Wild
     -- Oats -> Bludgeon stack is one slot, not two (review 2026-08-08). The

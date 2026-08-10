@@ -72,6 +72,21 @@ kinds, amended in place through the rounds), `docs/timeline-sets-plan.md`
 
 ### The laws of the day (each smoke-pinned)
 
+0. **PLAN AT THE LEVEL YOU ARE, WEAR AT THE LEVEL YOU STAND** (Henrik
+   2026-08-10, sixth round). `blu.realLevel` reads `GetJobLevel(16)` — the
+   character's own job list, which a sync never touches — against
+   `GetMainJobLevel`, which reports the ADJUSTED level (the same pair the
+   chains addon reads). `planLevel` = real, falling back to effective;
+   `syncedFrom` names both ends. MAIN JOB BLU ONLY: as a sub job the blue
+   level is capped at half the main's and the job list knows nothing of
+   that, so realLevel stands down and effective answers alone. The BUDGET
+   (`host.budgetMax`, the header's plan meter) follows planLevel; what the
+   game will actually WEAR — bracket greying, the live pair in brackets —
+   still follows effectiveLevel. Latent bug found on the way: `blu.budget`
+   let the client's cap answer for ANY level, though it only ever describes
+   `capWatch.lvl`, the level it was read at. That is how a synced 75 was
+   told its budget was 49.
+
 1. **The CEXI trait law** (field fact over the base-LSB code reading —
    `lib/traitsource.lua`'s header records the reversal): a job trait GIVES
    its tier (never "blocks", nothing is "out of reach"); the blue ladder

@@ -270,6 +270,17 @@ check(not blu.capStale() and blu.budget(75) == 79, 'client recomputes to 79 and 
 blu.watchCap(79, 40);
 check(blu.capStale() and blu.budget(40) == 49, 'stale client -> our Lv40 answer, 49');
 check(not blu.capDisagrees(40), 'a stale client is not a disagreement');
+-- PLANNING AT 75 WHILE SYNCED TO 40 (Henrik 2026-08-10, sixth round: "I
+-- still want to be able to do that planning even though I am level
+-- synced"). The client's cap was computed at 40 and describes 40 alone;
+-- asked about 75 it must stand down, or the editor budgets a synced 75 at
+-- the Lv.40 number and refuses every add past it.
+blu.resetCapWatch();
+blu.watchCap(45, 40);                          -- baselined, not learned from
+blu.watchCap(49, 40);                          -- a WITNESSED recompute at 40
+check(blu.budget(40) == 49, 'the client answers for the level it was read at');
+check(blu.budget(75) == 79,
+    'and stands down for any other -- a synced 75 budgets at 79, not 49');
 -- AFTER A RELOAD the client's value is merely FOUND, never witnessed: it may
 -- be the sync's leftover, so ours outranks it (field 2026-08-06: 49 sitting
 -- at Lv75 after reloading out of a sync, while ours correctly said 79).
@@ -321,6 +332,26 @@ blu.learnedBonus, blu.meritPts = nil, nil;
 -- budget rules sanity
 check(book.traits.rules.assimilationPerMerit == 2, 'field: +2 per Assimilation merit');
 check(book.traits.rules.expectedTotalAt75 == 80, 'field: expected total 80');
+
+-- THE LEVEL TO PLAN AT vs THE LEVEL YOU STAND AT (Henrik 2026-08-10, sixth
+-- round). In a function so its locals get their own budget -- the main chunk
+-- is near Lua's 200-local ceiling.
+(function()
+    local _r, _e = blu.realLevel, blu.effectiveLevel;
+    blu.realLevel = function() return 75; end
+    blu.effectiveLevel = function() return 40; end
+    check(blu.planLevel() == 75, 'planLevel is what you REALLY are, sync or no sync');
+    check(select(1, blu.syncedFrom()) == 75 and select(2, blu.syncedFrom()) == 40,
+        'and syncedFrom names both ends of the gap');
+    -- sub-job BLU: the job list knows nothing of the half-level cap, so
+    -- realLevel stands down there and the effective level answers alone
+    blu.realLevel = function() return nil; end
+    check(blu.planLevel() == 40, 'with no real level to read, the effective one answers');
+    check(blu.syncedFrom() == nil, 'and nothing claims to be a sync');
+    blu.realLevel = function() return 40; end
+    check(blu.syncedFrom() == nil, 'a character genuinely AT 40 is not synced');
+    blu.realLevel, blu.effectiveLevel = _r, _e;
+end)();
 
 print('smoke: SoA burst spell traits (bg-wiki 2026-08-08)');
 -- Henrik's call: the wiki is authoritative for everything but the level;
