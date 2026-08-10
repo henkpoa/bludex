@@ -483,7 +483,7 @@ local function saveCfg()
             (la and la.ids) and codec.encodeIds(la.ids) or '');
         Sref.cfg.set('activeSetName', tostring(cfg.activeSetName or ''));
         Sref.cfg.set('lastAppliedSet', tostring(cfg.lastAppliedSet or ''));
-        Sref.cfg.set('newSetKind', tostring(cfg.newSetKind or 'flat'));
+        Sref.cfg.set('newSetKind', tostring(cfg.newSetKind or 'levels'));
         Sref.cfg.set('tooltipDelay', tonumber(cfg.tooltipDelay) or 0.5);
         Sref.cfg.set('codexDensity', tostring(cfg.codexDensity or 'normal'));
         Sref.cfg.set('traitsDensity', tostring(cfg.traitsDensity or 'normal'));
@@ -493,7 +493,7 @@ local function saveCfg()
         Sref.cfg.set('budgetOverride', tonumber(cfg.budgetOverride) or 0);
         Sref.cfg.set('replan', tostring(cfg.replan or 'manual'));
         Sref.cfg.set('autoRestore', cfg.autoRestore == true);
-        Sref.cfg.set('setsModelVer', tonumber(cfg.setsModelVer) or 3);
+        Sref.cfg.set('setsModelVer', tonumber(cfg.setsModelVer) or 4);
         Sref.cfg.set('capModelVer', tonumber(cfg.capModelVer) or 3);
         Sref.cfg.set('capLearnedBonus', tonumber(cfg.capLearnedBonus) or -1);
         Sref.cfg.set('capMeritPoints', tonumber(cfg.capMeritPoints) or -1);
@@ -572,13 +572,13 @@ return {
             lastApplied = '', lastApplied2 = '',
             lastAppliedSet = '',
             activeSetName = '',
-            newSetKind = 'flat',
+            newSetKind = 'levels',
             tooltipDelay = 0.5,
             codexDensity = 'normal', traitsDensity = 'normal', setsLayout = 'grid',
             applyMode = 'safe', replan = 'manual',
             applyDelay = 1.1, budgetOverride = 0,
             autoRestore = false,
-            setsModelVer = 3,
+            setsModelVer = 4,
             capModelVer = 3, capLearnedBonus = -1, capMeritPoints = -1,
         },
     },

@@ -53,21 +53,27 @@ local M = {};
 M.BACKUP_CAP = 5;       -- backups kept per saved set, newest first
 
 -- ---------------------------------------------------------------------------
--- the three kinds
+-- THE TWO KINDS (Henrik 2026-08-10, second field round: "a level set list
+-- is basically a flat list but additional level sync opportunity" -- so
+-- flat and Lvl Subsets are ONE kind now). The merged kind keeps the
+-- 'levels' key -- every stored levels set, sets3 line, share line and
+-- backup reads unchanged -- and wears the label 'Flat': a set with no
+-- level builds IS the flat set it always was, and any set can grow them.
+-- 'flat' remains a valid decode alias everywhere (old stores, old share
+-- lines, old backups) and normalizes here.
 -- ---------------------------------------------------------------------------
-M.KINDS = { 'flat', 'levels', 'timeline' };
-M.KIND_LABELS = { flat = 'Flat', levels = 'Lvl Subsets', timeline = 'Slotlist' };
-local KIND_OK = { flat = true, levels = true, timeline = true };
+M.KINDS = { 'levels', 'timeline' };
+M.KIND_LABELS = { flat = 'Flat', levels = 'Flat', timeline = 'Slotlist' };
 
--- The one authority on what a set table IS. An explicit valid kind wins;
--- otherwise the shape speaks: chains -> timeline, builds -> levels, else
--- flat -- which is exactly what every stored generation of set decodes to.
+-- The one authority on what a set table IS. An explicit kind wins ('flat'
+-- normalizing to the merged kind); otherwise the shape speaks: chains ->
+-- timeline, everything else -> the merged flat/levels kind.
 function M.kindOf(set)
-    if type(set) ~= 'table' then return 'flat'; end
-    if KIND_OK[set.kind] then return set.kind; end
+    if type(set) ~= 'table' then return 'levels'; end
+    if set.kind == 'timeline' then return 'timeline'; end
+    if set.kind == 'levels' or set.kind == 'flat' then return 'levels'; end
     if set.chains ~= nil then return 'timeline'; end
-    if set.builds ~= nil then return 'levels'; end
-    return 'flat';
+    return 'levels';
 end
 
 -- ---------------------------------------------------------------------------
@@ -103,14 +109,12 @@ local function copyIds(ids)
     return c;
 end
 
--- A fresh set of a KIND. No kind (or 'timeline') builds the timeline shape,
--- so every pre-kinds caller keeps getting what it always got.
+-- A fresh set of a KIND ('flat' aliases the merged kind). No kind (or
+-- 'timeline') builds the timeline shape, so every pre-kinds caller keeps
+-- getting what it always got.
 function M.new(name, kind)
     name = name or 'New Set';
-    if kind == 'flat' then
-        return { kind = 'flat', name = name, ids = zeroIds() };
-    end
-    if kind == 'levels' then
+    if kind == 'flat' or kind == 'levels' then
         return { kind = 'levels', name = name, ids = zeroIds(), builds = {} };
     end
     return {
@@ -124,11 +128,6 @@ end
 
 function M.clone(set, name)
     local kind = M.kindOf(set);
-    if kind == 'flat' then
-        local c = M.new(name or (set.name .. ' copy'), 'flat');
-        c.ids = copyIds(set.ids);
-        return c;
-    end
     if kind == 'levels' then
         local c = M.new(name or (set.name .. ' copy'), 'levels');
         c.ids = copyIds(set.ids);
@@ -199,14 +198,11 @@ end
 function M.upgrade(set, book)
     local changed = false;
     if set.kind ~= M.kindOf(set) then
-        set.kind = M.kindOf(set);
+        set.kind = M.kindOf(set);      -- 'flat' folds into the merged kind
         changed = true;
     end
-    if set.kind == 'flat' then
-        if type(set.ids) ~= 'table' then set.ids = zeroIds(); changed = true; end
-        return changed;
-    end
     if set.kind == 'levels' then
+        if set.builds == nil then changed = true; end
         M.normalizeGroup(set);
         return changed;
     end
@@ -261,20 +257,16 @@ end
 -- Collapse ANY set to the flat 20-id array for a level. Everything
 -- downstream (points, stats, traits, sortedLayout, applyDiff) takes this.
 -- Per kind:
---   flat      the ids verbatim -- a flat set is level-independent; the
---             client's own sync-disable handles over-level spells (the
---             field-proven pre-timeline behavior)
 --   levels    the band's own build when it has one, else the base build
---             (groupPick carries the full rule, empty-base fallback included)
+--             (groupPick carries the full rule, empty-base fallback
+--             included) -- a set with no builds answers its base ids
+--             verbatim at every level, the flat behavior it always had
 --   timeline  per chain, the entry with the highest activation at or below
 --             the level wins (an empty marker wins as 0); a chain below its
 --             slot's floor is inert
 function M.resolveAtLevel(set, level, book)
     level = level or 75;
     local kind = M.kindOf(set);
-    if kind == 'flat' then
-        return copyIds(set.ids);
-    end
     if kind == 'levels' then
         return M.groupIds(set, M.groupPick(set, level));
     end
@@ -542,9 +534,6 @@ function M.equal(a, b)
     local kind = M.kindOf(a);
     if kind ~= M.kindOf(b) then return false; end
     if tostring(a.name) ~= tostring(b.name) then return false; end
-    if kind == 'flat' then
-        return idsEqual(a.ids, b.ids);
-    end
     if kind == 'levels' then
         if not idsEqual(a.ids, b.ids) then return false; end
         if a.rule ~= b.rule then return false; end
@@ -608,14 +597,15 @@ function M.restoreBackup(set, i, book, ts)
     local b = set.backups and set.backups[i] or nil;
     if b == nil then return false; end
     M.pushBackup(set, set, ts);
-    local kind = b.kind or M.kindOf(b);
+    -- 'flat' backups (pre-merge, 2026-08-10) restore as the merged kind
+    local kind = (b.kind == 'timeline' or b.chains ~= nil) and 'timeline' or 'levels';
     set.kind = kind;
     if kind == 'timeline' then
         set.builds, set.rule = nil, nil;
         set.builtFor = b.builtFor or 75;
         set.chains = copyChains(b.chains);
         M.syncLegacyIds(set, book);
-    elseif kind == 'levels' then
+    else
         set.chains, set.builtFor = nil, nil;
         set.ids = copyIds(b.ids);
         set.builds = {};
@@ -623,9 +613,6 @@ function M.restoreBackup(set, i, book, ts)
             set.builds[#set.builds + 1] = { level = t.level, ids = copyIds(t.ids) };
         end
         set.rule = b.rule;
-    else
-        set.chains, set.builtFor, set.builds, set.rule = nil, nil, nil, nil;
-        set.ids = copyIds(b.ids);
     end
     return true;
 end
@@ -1215,13 +1202,10 @@ function M.canAdd(set, id, book, budgetMax)
     if s == nil then return false, 'unknown spell'; end
     if M.contains(set, id) then return false, 'already in set'; end
     if M.kindOf(set) == 'timeline' and set.chains ~= nil then
-        local slot = M.freeSlot(set);
-        if slot == nil then return false, 'no free slot'; end
-        if budgetMax and budgetMax > 0 and s.setPoints ~= nil
-            and M.usedPoints(set, book) + s.setPoints > budgetMax then
-            return false, 'over the point budget';
-        end
-        return M.canAddEntry(set, slot, id, nil, book);
+        -- a slotlist assigns PER SLOT (Henrik 2026-08-10, from the field:
+        -- the convenience add put spells in slots nobody chose) -- the
+        -- codex/traits rows refuse by name and point at the Sets tab
+        return false, 'a Slotlist assigns per slot - mark a slot in the Sets tab';
     end
     if not s.castable then return false, 'not castable at 75'; end
     if s.unbridled then return false, 'Unbridled spells cannot be set'; end
@@ -1246,9 +1230,6 @@ end
 function M.add(set, id, book, budgetMax)
     local ok, reason = M.canAdd(set, id, book, budgetMax);
     if not ok then return false, reason; end
-    if M.kindOf(set) == 'timeline' and set.chains ~= nil then
-        return M.addEntry(set, M.freeSlot(set), id, nil, book);
-    end
     set.ids[M.freeSlot(set)] = id;
     return true;
 end

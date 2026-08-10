@@ -66,7 +66,7 @@ print('smoke: set model');
 -- headless there is no AshitaCore, so every spell counts as learned here
 -- (canAdd requires learned in-game -- the codex/traits add paths gate on it)
 book.learned = function() return true; end
-local s = sets.new('Smoke');
+local s = sets.new('Smoke', 'levels');
 check(sets.count(s) == 0, 'new set empty');
 local ok = sets.add(s, 623, book, 80);
 check(ok and sets.count(s) == 1, 'added Head Butt');
@@ -75,9 +75,14 @@ local ok2, why = sets.add(s, 623, book, 80);
 check(not ok2 and why == 'already in set', 'duplicate rejected');
 check((select(2, sets.add(s, 737, book, 80))) == 'Unbridled spells cannot be set',
     'unbridled rejected');
+-- a SLOTLIST refuses the convenience add by name (Henrik 2026-08-10: it
+-- put spells in slots nobody chose) -- assignment is per slot
+check((select(2, sets.add(sets.new('TL'), 623, book, 80)))
+    == 'a Slotlist assigns per slot - mark a slot in the Sets tab',
+    'a slotlist refuses the codex-style add, pointing at the Sets tab');
 
 -- fill with Dual Wield feeders and check the ladder activates
-local s2 = sets.new('DW');
+local s2 = sets.new('DW', 'levels');
 for _, id in ipairs(dwSpells) do sets.add(s2, id, book, 999); end
 local evals = sets.traitEval(s2, book);
 local found = nil;
@@ -335,7 +340,7 @@ check(book.traits.categories[29] ~= nil and book.traits.categories[29].name == '
     'the Magic Eva. Bonus addendum ladder exists (trait.h 126, tier at 8)');
 check(book.traits.categories[30] ~= nil and book.traits.categories[30].traitId == 125,
     'the Magic Acc. Bonus addendum ladder exists (trait.h 125)');
-local soa = sets.new('SoA');
+local soa = sets.new('SoA', 'levels');
 check(sets.add(soa, 720, book, 99), 'Spectral Floe joins a set');
 local mab = nil;
 for _, ev in ipairs(sets.traitEval(soa, book)) do
@@ -381,9 +386,9 @@ local v1 = { name = 'Old', ids = {} };
 for i = 1, 20 do v1.ids[i] = 0; end
 v1.ids[3] = 529;      -- Bludgeon 18
 v1.ids[9] = 603;      -- Wild Oats 4
-check(sets.upgrade(v1, book) == true, 'a v1 set is stamped by the v3 adopt');
-check(v1.kind == 'flat' and v1.chains == nil,
-    'and it STAYS FLAT -- no chains are built for it');
+check(sets.upgrade(v1, book) == true, 'a v1 set is stamped by the adopt');
+check(v1.kind == 'levels' and v1.chains == nil and #v1.builds == 0,
+    'and it STAYS FLAT (the merged kind, no builds) -- no chains built');
 check(v1.ids[3] == 529 and v1.ids[9] == 603,
     'its ids are untouched, slots and all');
 check(sets.upgrade(v1, book) == false, 'the stamp is idempotent');
@@ -464,12 +469,12 @@ check(rmm.ids[1] == 529,
 sets.clearChain(hb, 9, book);
 check(#hb.chains[9] == 0 and sets.contains(hb, 603) == nil, 'clearChain empties one slot');
 
--- the convenience add: a new chain in the lowest free slot (floors ascend,
--- so the first free slot is the earliest-activating home)
+-- the convenience add is GONE for slotlists (Henrik 2026-08-10: assignment
+-- is per slot); addEntry with an explicit slot is the one way in
 local qa = sets.new('Quick');
-check(sets.add(qa, 529, book, 80), 'add() lands the spell as a new chain');
-check(qa.chains[1][1].id == 529 and qa.chains[1][1].from == 18, 'in slot 1 at its own level');
-check(select(2, sets.add(qa, 529, book, 80)) == 'already in set', 'duplicates still refused');
+check(not sets.add(qa, 529, book, 80), 'add() refuses a slotlist outright');
+check(sets.addEntry(qa, 1, 529, nil, book) and qa.chains[1][1].id == 529,
+    'addEntry with an explicit slot is the way in');
 
 -- the BAND SWEEP (plan 2.6): whole-curve point validation with a stub
 -- book, so the arithmetic is pinned exactly
@@ -570,23 +575,25 @@ local fi = sets.fromIds('Imported', { [1] = 529, [2] = 603 }, book);
 check(fi.chains[1][1].id == 603 and fi.chains[2][1].id == 529,
     'fromIds sorts like the migration');
 local legacy = { name = 'L', ids = { [1] = 529 } };
-check(sets.kindOf(legacy) == 'flat', 'a bare-ids table reads as a flat set');
+check(sets.kindOf(legacy) == 'levels', 'a bare-ids table reads as the merged flat kind');
 check(sets.resolveAtLevel(legacy, 75, book)[1] == 529
     and sets.resolveAtLevel(legacy, 17, book)[1] == 529,
-    'and it resolves VERBATIM at every level (kinds era: no on-the-fly chains)');
+    'and it resolves VERBATIM at every level (no builds, no on-the-fly chains)');
 
-print('smoke: the three set kinds (docs/set-types-plan.md)');
--- kindOf: an explicit kind wins; otherwise the shape speaks
-check(sets.kindOf({ name = 'x', ids = {} }) == 'flat'
+print('smoke: the two set kinds (docs/set-types-plan.md; flat+levels merged)');
+-- kindOf: an explicit kind wins ('flat' folding into the merged kind);
+-- otherwise the shape speaks
+check(sets.kindOf({ name = 'x', ids = {} }) == 'levels'
     and sets.kindOf({ name = 'x', ids = {}, builds = {} }) == 'levels'
+    and sets.kindOf({ name = 'x', kind = 'flat', ids = {} }) == 'levels'
     and sets.kindOf({ name = 'x', chains = {} }) == 'timeline',
-    'kindOf infers by shape: bare ids flat, builds levels, chains timeline');
+    'kindOf: bare ids, builds and the flat alias all read merged; chains timeline');
 local fl = sets.new('Flatty', 'flat');
-check(fl.kind == 'flat' and fl.chains == nil and fl.builds == nil,
-    'new flat: ids only, no chains, no builds');
+check(fl.kind == 'levels' and fl.chains == nil and #fl.builds == 0,
+    'new "flat" IS the merged kind: base ids plus an empty build list');
 local lv = sets.new('Bandy', 'levels');
 check(lv.kind == 'levels' and lv.chains == nil and #lv.builds == 0,
-    'new levels: ids (the base build) plus an empty build list');
+    'new levels: the same shape');
 check(sets.new('T').kind == 'timeline', 'new without a kind stays timeline');
 
 -- the rungs (the 2026-08-06 law, back with the levels kind)
@@ -602,10 +609,10 @@ check(sets.add(fl, 623, book, 80) and fl.ids[1] == 623,
 check(sets.resolveAtLevel(fl, 5, book)[1] == 623,
     'and resolves verbatim below the spell\'s level');
 local flc = sets.clone(fl, fl.name);
-check(flc.kind == 'flat' and sets.equal(fl, flc), 'flat clone equals its source');
+check(flc.kind == 'levels' and sets.equal(fl, flc), 'flat clone equals its source');
 flc.ids[2] = 603;
 check(not sets.equal(fl, flc), 'one id apart is not equal');
-check(not sets.equal(fl, lv), 'kinds never compare equal across each other');
+check(not sets.equal(fl, sets.new('T2')), 'kinds never compare equal across each other');
 
 -- the group API: band-else-base, exactly the old semantics
 check(sets.add(lv, 603, book, 999), 'the base build takes adds (level nil)');
@@ -652,46 +659,40 @@ check(sets.upgrade(raw, book) == false, 'and the stamp is idempotent');
 
 print('smoke: kind conversion (the flat projection is the bridge)');
 do
--- flat -> anywhere: lossless, and the source is never touched
+-- flat -> timeline: lossless, and the source is never touched
 local cf = sets.new('Conv', 'flat');
 sets.add(cf, 529, book, 80); sets.add(cf, 603, book, 80);
-check(#sets.convertLoss(cf, 'levels', book) == 0
-    and #sets.convertLoss(cf, 'timeline', book) == 0,
-    'a flat set converts anywhere losslessly');
-local cl = sets.convertTo(cf, 'levels', book);
-check(cl.kind == 'levels' and cl.name == 'Conv' and cl.ids[1] == 529
-    and #cl.builds == 0, 'flat -> levels: the ids become the base build');
+check(#sets.convertLoss(cf, 'timeline', book) == 0,
+    'a build-less flat set converts to a slotlist losslessly');
 local ct = sets.convertTo(cf, 'timeline', book);
 check(ct.kind == 'timeline' and ct.chains[1][1].id == 603,
     'flat -> timeline: sorted placement, lowest level in the lowest slot');
-check(cf.kind == 'flat' and cf.ids[1] == 529, 'the source is never mutated');
+check(cf.kind == 'levels' and cf.ids[1] == 529, 'the source is never mutated');
 
--- levels -> flat: the base crosses; builds and a stored rule are NAMED
-sets.groupAdd(cl, 41);
-sets.groupPut(cl, 41, { [1] = 549 });
-cl.rule = 'switch';
-local closs = sets.convertLoss(cl, 'flat', book);
+-- flat -> timeline WITH builds: the base crosses; builds and a stored
+-- rule are NAMED as the loss
+sets.groupAdd(cf, 41);
+sets.groupPut(cf, 41, { [1] = 549 });
+cf.rule = 'switch';
+local closs = sets.convertLoss(cf, 'timeline', book);
 check(#closs == 2 and closs[1]:find('1 level build', 1, true) ~= nil
     and closs[2]:find('switch', 1, true) ~= nil,
-    'levels -> flat names the build and the stored rule it drops');
-local cback = sets.convertTo(cl, 'flat', book);
-check(cback.kind == 'flat' and cback.ids[1] == 529 and cback.builds == nil,
-    'and the base build is what crosses');
+    'a set with builds names the build and the stored rule it drops');
 
 -- timeline -> flat: flat-shaped crosses clean; a real timeline is named
-check(#sets.convertLoss(ct, 'flat', book) == 0,
+check(#sets.convertLoss(ct, 'levels', book) == 0,
     'a flat-shaped timeline converts back losslessly');
 local deep = sets.new('Deep');
 check(sets.addEntry(deep, 1, 603, nil, book)
     and sets.addEntry(deep, 1, 529, nil, book), 'conversion fixture stacks a chain');
-local dloss = sets.convertLoss(deep, 'flat', book);
+local dloss = sets.convertLoss(deep, 'levels', book);
 check(#dloss == 1 and dloss[1]:find('1 entry beyond', 1, true) ~= nil,
     'timeline -> flat counts the entries the Lv.75 plan leaves behind');
 sets.pushBackup(deep, deep, 1000);
 check(#sets.convertLoss(deep, 'levels', book) == 1,
     'backups are NOT a named loss -- the ring crosses with the set');
-local dflat = sets.convertTo(deep, 'flat', book);
-check(dflat.kind == 'flat' and dflat.ids[1] == 529,
+local dflat = sets.convertTo(deep, 'levels', book);
+check(dflat.kind == 'levels' and dflat.ids[1] == 529 and #dflat.builds == 0,
     'what crosses is the Lv.75 plan (Bludgeon, not the retired Wild Oats)');
 
 -- same kind = a plain clone: timeline detail and backups survive intact
@@ -705,7 +706,7 @@ do
 -- a flat ring: bank, mutate, restore, and the replaced state banks in turn
 local bf1 = sets.new('B', 'flat'); bf1.ids[1] = 529;
 sets.pushBackup(bf1, bf1, 100);
-check(bf1.backups[1].kind == 'flat' and bf1.backups[1].ids[1] == 529
+check(bf1.backups[1].kind == 'levels' and bf1.backups[1].ids[1] == 529
     and bf1.backups[1].chains == nil, 'a flat backup banks ids, not chains');
 bf1.ids[1] = 603;
 check(sets.restoreBackup(bf1, 1, book, 200) and bf1.ids[1] == 529,
@@ -729,19 +730,19 @@ check(sets.restoreBackup(bl, 1, book, 200)
 -- and the set is its OLD KIND again
 local csrc = sets.new('CU', 'levels'); csrc.ids[1] = 529;
 sets.groupAdd(csrc, 41); sets.groupPut(csrc, 41, { [1] = 549 });
-local cnv = sets.convertTo(csrc, 'flat', book);
+local cnv = sets.convertTo(csrc, 'timeline', book);
 cnv.backups = csrc.backups;
 sets.pushBackup(cnv, csrc, 300);
-check(sets.kindOf(cnv) == 'flat' and cnv.builds == nil,
-    'converted: a flat set, the builds gone');
+check(sets.kindOf(cnv) == 'timeline' and cnv.builds == nil,
+    'converted: a slotlist, the builds gone');
 check(sets.restoreBackup(cnv, 1, book, 400), 'the ring takes the restore');
 check(sets.kindOf(cnv) == 'levels' and sets.groupBuild(cnv, 41) ~= nil
     and sets.groupBuild(cnv, 41).ids[1] == 549,
     'and the set is its old kind again, band build and all');
 check(cnv.chains == nil and cnv.builtFor == nil,
     'with no other kind\'s fields left to shadow');
-check(cnv.backups[1].kind == 'flat',
-    'the flat state it replaced banked in turn -- the undo is undoable');
+check(cnv.backups[1].kind == 'timeline',
+    'the slotlist state it replaced banked in turn -- the undo is undoable');
 end
 
 print('smoke: share text (one set, one pasteable line)');
@@ -776,7 +777,7 @@ check(rt.backups == nil, 'and backups never travel');
 -- the paste side is forgiving where it can be, strict where it must be
 local framed = 'Mindie: ' .. sets.shareText(sf) .. '  ';
 check(sets.parseShare(framed) ~= nil, 'chat framing around the line is fine');
-local damaged = sets.shareText(sf):gsub('BDXSET1|flat', 'BDXSET1|falt');
+local damaged = sets.shareText(sf):gsub('BDXSET1|levels', 'BDXSET1|levles');
 local _, dwhy = sets.parseShare(damaged);
 check(dwhy ~= nil and dwhy:find('damaged', 1, true) ~= nil,
     'a mangled body fails the checksum with a reason');
@@ -1006,7 +1007,7 @@ check(blu.learnedBonus == 24 and blu.meritPts == 10,
 check(aCfg.sets[1].chains ~= nil and aCfg.sets[1].chains[1][1] ~= nil
     and aCfg.sets[1].chains[1][1].id == 623 and aCfg.sets[1].builtFor == 75,
     'adopt migrates stored flat sets to chains (builtFor 75)');
-check(aCfg.setsModelVer == 3, 'and stamps setsModelVer 3 (the kinds era)');
+check(aCfg.setsModelVer == 4, 'and stamps setsModelVer 4 (flat+levels merged)');
 check(aCfg.replan == 'manual', 'the retired autoRestore maps to replan=manual');
 check(host.state.editingSet.chains ~= nil, 'the editing clone speaks chains too');
 -- LOG OFF: the defaults profile swaps in. The working state stays put (the
@@ -1267,8 +1268,8 @@ check(#host.deps.cfg.sets == 1 and host.deps.cfg.sets[1].name == 'Solo',
 check(host.state.editingSet.name == 'Solo' and host.state.editingSet.ids[1] == 700,
     'and the host adopts it (the active set is restored)');
 check(host.deps.cfg.sets[1].chains == nil
-    and sets.kindOf(host.deps.cfg.sets[1]) == 'flat',
-    'a legacy dlac store adopts as FLAT (kinds era: nothing converts)');
+    and sets.kindOf(host.deps.cfg.sets[1]) == 'levels',
+    'a legacy dlac store adopts as the merged flat kind (nothing converts)');
 check(blu.learnedBonus == 24 and blu.meritPts == 10,
     'the budget halves now persist through the dlac store too');
 -- a save now round-trips the real list, not the empty init snapshot --
@@ -1278,7 +1279,7 @@ host.deps.save();
 check(dm._codec.decodeSets(disk['A\\'].sets)[1].name == 'Solo',
     'a save after login keeps the character file (no empty-snapshot clobber)');
 local v3rt = dm._codec.decodeSets3(disk['A\\'].sets3);
-check(v3rt[1] ~= nil and v3rt[1].kind == 'flat' and v3rt[1].ids[1] == 700,
+check(v3rt[1] ~= nil and sets.kindOf(v3rt[1]) == 'levels' and v3rt[1].ids[1] == 700,
     'the save writes the kinds grammar (sets3) as the truth');
 check(#dm._codec.decodeSets2(disk['A\\'].sets2) == 0,
     'and sets2 carries timeline sets only (a flat set has no line there)');
@@ -1293,7 +1294,7 @@ check(blu.learnedBonus == nil and blu.meritPts == nil,
 -- the save above outranks both older keys) -- and the set is still flat
 storeDir = 'A\\';
 dm._syncStore();
-check(sets.kindOf(host.deps.cfg.sets[1]) == 'flat'
+check(sets.kindOf(host.deps.cfg.sets[1]) == 'levels'
     and host.deps.cfg.sets[1].ids[1] == 700,
     'a return to A decodes the kinds grammar directly, flat staying flat');
 check(host.state.editingSet.name == 'Solo',
@@ -1422,13 +1423,18 @@ check(cm.active[1].source == 'job' and cm.active[1].tier == 1,
 check(cm.active[1].traitName == 'Clear Mind', 'named by its own trait');
 check(cm.held[1] ~= nil and cm.held[1].code == 'SCH',
     'rung 1 is HELD -- the job\'s rank reaches it (this is the green one)');
-check(cm.blocked[2] ~= nil and cm.blocked[3] ~= nil and cm.blocked[4] ~= nil,
-    'and rungs 2-4 are out of reach: blue cannot lift a job trait');
+check(cm.blocked == nil, 'nothing is "out of reach" anymore (the CEXI law)');
 check(cm.held[2] == nil, 'rung 2 is NOT held -- rank 1 does not reach it');
--- climb the sub job and the held/out-of-reach line moves up with it
+-- and the set CLIMBS PAST the job (Henrik, field 2026-08-10): the full
+-- weight for tier 2 earns tier 2, the job's rank 1 or not
+local cmUp = tsrc.verdict(CM, book.traits.categories[CM].tiers[2].points, book, sch30);
+check(cmUp.active[1].source == 'set' and cmUp.active[1].tier == 2,
+    'weight for tier 2 takes over from the job\'s rank 1 (blue climbs past)');
+check(cmUp.deadWeight == false, 'and that weight is anything but dead');
+-- climb the sub job and the held line moves up with it
 local cm2 = tsrc.verdict(CM, 0, book, tsrc.jobs(16, 75, 20, 37));   -- rank 2 at 35
-check(cm2.held[1] ~= nil and cm2.held[2] ~= nil and cm2.blocked[3] ~= nil,
-    'at rank 2 the job holds two rungs');
+check(cm2.held[1] ~= nil and cm2.held[2] ~= nil and cm2.held[3] == nil,
+    'at rank 2 the job holds two rungs and no more');
 check(cm2.active[1].tier == 2, 'and the headline follows the rank');
 
 print('smoke: the per-tier trait id');
@@ -1454,19 +1460,20 @@ for _, a in ipairs(part.active) do
     end
 end
 check(sawTA, 'Triple Attack still comes through from the set, named as itself');
-check(part.held[1] ~= nil and part.held[2] == nil and part.blocked[2] == nil,
+check(part.held[1] ~= nil and part.held[2] == nil,
     'WAR holds rung 1 and does not touch rung 2 -- that rung is another trait');
 check(tsrc.verdict(DA, 2, book, blu_war).deadWeight == true,
-    'at 2 weight, though, WAR blocks the only rung reached');
+    'at 2 weight, though, WAR already grants the only rung reached');
 
--- THF holds BOTH rungs of the Gilfinder ladder (Gilfinder 5, Treasure Hunter 15)
+-- THF grants the Gilfinder rung outright; the Treasure Hunter rung above
+-- it stays the set's to earn (the CEXI law: nothing is out of reach)
 local blu_thf = tsrc.jobs(16, 75, 6, 37);
-check(tsrc.verdict(28, 3, book, blu_thf).deadWeight == true,
-    'BLU/THF: THF holds both Gilfinder rungs, so all of it is dead weight');
-check(tsrc.ladderBlocks(28, book, blu_thf).all == true, 'ladderBlocks says the same');
+local gfBlocks = tsrc.ladderBlocks(28, book, blu_thf);
+check(#gfBlocks.blocks >= 1,
+    'BLU/THF: ladderBlocks lists what the job GRANTS (rank-reached rungs)');
 -- and THF's own Dual Wield starts at 83, far above any sub job
 check(#tsrc.ladderBlocks(25, book, blu_thf).blocks == 0,
-    'THF at sub level does NOT block Dual Wield (its trait starts at 83)');
+    'THF at sub level grants no Dual Wield rung (its trait starts at 83)');
 
 print('smoke: the live bit is the referee');
 -- The 0x0AC trait bit says whether a trait is UP; it can never say where it
@@ -1546,8 +1553,9 @@ check(screen:find('MpHeal +3 [SCH', 1, true) == nil,
     'and NOT the job trait\'s own stat value, which compares to nothing');
 check(screen:find('<- SCH (sub job), rank 1', 1, true) ~= nil,
     'rung 1 is annotated with the job that has you standing on it');
-check(screen:find('out of reach', 1, true) ~= nil,
-    'and the rungs above it say why they cannot be climbed');
+check(screen:find('out of reach', 1, true) == nil
+    and screen:find('is blocked', 1, true) == nil,
+    'and NO rung is called out of reach or blocked (the CEXI law)');
 -- and with no job data at all the same tab still renders, claiming nothing
 drew = {};
 tctx2.verdict, tctx2.jobPair, tctx2.jobTraits = nil, nil, {};
@@ -1678,12 +1686,14 @@ fcfg.lastAppliedSet = '';
 fake.level = 75; tickNow();
 fake.level = 40; tickNow();
 check(fake.applied == nil, 'with no last-applied set there is nothing to follow');
--- a FLAT followed set arms nothing either -- the kind gate, not just the name
+-- a followed BUILD-LESS set derives Restore (the merged kind): Switch
+-- never fires for it, so no band crossing ever equips anything outright
 fcfg.lastAppliedSet = 'Plain';
 fcfg.sets[2] = { kind = 'flat', name = 'Plain', ids = flat20 };
 fake.level = 75; tickNow();
 fake.level = 40; tickNow();
-check(fake.applied == nil, 'a followed FLAT set arms no level rule (the kind gate)');
+check(fake.applied == nil,
+    'a followed build-less set derives Restore -- Switch never fires for it');
 
 print('smoke: the Sets tab renders (the chooser and all three kinds)');
 -- the same law as the Traits tab render: an unknown Lua name is a silent
@@ -1750,7 +1760,7 @@ do
     setsuiM.render(rctx(sets.draft(lset, 41), 2, nil, 41));
     screen = table.concat(sdrew, '\n');
     check(screen:find('Editing Lv.41', 1, true) ~= nil, 'the levels draft names its band');
-    check(screen:find('Lvl Subsets', 1, true) ~= nil, 'and its kind');
+    check(screen:find('Flat', 1, true) ~= nil, 'and its kind (the merged Flat)');
 
     sdrew = {};
     setsuiM.render(rctx(sets.clone(tset, tset.name), 3));
@@ -1760,8 +1770,8 @@ do
     setsuiM.render(rctx(sets.new('N', 'flat'), nil, true));
     screen = table.concat(sdrew, '\n');
     check(screen:find('Slotlist', 1, true) ~= nil
-        and screen:find('Lvl Subsets', 1, true) ~= nil,
-        'the chooser offers all three kinds by name');
+        and screen:find('level sync', 1, true) ~= nil,
+        'the chooser offers BOTH kinds, the merged blurb included');
 
     sdrew = {};
     local shctx = rctx(sets.clone(fset, fset.name), 1);

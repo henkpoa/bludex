@@ -54,16 +54,20 @@ local function tierLabel(v, a)
     return ('%s%d [%s]'):format(n, a.tier or 0, sourceLabel(a));
 end
 
--- The sentence that matters: what the collision cost. Kept in one place --
--- the Traits tab says it long, the spell tooltip says it short.
-function M.blockedTip(v)
+-- The sentence that matters: what the job already gives. Kept in one place
+-- -- the Traits tab says it long, the spell tooltip says it short. (CEXI
+-- law, field 2026-08-10: the job GRANTS its tier; weight that only reaches
+-- that tier buys nothing NEW, but a higher tier is still yours for the
+-- full weight -- nothing is blocked.)
+function M.givenTip(v)
     local e = v.blocker;
     if e == nil then return nil; end
-    return ('%s already grants %s, and the server keeps the JOB trait -- the\n'
-        .. 'blue one is discarded outright, whatever its tier. The %d weight\n'
-        .. 'your set feeds this ladder buys nothing.'):format(
-        jobLabel(e), v.name, v.weight);
+    return ('%s grants %s at rank %d whatever your set does, so weight that\n'
+        .. 'only reaches that tier buys nothing new. A HIGHER tier still\n'
+        .. 'applies -- invest its full weight and the blue trait takes over.'):format(
+        jobLabel(e), v.name, e.rank);
 end
+M.blockedTip = M.givenTip;             -- the old name, kept for callers
 
 function M.render(ctx)
     local im, book, st = ctx.im, ctx.book, ctx.state;
@@ -83,8 +87,15 @@ function M.render(ctx)
 
     kit.ctext(im, kit.COL.dim,
         'Weights come from spells in your CURRENT editing set (Sets tab).');
-    -- WHOSE traits these are competing with -- the pair is the whole reason a
-    -- ladder can be blocked, so it is named where the blocking is reported
+    -- THE SLOTLIST MARKER (Henrik 2026-08-10: "mark this out clearly"):
+    -- a slotlist assigns per slot, so these rows cannot add into it
+    if ctx.sets.kindOf(st.editingSet) == 'timeline' then
+        kit.wrapped(im, kit.COL.warn, 'Editing a Slotlist set: spells are assigned '
+            .. 'PER SLOT in the Sets tab (mark a slot, pick from Assign). '
+            .. 'Rows here are reference only.');
+    end
+    -- WHOSE traits these are riding on -- the pair is the whole reason a
+    -- ladder can be part-granted, so it is named where that is reported
     local jp = ctx.jobPair;
     if jp ~= nil then
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
@@ -93,11 +104,11 @@ function M.render(ctx)
             or 'no sub';
         kit.helpLabel(im, ('   %s%d / %s'):format(
             tsrc.jobCode(jp.mainJob) or '?', jp.mainLevel or 0, sub),
-            'Your jobs, and the reason a ladder can be blocked.\n\n'
-            .. 'The server builds your job traits first -- main job at your main\n'
-            .. 'level, then sub job at your sub level -- and only then adds blue\n'
-            .. 'traits. A blue trait that matches one you already have is thrown\n'
-            .. 'away, at any tier, so the set points feeding it buy nothing.\n\n'
+            'Your jobs, and what they hand this tab for free.\n\n'
+            .. 'A job trait GIVES you its tier of a ladder, set or no set.\n'
+            .. 'Weight that only reaches a tier you already have from a job\n'
+            .. 'buys nothing new -- but a HIGHER tier still applies for its\n'
+            .. 'full weight (CatsEyeXI: blue climbs past a job trait).\n\n'
             .. 'Job-trait data is the public CatsEyeXI source and can differ from\n'
             .. 'the live server; the game\'s own trait list has the last word.',
             kit.COL.accent);
@@ -111,6 +122,30 @@ function M.render(ctx)
         kit.ctext(im, kit.COL.dim, '   ' .. st.addNote);
     end
     if kit.isFn(im, 'Separator') then im.Separator(); end
+
+    -- IS THE EDITING SET LIVE? The 0x0AC referee reflects what is EQUIPPED;
+    -- while the editing set's spells are not applied, "game says no" on a
+    -- set-sourced trait states the obvious and is suppressed (Henrik
+    -- 2026-08-10, from the field). Job-sourced traits stay checkable: jobs
+    -- are always worn. Membership is what matters -- bits know no slots.
+    local setLive = false;
+    if ctx.blu.currentSet ~= nil then
+        local live = ctx.blu.currentSet();
+        if #live == 20 then
+            local liveHas = {};
+            for i = 1, 20 do if live[i] ~= 0 then liveHas[live[i]] = true; end end
+            local lvlNow = (ctx.blu.effectiveLevel and ctx.blu.effectiveLevel()) or 75;
+            local plan = ctx.sets.resolveAtLevel(set, lvlNow, book);
+            setLive = true;
+            for i = 1, 20 do
+                local id = plan[i] or 0;
+                if id ~= 0 and book.learned(id) and not liveHas[id] then
+                    setLive = false;
+                    break;
+                end
+            end
+        end
+    end
 
     if not (kit.isFn(im, 'BeginChild') and kit.isFn(im, 'EndChild')) then return; end
     if im.BeginChild('bdxtraits', { 0, 0 }, false) then
@@ -157,10 +192,12 @@ function M.render(ctx)
                         kit.tip(im, ('Your set earns this: %s.'):format(modsText(ctx, a.mods)));
                     end
                 end
-                if v.deadWeight then
+                if v.deadWeight and v.blocker ~= nil then
+                    -- the job GIVES this tier (Henrik 2026-08-10: "it is not
+                    -- blocking you") -- say so, quietly, and no more
                     if kit.isFn(im, 'SameLine') then im.SameLine(); end
-                    kit.ctext(im, kit.COL.err, ('  your %d weight is blocked'):format(weight));
-                    kit.tip(im, M.blockedTip(v));
+                    kit.ctext(im, kit.COL.dim, ('  Active from %s'):format(jobLabel(v.blocker)));
+                    kit.tip(im, M.givenTip(v));
                 end
             elseif weight > 0 then
                 kit.ctext(im, kit.COL.warn, ('weight %d - below tier 1'):format(weight));
@@ -168,8 +205,16 @@ function M.render(ctx)
                 kit.ctext(im, kit.COL.dim, 'not in set');
             end
             -- the live 0x0AC bit is the referee: when the game disagrees with
-            -- the table, say so rather than keep asserting
-            if v.disagrees then
+            -- the table, say so rather than keep asserting -- but only where
+            -- the bit can KNOW: a set-sourced trait is only checkable while
+            -- the editing set is actually worn (setLive above)
+            local saysNo = false;
+            for _, a in ipairs(v.active) do
+                if a.live == false and (a.source == 'job' or setLive) then
+                    saysNo = true;
+                end
+            end
+            if saysNo then
                 if kit.isFn(im, 'SameLine') then im.SameLine(); end
                 kit.ctext(im, kit.COL.warn, '  (game says no)');
                 kit.tip(im, 'The game\'s own trait list does not have this trait up, though\n'
@@ -178,25 +223,20 @@ function M.render(ctx)
             end
 
             if open and info then
-                -- THE LADDER, with each rung in one of three states:
-                --   held    a job's rank already reaches it -- green, named,
-                --           and annotated with what the job ACTUALLY grants
-                --           (different modifier, so never left implied)
-                --   blocked the job holds this trait lower down; blue cannot
-                --           lift a job trait, so the rung is out of reach
-                --   open    the set's own, reached or not
+                -- THE LADDER, with each rung in one of two states (the CEXI
+                -- law -- nothing is out of reach anymore):
+                --   held  a job's rank already reaches it -- green, named,
+                --         and annotated with what the job ACTUALLY grants
+                --         (different modifier, so never left implied)
+                --   open  the set's own, reached or not -- job rank or no
                 for ti, tier in ipairs(info.tiers) do
                     local reached = weight >= tier.points;
-                    local heldBy, blockedBy = v.held[ti], v.blocked[ti];
+                    local heldBy = v.held[ti];
                     local note, col = '', kit.COL.dim;
                     if heldBy ~= nil then
                         col = kit.COL.ok;
                         note = ('   <- %s, rank %d: %s'):format(
                             jobLabel(heldBy), heldBy.rank, modsText(ctx, heldBy.mods));
-                    elseif blockedBy ~= nil then
-                        col = kit.COL.err;
-                        note = ('   -- out of reach: %s holds this trait at rank %d'):format(
-                            jobLabel(blockedBy), blockedBy.rank);
                     elseif reached then
                         col = kit.COL.ok;
                     end
@@ -204,14 +244,12 @@ function M.render(ctx)
                         ti, tier.points, modsText(ctx, tier.mods), note));
                     if heldBy ~= nil then
                         kit.tip(im, ('You already have tier %d of %s, from %s.\n\n'
-                            .. 'The job trait grants %s. The blue rung grants %s --\n'
+                            .. 'The job trait grants %s; the blue rung grants %s --\n'
                             .. 'the same trait through a different modifier, which is why\n'
-                            .. 'only the tier number compares. You get the job\'s version;\n'
-                            .. 'the blue one is discarded rather than added to it.'):format(
+                            .. 'only the tier number compares. Feeding weight PAST this\n'
+                            .. 'tier still climbs: a higher blue tier takes over.'):format(
                             ti, v.name, jobLabel(heldBy),
                             modsText(ctx, heldBy.mods), modsText(ctx, tier.mods)));
-                    elseif blockedBy ~= nil then
-                        kit.tip(im, M.blockedTip(v));
                     end
                 end
                 -- contributing spells -- the codex row grammar (left-click =
@@ -221,22 +259,37 @@ function M.render(ctx)
                     pcall(im.Indent, 14);
                     indented = true;
                 end
-                -- reference rows, like the codex (Henrik 2026-08-08): the
-                -- [in set] tag and the green tint report; assignment lives
-                -- in the Sets tab alone
+                -- the codex row grammar, right-click restored for the flat
+                -- kind (Henrik 2026-08-10: "you can just right click like
+                -- before"); a SLOTLIST assigns per slot, so its rows stay
+                -- reference-only and canAdd names the reason on hover
                 for _, id in ipairs(book.byTrait[cat] or {}) do
                     local s = book.spells[id];
                     local inSet = ctx.sets.contains(set, id) ~= nil;
                     local label = ('%s  w%d / %spts  Lv.%s%s'):format(
                         s.name, s.trait.weight, s.setPoints or '?', s.level or '?',
                         inSet and '  [in set]' or '');
-                    local lclick, _, hov = spellsui.listRow(ctx, id, iconSz, nameW,
+                    local lclick, rclick, hov = spellsui.listRow(ctx, id, iconSz, nameW,
                         st.selectedId == id, showIcon,
                         { label = label, dimColor = kit.COL.err });
                     if lclick then
                         st.selectedId = id;
                         st.detailOpen[1] = true;
                         st.detailFocus = true;
+                    end
+                    if rclick then
+                        if inSet then
+                            ctx.sets.removeId(set, id);
+                            st.addNote = ('Removed %s.'):format(s.name);
+                        else
+                            local okAdd, whyAdd = ctx.sets.canAdd(set, id, book, ctx.budgetMax());
+                            if okAdd then
+                                ctx.sets.add(set, id, book, ctx.budgetMax());
+                                st.addNote = ('Added %s.'):format(s.name);
+                            else
+                                st.addNote = ('Cannot add %s: %s.'):format(s.name, whyAdd);
+                            end
+                        end
                     end
                     spellsui.tooltip(ctx, id, hov);
                 end

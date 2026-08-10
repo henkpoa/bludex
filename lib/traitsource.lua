@@ -2,17 +2,17 @@
     bludex/lib/traitsource.lua -- WHERE A TRAIT CAME FROM.
 
     A job trait and a blue trait can be the same trait. When they are, the
-    server does NOT add them up and does NOT keep the better one -- it keeps
-    the JOB one and throws the blue one away outright, at any tier:
+    job GIVES you its tier for free -- and what the set's weight buys is
+    only what climbs PAST it.
 
-        // Player has the real job trait, making them ineligible
-        // TODO remove the trait and add the blu trait if it's stronger
-        if (PExistingTrait->getLevel() > 0) { add = false; break; }
-                                    -- src/map/utils/blueutils.cpp, CalculateTraits
-
-    That TODO is the whole point: the stronger-blue case was never written. So
-    a BLU/DRG who feeds Accuracy Bonus gets DRG's tier and nothing for the
-    weight -- the set points bought air. This module says so.
+    THE CEXI LAW (Henrik, from the field, 2026-08-10): a blue tier HIGHER
+    than the job's rank does apply -- invest the full weight for tier 2 and
+    you get tier 2, /DNC's tier 1 or not. Weight that only reaches a tier
+    the job already grants buys nothing (you had it anyway); nothing is
+    ever "out of reach". This SUPERSEDES the base-LSB reading (the
+    blueutils.cpp `TODO remove the trait and add the blu trait if it's
+    stronger` suggested stronger-blue was never written) -- the field
+    beats the public source, and the live 0x0AC bit stays the referee.
 
     THE COLLISION IS BY TRAIT ID, NOT BY LADDER. Category 24 is trait 15
     (Double Attack) at 2 points and trait 16 (Triple Attack) at 4; category 28
@@ -140,10 +140,10 @@ end
 -- `hasTrait(traitId)` is optional and returns true/false/nil.
 --
 --   active      what is genuinely up, tier order, each { source = 'job'|'set' }
---   suppressed  blue tiers a job trait killed, each with the job that did it
+--   suppressed  blue tiers redundant because the job already GRANTS them
 --   deadWeight  the set feeds this ladder and gets NOTHING back for it
 --   contested   a job holds some id in this ladder (so the ladder is contested
---               even when a different rung still gets through)
+--               even when a higher rung still gets through)
 function M.verdict(cat, weight, book, jobs, hasTrait)
     local info = book.traits.categories[cat];
     local out = {
@@ -151,21 +151,18 @@ function M.verdict(cat, weight, book, jobs, hasTrait)
         name = (info and info.name) or ('Trait ' .. tostring(cat)),
         weight = weight or 0,
         active = {}, suppressed = {},
-        held = {}, blocked = {},
+        held = {},
         deadWeight = false, contested = false,
     };
     if info == nil then return out; end
     jobs = jobs or {};
 
     -- THE LADDER, RUNG BY RUNG, against the jobs -- before the set is even
-    -- looked at. Two different states, and the difference is what Henrik
-    -- asked for (2026-08-07): a job does not just BLOCK a ladder, it puts you
-    -- at a height on it.
+    -- looked at. One state matters (the CEXI law, Henrik 2026-08-10 -- the
+    -- old 'blocked / out of reach' is gone, higher rungs are always open):
     --
-    --   held     the job's own rank reaches this rung: you already have this
-    --            much of the trait, from them
-    --   blocked  the job holds the trait but at a LOWER rank, so this rung is
-    --            simply out of reach -- blue cannot lift a job trait
+    --   held   the job's own rank reaches this rung: you already have this
+    --          much of the trait, from them, set or no set
     --
     -- Ranked PER RUNG, by that rung's own trait id, because a ladder is not
     -- always one trait: on category 24 a WAR at Double Attack rank 3 holds
@@ -176,12 +173,15 @@ function M.verdict(cat, weight, book, jobs, hasTrait)
         if e ~= nil then
             out.contested = true;
             if out.blocker == nil then out.blocker = e; end
-            if e.rank >= i then out.held[i] = e; else out.blocked[i] = e; end
+            if e.rank >= i then out.held[i] = e; end
         end
     end
 
     -- Descending rungs, exactly the order blueutils stages them in
-    -- (trait_points_needed DESC), so the top rung is judged first.
+    -- (trait_points_needed DESC), so the top rung is judged first. A rung
+    -- the job already HOLDS is redundant for the set (suppressed); a rung
+    -- ABOVE the job's rank comes through from the set -- blue climbs past
+    -- a job trait on CatsEyeXI (the field law).
     local staged = {};
     local eligible = 0;
     for i = #info.tiers, 1, -1 do
@@ -189,12 +189,11 @@ function M.verdict(cat, weight, book, jobs, hasTrait)
         local traitId = tier.traitId or info.traitId;
         if out.weight >= tier.points then
             eligible = eligible + 1;
-            local blocker = jobs[traitId];
-            if blocker ~= nil then
+            if out.held[i] ~= nil then
                 out.suppressed[#out.suppressed + 1] = {
                     tierIndex = i, points = tier.points, traitId = traitId,
-                    mods = tier.mods, job = blocker,
-                    held = out.held[i] ~= nil,
+                    mods = tier.mods, job = out.held[i],
+                    held = true,
                 };
             else
                 local beaten = false;
@@ -260,11 +259,14 @@ function M.verdict(cat, weight, book, jobs, hasTrait)
     return out;
 end
 
--- WHICH RUNGS OF A LADDER A JOB HAS TAKEN, regardless of what the set feeds.
--- verdict's `suppressed` is this filtered to the rungs the set actually
--- reached; this is the whole picture, which is what a spell tooltip needs
--- (the spell is usually not in the set yet when you are deciding).
--- Returns { blocks = {{tierIndex, traitId, job}}, total = #tiers }.
+-- WHICH RUNGS OF A LADDER A JOB ALREADY GRANTS, regardless of what the set
+-- feeds (the CEXI law: only rungs the job's rank REACHES are redundant --
+-- everything above them is open to the set). verdict's `suppressed` is
+-- this filtered to the rungs the set actually reached; this is the whole
+-- picture, which is what a spell tooltip needs (the spell is usually not
+-- in the set yet when you are deciding).
+-- Returns { blocks = {{tierIndex, traitId, job}}, total = #tiers } --
+-- `all` = the job grants every rung, so feeding this ladder buys nothing.
 function M.ladderBlocks(cat, book, jobs)
     local info = book.traits.categories[cat];
     local out = { blocks = {}, total = 0 };
@@ -272,7 +274,7 @@ function M.ladderBlocks(cat, book, jobs)
     out.total = #info.tiers;
     for i, tier in ipairs(info.tiers) do
         local e = (jobs or {})[tier.traitId or info.traitId];
-        if e ~= nil then
+        if e ~= nil and e.rank >= i then
             out.blocks[#out.blocks + 1] = {
                 tierIndex = i, traitId = tier.traitId or info.traitId, job = e,
             };

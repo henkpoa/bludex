@@ -153,21 +153,22 @@ function M.tooltip(ctx, id, hovered, extra)
                 add(('   %d - max rank reached'):format(weight), kit.COL.ok);
             end
         end
-        -- THE COLLISION, where the decision is made. A job trait discards the
-        -- blue one outright, so weight fed into a ladder your jobs already
-        -- hold is spent for nothing -- worth knowing before the spell goes in.
+        -- THE JOB'S HEAD START, where the decision is made (CEXI law, field
+        -- 2026-08-10): a job grants its tier of the ladder for free; weight
+        -- that only reaches that tier buys nothing new, and anything above
+        -- it is still the set's to earn -- worth knowing before it goes in.
         local bl = M.ladderBlocks(ctx, cat);
         if bl ~= nil and #bl.blocks > 0 then
             local j = bl.blocks[1].job;
             local who = ('%s (%s job)'):format(j.code or '?',
                 j.slot == 'sub' and 'sub' or 'main');
             if bl.all then
-                add(('   BLOCKED: %s already has this at tier %d'):format(who, j.rank),
-                    kit.COL.err);
-                add('   the blue trait is discarded, at any tier', kit.COL.err);
+                add(('   %s already grants every tier of this ladder'):format(who),
+                    kit.COL.warn);
+                add('   feeding it buys nothing - the weight is spare', kit.COL.warn);
             else
-                add(('   %s holds tier %d of this ladder - that rung is discarded'):format(
-                    who, bl.blocks[1].tierIndex), kit.COL.warn);
+                add(('   %s grants tier %d for free - weight counts past it'):format(
+                    who, j.rank), kit.COL.dim);
             end
         end
     end
@@ -305,19 +306,20 @@ function M.detail(ctx, id)
     if s.trait then
         kit.kv(im, 'Trait', ('%s  (weight %d)'):format(
             book.traitName(s.trait.category), s.trait.weight));
-        -- and whether that weight can reach anything: a job trait of the same
-        -- name discards the blue one outright rather than stacking with it
+        -- and where that weight lands: a job grants its tier of the ladder
+        -- for free, and only weight climbing PAST it earns anything new
+        -- (the CEXI law, field 2026-08-10)
         local bl = M.ladderBlocks(ctx, s.trait.category);
         if bl ~= nil and #bl.blocks > 0 then
             local j = bl.blocks[1].job;
             local who = ('%s (%s job)'):format(j.code or '?',
                 j.slot == 'sub' and 'sub' or 'main');
-            kit.wrapped(im, bl.all and kit.COL.err or kit.COL.warn,
+            kit.wrapped(im, bl.all and kit.COL.warn or kit.COL.dim,
                 bl.all
-                    and ('Blocked: %s already has %s at tier %d. The server keeps the job trait and discards the blue one, at any tier - weight fed here buys nothing. (Only the tier compares: the two grant different modifiers.)'):format(
-                        who, book.traitName(s.trait.category), j.rank)
-                    or ('%s holds tier %d of %s; that rung is discarded, the higher one still applies.'):format(
-                        who, bl.blocks[1].tierIndex, book.traitName(s.trait.category)));
+                    and ('%s already grants every tier of %s - weight fed here buys nothing new. (Only the tier compares: the two grant different modifiers.)'):format(
+                        who, book.traitName(s.trait.category))
+                    or ('%s grants tier %d of %s for free; weight past that tier still climbs.'):format(
+                        who, j.rank, book.traitName(s.trait.category)));
         end
     end
     if s.skillchain and #s.skillchain > 0 then
@@ -700,6 +702,15 @@ function M.render(ctx)
     f.stat = f.stat or {};
     st.detailOpen = st.detailOpen or { false };
 
+    -- THE SLOTLIST MARKER (Henrik 2026-08-10: "mark this out clearly"):
+    -- a slotlist assigns per slot, so codex right-clicks cannot add into it
+    if ctx.sets ~= nil and ctx.sets.kindOf ~= nil
+        and ctx.sets.kindOf(st.editingSet) == 'timeline' then
+        kit.wrapped(im, kit.COL.warn, 'Editing a Slotlist set: spells are assigned '
+            .. 'PER SLOT in the Sets tab (mark a slot, pick from Assign). '
+            .. 'Right-click here only REMOVES.');
+    end
+
     -- filter row -- combo widths measured over every label they can show
     -- (the kit law: a hardcoded width clips a trailing character; "All eleme").
     local function comboW(choices, allLabel)
@@ -864,14 +875,33 @@ function M.render(ctx)
                     pcall(im.SetCursorPosY, rowTop);
                 end
             end
-            -- the codex is a REFERENCE (Henrik 2026-08-08): left-click for
-            -- Spell Info, hover for the tooltip -- and that is all. Set
-            -- mutation lives in the Sets tab's Assign pane alone.
-            local lclick, _, hov = M.listRow(ctx, id, iconSz, nameW, st.selectedId == id, showIcon);
+            -- the row grammar, right-click restored for the flat kind
+            -- (Henrik 2026-08-10: "you can just right click like before").
+            -- A SLOTLIST assigns per slot: right-click still REMOVES, and
+            -- an add is refused with the reason pointing at the Sets tab
+            -- (setmodel.canAdd names it).
+            local lclick, rclick, hov = M.listRow(ctx, id, iconSz, nameW, st.selectedId == id, showIcon);
             if lclick then
                 st.selectedId = id;
                 st.detailOpen[1] = true;
                 st.detailFocus = true;
+            end
+            if rclick and ctx.sets ~= nil then
+                local eset = st.editingSet;
+                local s2 = book.spells[id];
+                if ctx.sets.contains(eset, id) then
+                    ctx.sets.removeId(eset, id);
+                    st.addNote = ('Removed %s.'):format(s2 and s2.name or id);
+                else
+                    local okAdd, whyAdd = ctx.sets.canAdd(eset, id, book,
+                        ctx.budgetMax and ctx.budgetMax() or nil);
+                    if okAdd then
+                        ctx.sets.add(eset, id, book, ctx.budgetMax and ctx.budgetMax() or nil);
+                        st.addNote = ('Added %s.'):format(s2 and s2.name or id);
+                    else
+                        st.addNote = ('Cannot add %s: %s.'):format(s2 and s2.name or id, whyAdd);
+                    end
+                end
             end
             M.tooltip(ctx, id, hov);
         end

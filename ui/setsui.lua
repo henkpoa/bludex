@@ -28,25 +28,20 @@ local LEFT_W  = 210;
 local MID_W   = 330;
 
 -- ---------------------------------------------------------------------------
--- the three systems a set can be (docs/set-types-plan.md). The blurbs are
--- the chooser's copy -- Henrik's recommendations, in plain words. Order is
--- canonical; the chooser floats cfg.newSetKind to the top.
+-- the two systems a set can be (docs/set-types-plan.md; Henrik 2026-08-10,
+-- second field round: flat and Lvl Subsets are ONE kind -- "a level set
+-- list is basically a flat list but additional level sync opportunity").
+-- The blurbs are the chooser's copy. Order is canonical; the chooser
+-- floats cfg.newSetKind to the top.
 -- ---------------------------------------------------------------------------
-M.KIND_ORDER = { 'flat', 'levels', 'timeline' };
+M.KIND_ORDER = { 'levels', 'timeline' };
 M.KIND_INFO = {
-    flat = {
-        label = 'Flat',
-        blurb = 'One spell per slot, applied as-is.\n'
-            .. 'Recommended for level 75 when you are not interested in\n'
-            .. 'level sync. The simplest kind, and the one every other\n'
-            .. 'tool speaks.',
-    },
     levels = {
-        label = 'Lvl Subsets',
-        blurb = 'A dedicated build per level range (31-40, 41-50, ...)\n'
-            .. 'under one name. Recommended when you want dedicated sets\n'
-            .. 'per level range. Falls back to the base build wherever no\n'
-            .. 'range is built.',
+        label = 'Flat',
+        blurb = 'One spell per slot, applied as-is -- the simplest kind.\n'
+            .. 'Add dedicated builds per level range (level sync) under\n'
+            .. 'the same name whenever you want them; the base build\n'
+            .. 'answers wherever no range is built.',
     },
     timeline = {
         label = 'Slotlist',
@@ -56,6 +51,7 @@ M.KIND_INFO = {
             .. 'capable kind: one set can plan the whole climb to 75.',
     },
 };
+M.KIND_INFO.flat = M.KIND_INFO.levels;   -- the old key, kept for callers
 
 -- ---------------------------------------------------------------------------
 -- the set actions -- ONE definition each, shared by the Sets tab buttons and
@@ -864,9 +860,10 @@ local function chainRow(ctx, slot, shown, liveIds, locked, nameW)
     local floor = ctx.sets.bracketFloor(slot);
     local selected = st.assignSlot == slot;
 
-    local pushed = false;
-    if kit.isFn(im, 'PushID') then pcall(im.PushID, 'bdxchain' .. slot); pushed = true; end
-    if kit.litButton(im, '+', selected, 22, 22) then
+    -- THE WHOLE ROW IS THE MARK (Henrik 2026-08-10, from the field: "remove
+    -- the + ... just let me mark the whole slot"): clicking anywhere on the
+    -- slot selects it as the Assign target; clicking again deselects.
+    local function markSlot()
         if selected then
             st.assignSlot = nil;
         else
@@ -874,15 +871,16 @@ local function chainRow(ctx, slot, shown, liveIds, locked, nameW)
             st.rightTab = 'Assign';
         end
     end
-    kit.tip(im, selected
-        and 'This slot is the Assign target (right pane). Click to deselect.'
-        or 'Assign into this slot - the spell picker opens on the right.');
-    if pushed and kit.isFn(im, 'PopID') then pcall(im.PopID); end
-    if kit.isFn(im, 'SameLine') then im.SameLine(); end
 
     if #chain == 0 then
-        kit.ctext(im, kit.COL.dim, locked
-            and ('(empty - opens at Lv.%d)'):format(floor) or '(empty)');
+        local elabel = (locked and ('(empty - opens at Lv.%d)'):format(floor) or '(empty)')
+            .. ('##bdxslot%d'):format(slot);
+        if tintedSelectable(im, kit.COL.dim, elabel, selected) then
+            markSlot();
+        end
+        kit.tip(im, selected
+            and 'This slot is the Assign target (right pane). Click to deselect.'
+            or 'Click to mark this slot - the spell picker opens on the right.');
         return;
     end
 
@@ -895,11 +893,19 @@ local function chainRow(ctx, slot, shown, liveIds, locked, nameW)
 
     if activeIdx == nil then
         local lo = ctx.sets.entryRange(set, slot, 1);
-        kit.ctext(im, kit.COL.dim, ('(first at Lv.%d)'):format(lo or floor));
+        local flabel = ('(first at Lv.%d)##bdxslot%d'):format(lo or floor, slot);
+        if tintedSelectable(im, kit.COL.dim, flabel, selected) then
+            markSlot();
+        end
+        kit.tip(im, 'Click to mark this slot for Assign.');
     else
         local e = chain[activeIdx];
         if e.id == 0 then
-            kit.ctext(im, kit.COL.dim, ('(empty from Lv.%d)'):format(e.from));
+            local mlabel = ('(empty from Lv.%d)##bdxslot%d'):format(e.from, slot);
+            if tintedSelectable(im, kit.COL.dim, mlabel, selected) then
+                markSlot();
+            end
+            kit.tip(im, 'Click to mark this slot for Assign.');
         else
             local s = book.spells[e.id];
             local lo, hi = ctx.sets.entryRange(set, slot, activeIdx);
@@ -924,9 +930,10 @@ local function chainRow(ctx, slot, shown, liveIds, locked, nameW)
             local lclick, rclick, hov = spellsui.listRow(ctx, e.id, 24, nameW,
                 selected, true, { label = label, textCol = headCol });
             if lclick then
+                -- the click MARKS the slot (Henrik 2026-08-10); the spell
+                -- becomes the info target without forcing the window open
+                markSlot();
                 st.selectedId = e.id;
-                st.detailOpen[1] = true;
-                st.detailFocus = true;
             end
             if rclick then
                 local okR, whyR = ctx.sets.removeEntry(set, slot, activeIdx, book);
@@ -935,7 +942,7 @@ local function chainRow(ctx, slot, shown, liveIds, locked, nameW)
                 return;                            -- the chain just changed
             end
             spellsui.tooltip(ctx, e.id, hov,
-                { { 'right-click: remove this entry', kit.COL.dim } });
+                { { 'click: mark the slot for Assign - right-click: remove this entry', kit.COL.dim } });
         end
     end
 
@@ -1319,63 +1326,10 @@ local function flatPlanner(ctx)
         end
     end
 
-    -- what the CLIENT has set right now, for the per-row live tags
-    local liveIds = nil;
-    local live = ctx.blu.currentSet();
-    if #live == 20 then
-        liveIds = {};
-        for i = 1, 20 do if live[i] ~= 0 then liveIds[live[i]] = true; end end
-    end
-
-    kit.ctext(im, kit.COL.head, 'Slots');
-    kit.tip(im, 'Named rows, like the Codex: left-click for Spell Info,\nright-click removes from the set.');
-    if kit.isFn(im, 'Separator') then im.Separator(); end
-    local nameW = math.max(kit.availWidth(im, MID_W) - 24 - 40, 120);
-    local lvl = ctx.blu.effectiveLevel();
-    local shown = 0;
-    for i = 1, 20 do
-        local id = set.ids[i] or 0;
-        if id ~= 0 then
-            shown = shown + 1;
-            local s = book.spells[id];
-            local liveTag = '';
-            if liveIds ~= nil and not liveIds[id] then
-                -- a sync-disabled spell is not WAITING for an apply -- the
-                -- game holds it and returns it when the sync ends
-                if lvl ~= nil and lvl < 75 and s ~= nil
-                    and s.level ~= nil and s.level > lvl then
-                    liveTag = '  (disabled by level sync)';
-                else
-                    liveTag = '  (not active yet)';
-                end
-            end
-            local label = ((s ~= nil) and s.name or ('#' .. id)) .. liveTag;
-            local lclick, rclick, hov = spellsui.listRow(ctx, id, 24, nameW,
-                st.selectedId == id, true, { label = label });
-            if lclick then
-                st.selectedId = id;
-                st.detailOpen[1] = true;
-                st.detailFocus = true;
-            end
-            if rclick then
-                ctx.sets.removeSlot(set, i);
-                st.applyNote = nil;
-            end
-            spellsui.tooltip(ctx, id, hov);
-        end
-    end
-    if shown == 0 then
-        kit.ctext(im, kit.COL.dim, 'The set is empty - add spells from the Codex or Traits.');
-    else
-        local free = slotMax - ctx.sets.count(set);
-        if free > 0 then
-            kit.ctext(im, kit.COL.dim, ('%d free slot%s'):format(free, free == 1 and '' or 's'));
-        end
-    end
-
     -- meters: the BUILD against ITS OWN allowance -- a Lv.41 draft against
-    -- the Lv.41 budget and slots, everything else against the live budget
-    if kit.isFn(im, 'Separator') then im.Separator(); end
+    -- the Lv.41 budget and slots, everything else against the live budget.
+    -- METERS AND ACTIONS SIT ABOVE THE LIST (Henrik 2026-08-10, from the
+    -- field), same as the slotlist editor.
     local cap, src;
     if set.draft and set.level ~= nil then
         cap, src = rungBudget(ctx, set.level);
@@ -1453,6 +1407,60 @@ local function flatPlanner(ctx)
         kit.ctext(im, kit.COL.warn, 'BLU is not your main or sub job.');
     end
     if st.applyNote then kit.wrapped(im, kit.COL.dim, st.applyNote); end
+
+    -- the spell list, below everything that describes and acts on it
+    if kit.isFn(im, 'Separator') then im.Separator(); end
+    -- what the CLIENT has set right now, for the per-row live tags
+    local liveIds = nil;
+    local live = ctx.blu.currentSet();
+    if #live == 20 then
+        liveIds = {};
+        for i = 1, 20 do if live[i] ~= 0 then liveIds[live[i]] = true; end end
+    end
+    kit.ctext(im, kit.COL.head, 'Slots');
+    kit.tip(im, 'Named rows, like the Codex: left-click for Spell Info,\nright-click removes from the set.');
+    local nameW = math.max(kit.availWidth(im, MID_W) - 24 - 40, 120);
+    local lvl = ctx.blu.effectiveLevel();
+    local shown = 0;
+    for i = 1, 20 do
+        local id = set.ids[i] or 0;
+        if id ~= 0 then
+            shown = shown + 1;
+            local s = book.spells[id];
+            local liveTag = '';
+            if liveIds ~= nil and not liveIds[id] then
+                -- a sync-disabled spell is not WAITING for an apply -- the
+                -- game holds it and returns it when the sync ends
+                if lvl ~= nil and lvl < 75 and s ~= nil
+                    and s.level ~= nil and s.level > lvl then
+                    liveTag = '  (disabled by level sync)';
+                else
+                    liveTag = '  (not active yet)';
+                end
+            end
+            local label = ((s ~= nil) and s.name or ('#' .. id)) .. liveTag;
+            local lclick, rclick, hov = spellsui.listRow(ctx, id, 24, nameW,
+                st.selectedId == id, true, { label = label });
+            if lclick then
+                st.selectedId = id;
+                st.detailOpen[1] = true;
+                st.detailFocus = true;
+            end
+            if rclick then
+                ctx.sets.removeSlot(set, i);
+                st.applyNote = nil;
+            end
+            spellsui.tooltip(ctx, id, hov);
+        end
+    end
+    if shown == 0 then
+        kit.ctext(im, kit.COL.dim, 'The set is empty - add spells from the Codex or Traits.');
+    else
+        local free = slotMax - ctx.sets.count(set);
+        if free > 0 then
+            kit.ctext(im, kit.COL.dim, ('%d free slot%s'):format(free, free == 1 and '' or 's'));
+        end
+    end
 end
 
 -- ---------------------------------------------------------------------------
@@ -1659,20 +1667,21 @@ local function statsPanel(ctx)
         -- the timeline rewrite of this tab had lost it
         local v = ctx.verdict and ctx.verdict(ev.cat, ev.weight) or nil;
         if v ~= nil and v.deadWeight and v.blocker ~= nil then
-            kit.ctext(im, kit.COL.err, ('%s: blocked by %s'):format(
-                ev.name, v.blocker.code or 'your job'));
-            kit.tip(im, ('%s already grants %s (tier %d). The server keeps the JOB\n'
-                .. 'trait and throws the blue one away whatever its tier, so the %d\n'
-                .. 'weight this set feeds the ladder buys nothing.\n\n'
-                .. 'Only the tier compares between them -- the job trait and the blue\n'
-                .. 'rungs grant different modifiers. See the Traits tab.'):format(
+            -- given, not blocked (the CEXI law, field 2026-08-10): the job
+            -- grants this tier already; the weight buys nothing NEW, and a
+            -- higher tier is still reachable for its full weight
+            kit.ctext(im, kit.COL.dim, ('%s: from %s (rank %d)'):format(
+                ev.name, v.blocker.code or 'your job', v.blocker.rank));
+            kit.tip(im, ('%s grants %s at rank %d whatever this set does, so the %d\n'
+                .. 'weight buys nothing new. Feeding PAST that tier still climbs --\n'
+                .. 'a higher blue tier takes over. See the Traits tab.'):format(
                 v.blocker.name or 'Your job', ev.name, v.blocker.rank, ev.weight));
         elseif ev.tier then
             kit.ctext(im, kit.COL.ok, ('%s: %s'):format(ev.name, ev.tierText));
         else
             kit.ctext(im, kit.COL.dim, ('%s: below tier 1'):format(ev.name));
         end
-        if ev.nextPoints and not (v and v.deadWeight) then
+        if ev.nextPoints then
             kit.ctext(im, kit.COL.dim, ('   %d more weight -> %s'):format(
                 ev.nextPoints - ev.weight, ev.nextText or 'next tier'));
         end
@@ -1686,7 +1695,7 @@ local function assignPane(ctx)
     local im, st, book = ctx.im, ctx.state, ctx.book;
     local set = st.editingSet;
     if st.assignSlot == nil then
-        kit.ctext(im, kit.COL.dim, 'Pick a target first: the + on a slot row\nin the middle column.');
+        kit.wrapped(im, kit.COL.dim, 'Pick a target first: click a slot row in the middle column to mark it.');
         return;
     end
     local slot = st.assignSlot;
@@ -1729,7 +1738,8 @@ local function assignPane(ctx)
     if st.addNote then kit.ctext(im, kit.COL.dim, st.addNote); end
     if kit.isFn(im, 'Separator') then im.Separator(); end
 
-    st.assignFilter = st.assignFilter or { text = { '' }, category = {} };
+    st.assignFilter = st.assignFilter or { text = { '' }, category = {}, trait = {} };
+    st.assignFilter.trait = st.assignFilter.trait or {};
     if kit.isFn(im, 'SetNextItemWidth') then im.SetNextItemWidth(140); end
     if kit.isFn(im, 'InputText') then
         pcall(im.InputText, '##bdxassignsearch', st.assignFilter.text, 48);
@@ -1738,10 +1748,23 @@ local function assignPane(ctx)
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     kit.combo(im, '##bdxassigncat', st.assignFilter.category, book.categories, 'All types',
         kit.measure(im, book.categories, 80) + 24);
+    -- the TRAIT filter (Henrik 2026-08-10: with slotlist adds living here,
+    -- picking by trait has to live here too -- per slot)
+    local traitNames = {};
+    for _, t in ipairs(book.traitChoices) do traitNames[#traitNames + 1] = t.name; end
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    kit.combo(im, '##bdxassigntrait', st.assignFilter.trait, traitNames, 'All traits',
+        kit.measure(im, traitNames, 90) + 24);
+    kit.tip(im, 'Only spells feeding one trait ladder - build a trait\nslot by slot.');
+    local traitCat = nil;
+    for _, t in ipairs(book.traitChoices) do
+        if t.name == st.assignFilter.trait.value then traitCat = t.cat; end
+    end
 
     local ids = book.filter({
         text = st.assignFilter.text[1],
         category = st.assignFilter.category.value,
+        traitCat = traitCat,
     });
     local sp = book.spells;
     table.sort(ids, function(a, b)

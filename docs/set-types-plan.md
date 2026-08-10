@@ -10,6 +10,24 @@ has a **kind**, chosen when the set is created and fixed for its life:
 | `levels` | a build per level band under one name, falling back to the flat base build where no band is defined | "Recommended when you want dedicated sets per level range. Falls back to the base build where no range is built." |
 | `timeline` | a level-ordered chain of spells per slot (docs/timeline-sets-plan.md) | "Recommended when you want granular control over which spells go to which slot at specific levels. The most capable." |
 
+> **AMENDED 2026-08-10, second field round (Henrik): TWO kinds, not three.**
+> "A level set list is basically a flat list but additional level sync
+> opportunity" — so `flat` and `levels` are ONE kind now. The merged kind
+> keeps the `levels` KEY (every stored set, sets3 line, share line and
+> backup reads unchanged; `'flat'` stays a decode alias, folded by
+> `kindOf`/the v4 adopt) and wears the LABEL "Flat": a set with no level
+> builds is the flat set it always was, and any set can grow builds under
+> its name whenever. Everything below that says "three" reads as two.
+>
+> Same round: **a slotlist takes adds per slot only** — `canAdd` refuses
+> the codex/traits convenience add by name, both tabs banner the fact
+> while a slotlist is being edited, the codex/traits right-click add is
+> RESTORED for the merged kind, the whole slot row is the Assign mark
+> (the `+` button is gone), and the Assign pane gained a trait filter.
+> And the TRAIT LAW changed with the field: a job trait GIVES its tier
+> (never "blocks"), and a higher blue tier still applies for its full
+> weight — see lib/traitsource.lua's header.
+
 ## 1. The shapes
 
 ```lua

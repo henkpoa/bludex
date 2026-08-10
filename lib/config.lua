@@ -20,15 +20,15 @@ end
 -- mutates what it is given.
 function M.defaults()
     return TT{
-        -- Saved sets, KIND-shaped (setsModelVer 3, docs/set-types-plan.md):
-        --   { kind='flat',     name, ids={20} }
-        --   { kind='levels',   name, ids, builds={{level,ids}..}, rule? }
+        -- Saved sets, KIND-shaped (setsModelVer 4, docs/set-types-plan.md):
+        --   { kind='levels',   name, ids (the base build),
+        --                      builds={{level,ids}..}, rule? }   -- 'Flat'
         --   { kind='timeline', name, builtFor, chains, ids mirror, backups }
-        -- host.adoptCfg stamps a missing kind by shape; nothing converts
-        -- (a v1 entry stays flat).
+        -- host.adoptCfg stamps a missing kind by shape; 'flat' folds into
+        -- the merged kind (v4); nothing else converts.
         sets = TT{ },
-        newSetKind = 'flat',      -- the type the New chooser offers first
-                                  -- ('flat' | 'levels' | 'timeline')
+        newSetKind = 'levels',    -- the type the New chooser offers first
+                                  -- ('levels' = the merged flat kind | 'timeline')
         budgetOverride = 0,       -- shown when the live budget is unavailable
         applyDelay = 1.1,         -- seconds between set-spell packets
         applyMode = 'safe',       -- 'safe' (client-paced) | 'fast' (injected)
@@ -48,10 +48,11 @@ function M.defaults()
         codexDensity = 'normal',  -- codex list size: 'big'|'medium'|'normal'|'compact'
         traitsDensity = 'normal', -- traits spell-row size, same four choices
         setsLayout = 'grid',      -- RETIRED (the grid is gone); kept one release
-        -- Set model version: 3 = the three kinds (2 was timeline chains).
+        -- Set model version: 4 = flat+levels merged (3 was three kinds, 2
+        -- timeline chains).
         -- Bumped when the stored meaning changes; adoptCfg migrates older
         -- shapes in place.
-        setsModelVer = 3,
+        setsModelVer = 4,
         -- The point budget: cap = base(level) + learnedBonus + merits, with
         -- merits counting only at level 75. Bumped when the meaning changes,
         -- so readings taken under older rules are discarded, not reused.

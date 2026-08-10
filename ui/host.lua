@@ -85,13 +85,17 @@ local function adoptCfg(deps)
     for _, entry in ipairs(deps.cfg.sets) do
         if deps.sets.upgrade(entry, deps.book) then migrated = true; end
     end
-    if migrated or (deps.cfg.setsModelVer or 0) < 3 then
-        deps.cfg.setsModelVer = 3;
+    if migrated or (deps.cfg.setsModelVer or 0) < 4 then
+        -- v4 (2026-08-10, second field round): flat and levels are ONE
+        -- kind -- upgrade() folds stored flat sets in; nothing else moves
+        deps.cfg.setsModelVer = 4;
         if deps.save then deps.save(); end
     end
-    -- the chooser's default must always be a real kind
-    if deps.sets.KIND_LABELS[deps.cfg.newSetKind] == nil then
-        deps.cfg.newSetKind = 'flat';
+    -- the chooser's default must always be a real kind ('flat' folds into
+    -- the merged kind)
+    if deps.cfg.newSetKind == 'flat' then deps.cfg.newSetKind = 'levels'; end
+    if deps.cfg.newSetKind ~= 'levels' and deps.cfg.newSetKind ~= 'timeline' then
+        deps.cfg.newSetKind = 'levels';
     end
     -- the replan setting replaces the retired adds-only autoRestore; the
     -- meaning changed (auto may now UNSET), so everyone starts at 'manual'
@@ -245,9 +249,10 @@ local function followedSet(deps)
     return nil;
 end
 
--- The ARMED rule: the followed set's, and only when that set is the LEVELS
--- kind -- a flat set plans the same spells at every level, and a timeline
--- set re-plans (checkReplan). 'manual' = nothing armed.
+-- The ARMED rule: the followed set's, for the merged flat/levels kind --
+-- ruleOf derives Restore for a build-less set (the old flat auto-restore,
+-- back as the shape's default) and Switch once builds exist; a timeline
+-- set re-plans instead (checkReplan). 'manual' = nothing armed.
 local function armedRule(deps)
     local entry = followedSet(deps);
     if entry == nil or deps.sets.kindOf(entry) ~= 'levels' then

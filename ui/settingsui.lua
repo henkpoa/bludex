@@ -193,13 +193,12 @@ function M.render(ctx)
 
     -- WHICH KIND COMES FIRST (docs/set-types-plan.md 3): the New chooser
     -- lists this one on top, preselected. It never converts a set.
-    local KINDS = { 'flat', 'levels', 'timeline' };
+    local KINDS = { 'levels', 'timeline' };
     kit.helpLabel(im, 'New sets start as:',
         'The set type the New chooser offers first.\n\n'
-        .. 'Flat: one spell per slot, applied as-is. For level 75 when\n'
-        .. 'level sync does not interest you.\n'
-        .. 'Lvl Subsets: a dedicated build per level range, falling back\n'
-        .. 'to the base build where none is built.\n'
+        .. 'Flat: one spell per slot, applied as-is - and you can add\n'
+        .. 'dedicated builds per level range (level sync) under the same\n'
+        .. 'name whenever you want them.\n'
         .. 'Slotlist: a list of spells per slot, each taking over at its\n'
         .. 'own level - the most granular control.\n\n'
         .. 'You still choose per set - this only orders the chooser.');

@@ -97,10 +97,27 @@ flat/levels keep the sorted law -- and applyDiff, applyState, /bdx
 apply and checkReplan all speak it. The quiet-flat rule survives in its
 true form: only a purely-removals difference stays silent; a spell
 MOVING slots is a real change and nudges/auto-applies. Regression
-pinned in smoke (the Moved fixture). Still queued: (d) the job-traits
-field round, (e) the field checklist below (§0), once per kind, plus
-one live band-crossing under Lvl Set Switch, one conversion + undo
-round-trip, and one share line through real Discord and back.
+pinned in smoke (the Moved fixture). SECOND FIELD ROUND (same day,
+Henrik in game): **TWO KINDS, NOT THREE** -- flat and Lvl Subsets
+merged (plan doc amendment): the merged kind keeps the `levels` key,
+wears the label "Flat", and every set can grow level builds under its
+name; the v4 adopt folds stored flat sets in, `'flat'` stays a decode
+alias on every wire. **THE TRAIT LAW FLIPPED BY FIELD FACT**: a job
+trait GIVES its tier (never "blocks") and a higher blue tier still
+applies for its full weight -- CEXI beats the base-LSB reading
+(traitsource's header records the reversal); the UI speaks "Active
+from DNC (sub job)" instead of red "blocked", no rung is "out of
+reach", and "(game says no)" only shows where the 0x0AC bit can KNOW
+(job-sourced, or the editing set actually worn). Codex and Traits
+right-click add RESTORED for the merged kind; a SLOTLIST refuses adds
+by name (per-slot only), both tabs banner it, the whole slot row is
+the Assign mark (the + is gone), and Assign gained a trait filter
+(build a trait slot by slot). Actions sit above the list in both
+editors. Still queued: (d) the job-traits field round -- now including
+one in-game confirmation that a higher blue tier really does apply
+over a sub-job trait, (e) the field checklist below (§0), once per
+kind, plus one live band-crossing under Lvl Set Switch, one conversion
++ undo round-trip, and one share line through real Discord and back.
 
 ---
 
