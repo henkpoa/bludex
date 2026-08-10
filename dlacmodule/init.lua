@@ -67,8 +67,10 @@ end
 --                     chain  = ','-joined entries; entry = id@from
 --                     (id 0 = the deliberate empty marker).
 --   'sets3' (v3)      THE TRUTH -- every set, kind-tagged (see the codec).
---   'sets2bak'        backups, per line: name<TAB>ts<TAB>builtFor<TAB>chains
---                     (newest first, <= 5 per set name; timeline sets only).
+--   'sets2bak'        backups, one per line, newest first, <= 5 per set
+--                     name -- KIND-SHAPED since 2026-08-10 (see the
+--                     encodeBackups grammar; a timeline backup's line is
+--                     unchanged from the v2 days).
 --   'lastApplied2'    'level<TAB>id,id,...' -- the level the apply was FOR.
 --                     'lastApplied' (bare csv) stays dual-written.
 --
@@ -309,15 +311,36 @@ function codec.decodeSets3(s)
 end
 
 -- backups travel on their own key, attached to sets by NAME (names are the
--- identity keys everywhere else too -- activeSetName restores by them)
+-- identity keys everywhere else too -- activeSetName restores by them).
+-- KIND-SHAPED since 2026-08-10, discriminated by the THIRD token:
+--   name<TAB>ts<TAB>builtFor<TAB>chains       a timeline backup (unchanged)
+--   name<TAB>ts<TAB>flat<TAB>id,id,...        a flat backup
+--   name<TAB>ts<TAB>levels<TAB>ids[<TAB>rule:key][<TAB>41:ids]...
+-- (the old reader took the third token as a number; no field store carries
+-- the new lines, so nothing older ever has to read one)
 function codec.encodeBackups(list)
     local recs = {};
     for _, e in ipairs(list or {}) do
         local name = tostring(e.name or '?'):gsub('[\t\n]', ' ');
         for _, b in ipairs(e.backups or {}) do
-            recs[#recs + 1] = name .. '\t' .. tostring(tonumber(b.ts) or 0)
-                .. '\t' .. tostring(tonumber(b.builtFor) or 75)
-                .. '\t' .. codec.encodeChains(b.chains);
+            local head = name .. '\t' .. tostring(tonumber(b.ts) or 0);
+            if b.chains ~= nil then
+                recs[#recs + 1] = head
+                    .. '\t' .. tostring(tonumber(b.builtFor) or 75)
+                    .. '\t' .. codec.encodeChains(b.chains);
+            elseif b.builds ~= nil or b.rule ~= nil then
+                local parts = { head, 'levels', codec.encodeIds(b.ids) };
+                if b.rule ~= nil then
+                    parts[#parts + 1] = 'rule:' .. tostring(b.rule);
+                end
+                for _, t in ipairs(b.builds or {}) do
+                    parts[#parts + 1] = ('%d:%s'):format(
+                        tonumber(t.level) or 71, codec.encodeIds(t.ids));
+                end
+                recs[#recs + 1] = table.concat(parts, '\t');
+            else
+                recs[#recs + 1] = head .. '\tflat\t' .. codec.encodeIds(b.ids);
+            end
         end
     end
     return table.concat(recs, '\n');
@@ -344,17 +367,37 @@ function codec.attachBackups(list, s)
     end
     local cap = backupCap();
     for line in tostring(s or ''):gmatch('[^\n]+') do
-        local name, ts, bf, chains = line:match('^(.-)\t(%d+)\t(%d+)\t(.*)$');
+        local name, ts, third, rest = line:match('^(.-)\t(%d+)\t([^\t]*)\t?(.*)$');
         local e = name ~= nil and byName[name] or nil;
-        if e ~= nil then
-            e.backups = e.backups or {};
-            if #e.backups < cap then
-                e.backups[#e.backups + 1] = {
-                    ts = tonumber(ts) or 0,
-                    name = name,
-                    builtFor = tonumber(bf) or 75,
-                    chains = codec.decodeChains(chains),
-                };
+        if e ~= nil and #(e.backups or {}) < cap then
+            local b = nil;
+            if third == 'flat' then
+                b = { kind = 'flat', ids = codec.decodeIds(rest) };
+            elseif third == 'levels' then
+                local f = {};
+                for tok in (rest .. '\t'):gmatch('([^\t]*)\t') do f[#f + 1] = tok; end
+                b = { kind = 'levels', ids = codec.decodeIds(f[1]), builds = {} };
+                for i = 2, #f do
+                    local rule = f[i]:match('^rule:(%a+)$');
+                    local lvl, csv = f[i]:match('^(%d+):(.*)$');
+                    if rule ~= nil then
+                        b.rule = rule;
+                    elseif lvl ~= nil then
+                        b.builds[#b.builds + 1] = {
+                            level = tonumber(lvl),
+                            ids = codec.decodeIds(csv),
+                        };
+                    end
+                end
+            elseif tonumber(third) ~= nil then
+                b = { kind = 'timeline', builtFor = tonumber(third) or 75,
+                      chains = codec.decodeChains(rest) };
+            end
+            if b ~= nil then
+                b.ts = tonumber(ts) or 0;
+                b.name = name;
+                e.backups = e.backups or {};
+                e.backups[#e.backups + 1] = b;
             end
         end
     end

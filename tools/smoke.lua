@@ -651,6 +651,7 @@ check(sets.upgrade(raw, book) == true and raw.kind == 'levels',
 check(sets.upgrade(raw, book) == false, 'and the stamp is idempotent');
 
 print('smoke: kind conversion (the flat projection is the bridge)');
+do
 -- flat -> anywhere: lossless, and the source is never touched
 local cf = sets.new('Conv', 'flat');
 sets.add(cf, 529, book, 80); sets.add(cf, 603, book, 80);
@@ -687,8 +688,8 @@ local dloss = sets.convertLoss(deep, 'flat', book);
 check(#dloss == 1 and dloss[1]:find('1 entry beyond', 1, true) ~= nil,
     'timeline -> flat counts the entries the Lv.75 plan leaves behind');
 sets.pushBackup(deep, deep, 1000);
-check(#sets.convertLoss(deep, 'levels', book) == 2,
-    'and the backups are named too');
+check(#sets.convertLoss(deep, 'levels', book) == 1,
+    'backups are NOT a named loss -- the ring crosses with the set');
 local dflat = sets.convertTo(deep, 'flat', book);
 check(dflat.kind == 'flat' and dflat.ids[1] == 529,
     'what crosses is the Lv.75 plan (Bludgeon, not the retired Wild Oats)');
@@ -697,6 +698,51 @@ check(dflat.kind == 'flat' and dflat.ids[1] == 529,
 local dsame = sets.convertTo(deep, 'timeline', book);
 check(dsame.chains[1][2] ~= nil and #(dsame.backups or {}) == 1,
     'convert to the same kind is a full clone, nothing projected away');
+end
+
+print('smoke: backups for every kind (and the conversion undo)');
+do
+-- a flat ring: bank, mutate, restore, and the replaced state banks in turn
+local bf1 = sets.new('B', 'flat'); bf1.ids[1] = 529;
+sets.pushBackup(bf1, bf1, 100);
+check(bf1.backups[1].kind == 'flat' and bf1.backups[1].ids[1] == 529
+    and bf1.backups[1].chains == nil, 'a flat backup banks ids, not chains');
+bf1.ids[1] = 603;
+check(sets.restoreBackup(bf1, 1, book, 200) and bf1.ids[1] == 529,
+    'restoring puts the flat ids back');
+check(bf1.backups[1].ids[1] == 603, 'and banks the replaced state as backup 1');
+
+-- a levels ring carries base, builds and the stored rule
+local bl = sets.new('BL', 'levels'); bl.ids[1] = 529;
+sets.groupAdd(bl, 41); sets.groupPut(bl, 41, { [1] = 549 }); bl.rule = 'switch';
+sets.pushBackup(bl, bl, 100);
+check(bl.backups[1].kind == 'levels' and bl.backups[1].builds[1].level == 41
+    and bl.backups[1].rule == 'switch',
+    'a levels backup banks base, builds and rule');
+sets.groupRemove(bl, 41); bl.rule = nil;
+check(sets.restoreBackup(bl, 1, book, 200)
+    and sets.groupBuild(bl, 41) ~= nil and bl.rule == 'switch',
+    'restoring brings the builds and the rule back');
+
+-- THE CONVERSION UNDO (the flow setsui's Convert runs: the ring crosses
+-- and the state being left banks on it): convert away, restore backup 1,
+-- and the set is its OLD KIND again
+local csrc = sets.new('CU', 'levels'); csrc.ids[1] = 529;
+sets.groupAdd(csrc, 41); sets.groupPut(csrc, 41, { [1] = 549 });
+local cnv = sets.convertTo(csrc, 'flat', book);
+cnv.backups = csrc.backups;
+sets.pushBackup(cnv, csrc, 300);
+check(sets.kindOf(cnv) == 'flat' and cnv.builds == nil,
+    'converted: a flat set, the builds gone');
+check(sets.restoreBackup(cnv, 1, book, 400), 'the ring takes the restore');
+check(sets.kindOf(cnv) == 'levels' and sets.groupBuild(cnv, 41) ~= nil
+    and sets.groupBuild(cnv, 41).ids[1] == 549,
+    'and the set is its old kind again, band build and all');
+check(cnv.chains == nil and cnv.builtFor == nil,
+    'with no other kind\'s fields left to shadow');
+check(cnv.backups[1].kind == 'flat',
+    'the flat state it replaced banked in turn -- the undo is undoable');
+end
 
 print('smoke: sorted apply layout');
 local slIds = { 623, 513, 0, 719 };   -- Head Butt, Sandspin, empty, Searing Tempest
@@ -807,6 +853,29 @@ check(rt3[3].kind == 'timeline' and rt3[3].builtFor == 30
     'the timeline line is the sets2 line, tagged');
 check(#dm._codec.decodeSets3('#v3\nwibble\tX\t1,2,3') == 0,
     'an unknown kind drops the line, never the file');
+
+-- kind-shaped backups on the wire: one ring, all three kinds, round-tripped
+do
+local bakSrc = { { name = 'F', ids = ids, backups = {
+    { ts = 1, kind = 'flat', name = 'F', ids = ids },
+    { ts = 2, kind = 'levels', name = 'F', ids = ids, rule = 'switch',
+      builds = { { level = 41, ids = ids } } },
+    { ts = 3, kind = 'timeline', name = 'F', builtFor = 30,
+      chains = { { { id = 623, from = 5 } } } },
+} } };
+local bakDst = { { name = 'F', ids = ids } };
+dm._codec.attachBackups(bakDst, dm._codec.encodeBackups(bakSrc));
+local ring = bakDst[1].backups;
+check(#ring == 3, 'a mixed-kind ring round-trips whole');
+check(ring[1].kind == 'flat' and ring[1].ids[7] == 700,
+    'the flat backup line survives');
+check(ring[2].kind == 'levels' and ring[2].rule == 'switch'
+    and ring[2].builds[1].level == 41 and ring[2].builds[1].ids[1] == 623,
+    'the levels backup line carries base, rule and builds');
+check(ring[3].kind == 'timeline' and ring[3].builtFor == 30
+    and ring[3].chains[1][1].id == 623,
+    'the timeline backup line is unchanged from the v2 days');
+end
 
 -- the TIMELINE grammar (sets2/sets2bak, plan 7): lossless round-trip of
 -- chains, builtFor and backups -- and the legacy key stays a usable flat

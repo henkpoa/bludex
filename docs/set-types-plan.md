@@ -81,8 +81,9 @@ new set of another kind is the escape hatch.
   * Readers prefer `sets3` → `sets2` (timeline kinds) → `sets` (flat kinds).
     `sets2` (timeline sets as-is, other kinds as their 75-ids one-entry
     chains) and `sets` (every set's flat ids) stay dual-written so older
-    modules still read something usable. Backups stay timeline-only
-    (`sets2bak`), as today.
+    modules still read something usable. Backups ride `sets2bak`,
+    KIND-SHAPED since the fourth slice (a timeline backup's line is
+    unchanged; flat/levels lines tag their kind in the third token).
 
 ## 5. The level-change watcher (built in the second slice, same day)
 
@@ -128,9 +129,22 @@ kind from then on.
 
 This replaces the "Read current into a new set" escape hatch named in §3.
 
-## 6b. Still not in any slice
+## 6b. Backups for every kind (built in the fourth slice, same day)
 
-1. Backups for flat/levels sets.
+The backup ring is no longer a timeline privilege. A backup is
+**kind-shaped** — it banks its source's authorship as its kind holds it
+(flat: ids; levels: base + builds + rule; timeline: builtFor + chains,
+byte-compatible with the v2 lines) — and `restoreBackup` restores a
+backup of ANY kind, flipping the set back when they differ and clearing
+the other kinds' fields so nothing shadows. That is what closes the
+conversion loop: **Convert carries the ring across and banks the state
+being left as backup 1, so a lossy conversion is undoable** (and the
+undo banks what it replaced, so it is undoable in turn). Save-over banks
+for every kind now — a levels draft banks the whole entry before
+groupPut lands — the right-click ring opens on every saved row, and
+`convertLoss` no longer names backups, because they are not lost.
+
+Nothing from the plan is parked anymore.
 
 ## 7. Proof
 

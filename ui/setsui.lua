@@ -81,9 +81,9 @@ end
 
 -- Save the editing set into the saved list (the active entry, or a new
 -- one). A LEVELS DRAFT saves through groupPut -- one build written back,
--- the entry's other builds untouched. Overwriting a DIFFERENT timeline
--- state banks it on the set's backup ring first (cap 5, newest first) --
--- that save is undoable (backups stay a timeline feature for now).
+-- the entry's other builds untouched. Overwriting a DIFFERENT saved state
+-- banks it on the set's backup ring first (cap 5, newest first, EVERY
+-- kind since 2026-08-10) -- the save is undoable.
 function M.saveEditing(ctx)
     local st, cfg = ctx.state, ctx.cfg;
     if st.editingSet.draft then
@@ -94,8 +94,14 @@ function M.saveEditing(ctx)
             table.insert(cfg.sets, entry);
             st.activeSet = #cfg.sets;
         end
+        -- bank the entry as it stands before the draft lands in it -- the
+        -- ring lives on the entry, and groupPut mutates in place
+        local was = ctx.sets.clone(entry, entry.name);
         entry.name = st.editingSet.name;
         ctx.sets.groupPut(entry, level, st.editingSet.ids);
+        if not ctx.sets.equal(was, entry) then
+            ctx.sets.pushBackup(entry, was, os.time());
+        end
         cfg.activeSetName = entry.name;            -- remembered across loads
         if ctx.save then ctx.save(); end
         st.applyNote = (level == nil) and 'Saved.'
@@ -110,11 +116,9 @@ function M.saveEditing(ctx)
         -- snapshot from selection time, so adopting it here would reset the
         -- ring to depth one on every save (review 2026-08-08). Carry the
         -- entry's own ring forward, then bank the state being replaced.
-        if ctx.sets.kindOf(copy) == 'timeline' then
-            copy.backups = old.backups;
-            if not ctx.sets.equal(old, copy) then
-                ctx.sets.pushBackup(copy, old, os.time());
-            end
+        copy.backups = old.backups;
+        if not ctx.sets.equal(old, copy) then
+            ctx.sets.pushBackup(copy, old, os.time());
         end
         cfg.sets[st.activeSet] = copy;
     else
@@ -597,10 +601,9 @@ local function savedList(ctx)
                 local okc, rc = pcall(im.IsItemClicked, 1);
                 rclicked = okc and rc or false;
             end
-            kit.tip(im, ('%s -- a %s set.\nLeft-click: edit it.%s'):format(
+            kit.tip(im, ('%s -- a %s set.\nLeft-click: edit it.\nRight-click: its backups.%s'):format(
                 entry.name, M.KIND_INFO[kind].label,
-                (kind == 'timeline') and '\nRight-click: its backups.'
-                    or ((kind == 'levels') and '\nIts level builds list under the name box.' or '')));
+                (kind == 'levels') and '\nIts level builds list under the name box.' or ''));
             if ok and clicked then
                 if kind == 'levels' then
                     loadBuild(ctx, i, nil);        -- the row IS the base build
@@ -614,7 +617,7 @@ local function savedList(ctx)
                     if ctx.save then ctx.save(); end
                 end
             end
-            if rclicked and kind == 'timeline' then
+            if rclicked then
                 st.backupsFor = (st.backupsFor == i) and nil or i;
             end
             -- the badge (plan 2.6): a saved set carrying an enforced band
@@ -643,8 +646,17 @@ local function savedList(ctx)
                     kit.tip(im, 'Restore this backup. The current saved state is banked\nfirst, so a restore is itself undoable.');
                     if okb and bclick then
                         ctx.sets.restoreBackup(entry, bi, ctx.book, os.time());
+                        -- a backup may be another KIND of this set (a
+                        -- conversion banked it): the editor reloads on
+                        -- whatever the restore made the entry
                         if st.activeSet == i then
-                            st.editingSet = ctx.sets.clone(entry, entry.name);
+                            if ctx.sets.kindOf(entry) == 'levels' then
+                                st.editLevel = nil;
+                                st.editingSet = ctx.sets.draft(entry, nil);
+                            else
+                                st.editingSet = ctx.sets.clone(entry, entry.name);
+                            end
+                            st.assignSlot = nil;
                         end
                         if ctx.save then ctx.save(); end
                         st.applyNote = 'Backup restored (the replaced state is now backup 1).';
@@ -750,6 +762,11 @@ local function savedList(ctx)
                         else
                             st.convertConfirm = nil;
                             local conv = ctx.sets.convertTo(convEntry, k, ctx.book);
+                            -- THE RING CROSSES, and the state being left
+                            -- banks on it: a kind-shaped backup restores
+                            -- across kinds, so this conversion is undoable
+                            conv.backups = convEntry.backups;
+                            ctx.sets.pushBackup(conv, convEntry, os.time());
                             cfg.sets[st.activeSet] = conv;
                             if k == 'levels' then
                                 loadBuild(ctx, st.activeSet, nil);
@@ -761,9 +778,9 @@ local function savedList(ctx)
                             st.convertOpen = nil;
                             if ctx.save then ctx.save(); end
                             st.applyNote = (#loss == 0)
-                                and ('"%s" is a %s set now.'):format(
+                                and ('"%s" is a %s set now (the old state is backup 1).'):format(
                                     conv.name, M.KIND_INFO[k].label)
-                                or ('"%s" is a %s set now. Dropped: %s.'):format(
+                                or ('"%s" is a %s set now. Dropped: %s -- backup 1 has it all.'):format(
                                     conv.name, M.KIND_INFO[k].label,
                                     table.concat(loss, ', '));
                         end

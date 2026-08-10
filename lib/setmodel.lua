@@ -570,30 +570,63 @@ function M.equal(a, b)
 end
 
 -- ---------------------------------------------------------------------------
--- backups -- pushed on every destructive replace (save-over, read-current),
--- newest first, capped. ts is injected so this stays clock-free and testable.
+-- backups -- pushed on every destructive replace (save-over, read-current,
+-- convert), newest first, capped. ts is injected so this stays clock-free
+-- and testable. A backup is KIND-SHAPED (2026-08-10): it banks the source's
+-- authorship as its kind holds it -- and restoring one whose kind differs
+-- from the set's FLIPS the set back, which is what makes a lossy
+-- conversion undoable. A pre-kinds stored backup has chains and no kind
+-- tag; kindOf reads it as timeline, which is what it always was.
 -- ---------------------------------------------------------------------------
 function M.pushBackup(set, source, ts)
     set.backups = set.backups or {};
-    table.insert(set.backups, 1, {
-        ts = ts,
-        name = source.name,
-        builtFor = source.builtFor or 75,
-        chains = copyChains(source.chains),
-    });
+    local kind = M.kindOf(source);
+    local b = { ts = ts, kind = kind, name = source.name };
+    if kind == 'timeline' then
+        b.builtFor = source.builtFor or 75;
+        b.chains = copyChains(source.chains);
+    else
+        b.ids = copyIds(source.ids);
+        if kind == 'levels' then
+            b.builds = {};
+            for _, t in ipairs(source.builds or {}) do
+                b.builds[#b.builds + 1] = { level = t.level, ids = copyIds(t.ids) };
+            end
+            b.rule = source.rule;
+        end
+    end
+    table.insert(set.backups, 1, b);
     while #set.backups > M.BACKUP_CAP do table.remove(set.backups); end
 end
 
 -- Restore backup i IN PLACE, pushing the current state as a backup first --
 -- so a restore is itself undoable. The set keeps its current NAME (names
--- are identity keys: activeSetName restores by them). Returns true.
+-- are identity keys: activeSetName restores by them) and its ring; every
+-- other field becomes the backup's, ITS kind's fields included -- the
+-- other kinds' fields are cleared, never left to shadow. Returns true.
 function M.restoreBackup(set, i, book, ts)
     local b = set.backups and set.backups[i] or nil;
     if b == nil then return false; end
     M.pushBackup(set, set, ts);
-    set.builtFor = b.builtFor or 75;
-    set.chains = copyChains(b.chains);
-    M.syncLegacyIds(set, book);
+    local kind = b.kind or M.kindOf(b);
+    set.kind = kind;
+    if kind == 'timeline' then
+        set.builds, set.rule = nil, nil;
+        set.builtFor = b.builtFor or 75;
+        set.chains = copyChains(b.chains);
+        M.syncLegacyIds(set, book);
+    elseif kind == 'levels' then
+        set.chains, set.builtFor = nil, nil;
+        set.ids = copyIds(b.ids);
+        set.builds = {};
+        for _, t in ipairs(b.builds or {}) do
+            set.builds[#set.builds + 1] = { level = t.level, ids = copyIds(t.ids) };
+        end
+        set.rule = b.rule;
+    else
+        set.chains, set.builtFor, set.builds, set.rule = nil, nil, nil, nil;
+        set.ids = copyIds(b.ids);
+    end
     return true;
 end
 
@@ -907,10 +940,9 @@ function M.convertLoss(set, kind, book)
                 out[#out + 1] = 'its activation levels (the spells survive, the timing does not)';
             end
         end
-        local nb = #(set.backups or {});
-        if nb > 0 then
-            out[#out + 1] = ('its %d backup%s'):format(nb, (nb == 1) and '' or 's');
-        end
+        -- backups are NOT a loss: the ring crosses with the set, and the
+        -- convert itself banks the old state (kind-shaped backups restore
+        -- across kinds -- the conversion is undoable)
     end
     return out;
 end

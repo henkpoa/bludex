@@ -68,9 +68,15 @@ the one that matters most**. AND (fourth slice, same day) **KIND
 CONVERSION IN PLACE** (plan §6): Convert... under the name box, the flat
 projection as the bridge (`setmodel.convertTo`/`convertLoss`), losses
 named before the two-click confirm, unsaved edits must settle first,
-source never mutated. Still queued: (d) the job-traits field round,
-(e) the field checklist below (§0), once per kind, plus one live
-band-crossing under Lvl Set Switch and one conversion round-trip.
+source never mutated. AND (fifth slice, same day) **BACKUPS FOR EVERY
+KIND** (plan §6b): kind-shaped backups, restoreBackup flips kinds --
+Convert banks the old state as backup 1 with the ring carried across,
+so a lossy conversion is UNDOABLE; save-over banks on every kind, the
+right-click ring opens on every row, sets2bak grammar kind-tagged.
+The plan has nothing parked left. Still queued: (d) the job-traits
+field round, (e) the field checklist below (§0), once per kind, plus
+one live band-crossing under Lvl Set Switch and one conversion + undo
+round-trip.
 
 ---
 
