@@ -153,10 +153,8 @@ function M.tooltip(ctx, id, hovered, extra)
                 add(('   %d - max rank reached'):format(weight), kit.COL.ok);
             end
         end
-        -- THE JOB'S HEAD START, where the decision is made (CEXI law, field
-        -- 2026-08-10): a job grants its tier of the ladder for free; weight
-        -- that only reaches that tier buys nothing new, and anything above
-        -- it is still the set's to earn -- worth knowing before it goes in.
+        -- the job's stake in the ladder, one short line (Henrik 2026-08-10,
+        -- third round: no mechanics lecture in a tooltip)
         local bl = M.ladderBlocks(ctx, cat);
         if bl ~= nil and #bl.blocks > 0 then
             local j = bl.blocks[1].job;
@@ -165,10 +163,8 @@ function M.tooltip(ctx, id, hovered, extra)
             if bl.all then
                 add(('   %s already grants every tier of this ladder'):format(who),
                     kit.COL.warn);
-                add('   feeding it buys nothing - the weight is spare', kit.COL.warn);
             else
-                add(('   %s grants tier %d for free - weight counts past it'):format(
-                    who, j.rank), kit.COL.dim);
+                add(('   %s grants tier %d'):format(who, j.rank), kit.COL.dim);
             end
         end
     end
@@ -306,9 +302,7 @@ function M.detail(ctx, id)
     if s.trait then
         kit.kv(im, 'Trait', ('%s  (weight %d)'):format(
             book.traitName(s.trait.category), s.trait.weight));
-        -- and where that weight lands: a job grants its tier of the ladder
-        -- for free, and only weight climbing PAST it earns anything new
-        -- (the CEXI law, field 2026-08-10)
+        -- and the job's stake in that ladder, one short line
         local bl = M.ladderBlocks(ctx, s.trait.category);
         if bl ~= nil and #bl.blocks > 0 then
             local j = bl.blocks[1].job;
@@ -316,9 +310,9 @@ function M.detail(ctx, id)
                 j.slot == 'sub' and 'sub' or 'main');
             kit.wrapped(im, bl.all and kit.COL.warn or kit.COL.dim,
                 bl.all
-                    and ('%s already grants every tier of %s - weight fed here buys nothing new. (Only the tier compares: the two grant different modifiers.)'):format(
+                    and ('%s already grants every tier of %s.'):format(
                         who, book.traitName(s.trait.category))
-                    or ('%s grants tier %d of %s for free; weight past that tier still climbs.'):format(
+                    or ('%s grants tier %d of %s.'):format(
                         who, j.rank, book.traitName(s.trait.category)));
         end
     end

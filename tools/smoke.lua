@@ -1549,7 +1549,8 @@ local tctx2 = {
 traitsui.render(tctx2);                    -- unguarded ON PURPOSE
 local screen = table.concat(drew, '\n');
 check(#drew > 20, ('the tab drew (%d strings)'):format(#drew));
-check(screen:find('BLU60 / SCH30', 1, true) ~= nil, 'the job pair is named on the tab');
+check(screen:find('BLU60 / SCH30', 1, true) == nil,
+    'the job pair is GONE from the header (third field round: noise)');
 check(screen:find('Clear Mind', 1, true) ~= nil, 'the contested ladder is listed');
 -- THE FIELD REPORT, as a check: tier language in the headline, never a raw
 -- stat value the blue side does not even use
@@ -1562,8 +1563,8 @@ check(screen:find('<- SCH (sub job), rank 1', 1, true) ~= nil,
 check(screen:find('out of reach', 1, true) == nil
     and screen:find('is blocked', 1, true) == nil,
     'and NO rung is called out of reach or blocked (the CEXI law)');
-check(screen:find('below tier 2', 1, true) ~= nil,
-    'a job-granted ladder shows the road above it: "N weight - below tier 2"');
+check(screen:find('Tier 2 at ', 1, true) ~= nil,
+    'a job-granted ladder names the next tier\'s activation weight plainly');
 -- and with no job data at all the same tab still renders, claiming nothing
 drew = {};
 tctx2.verdict, tctx2.jobPair, tctx2.jobTraits = nil, nil, {};

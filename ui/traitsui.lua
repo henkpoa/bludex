@@ -85,36 +85,11 @@ function M.render(ctx)
     local verdict = ctx.verdict
         or function(c, w) return tsrc.verdict(c, w, book, {}, nil); end;
 
-    kit.ctext(im, kit.COL.dim,
-        'Weights come from spells in your CURRENT editing set (Sets tab).');
-    -- THE SLOTLIST MARKER (Henrik 2026-08-10: "mark this out clearly"):
-    -- a slotlist assigns per slot, so these rows cannot add into it
-    if ctx.sets.kindOf(st.editingSet) == 'timeline' then
-        kit.wrapped(im, kit.COL.warn, 'Editing a Slotlist set: spells are assigned '
-            .. 'PER SLOT in the Sets tab (mark a slot, pick from Assign). '
-            .. 'Rows here are reference only.');
-    end
-    -- WHOSE traits these are riding on -- the pair is the whole reason a
-    -- ladder can be part-granted, so it is named where that is reported
-    local jp = ctx.jobPair;
-    if jp ~= nil then
-        if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        local sub = (jp.subJob or 0) > 0
-            and ('%s%d'):format(tsrc.jobCode(jp.subJob) or '?', jp.subLevel or 0)
-            or 'no sub';
-        kit.helpLabel(im, ('   %s%d / %s'):format(
-            tsrc.jobCode(jp.mainJob) or '?', jp.mainLevel or 0, sub),
-            'Your jobs, and what they hand this tab for free.\n\n'
-            .. 'A job trait GIVES you its tier of a ladder, set or no set.\n'
-            .. 'Weight that only reaches a tier you already have from a job\n'
-            .. 'buys nothing new -- but a HIGHER tier still applies for its\n'
-            .. 'full weight (CatsEyeXI: blue climbs past a job trait).\n\n'
-            .. 'Job-trait data is the public CatsEyeXI source and can differ from\n'
-            .. 'the live server; the game\'s own trait list has the last word.',
-            kit.COL.accent);
-    end
-    if kit.isFn(im, 'SameLine') then im.SameLine(); end
-    kit.ctext(im, kit.COL.dim, '   View:');
+    -- the header is just the View control (Henrik 2026-08-10, third round:
+    -- the guidance line, the slotlist banner and the job pair all read as
+    -- noise here -- the ladders below carry the attribution where it
+    -- actually applies, and a slotlist right-click refuses with its reason)
+    kit.ctext(im, kit.COL.dim, 'View:');
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     local density = spellsui.densityCombo(ctx, 'traitsDensity');
     if st.addNote then
@@ -199,23 +174,24 @@ function M.render(ctx)
                     kit.ctext(im, kit.COL.dim, ('  Active from %s'):format(jobLabel(v.blocker)));
                     kit.tip(im, M.givenTip(v));
                 end
-                -- THE ROAD ABOVE A JOB-GRANTED TIER (Henrik 2026-08-10:
-                -- "realistically I need 10+15 to get tier 2"): the job
-                -- gives the tier, never a head start on the climb -- the
-                -- next rung costs its FULL weight, so say where the set
-                -- stands against it, in the same words an unheld ladder uses
+                -- THE ROAD ABOVE A JOB-GRANTED TIER (Henrik 2026-08-10,
+                -- third round: name the target plainly). The blue ladder
+                -- counts its own weight from zero, the job's tier
+                -- notwithstanding -- so the header states what the next
+                -- tier activates at, and where the set stands.
                 local top = v.active[1];
                 if top ~= nil and top.source == 'job' and info ~= nil and weight > 0 then
                     local nxtTier = (top.tier or 0) + 1;
                     local nxt = info.tiers[nxtTier];
                     if nxt ~= nil and weight < nxt.points then
                         if kit.isFn(im, 'SameLine') then im.SameLine(); end
-                        kit.ctext(im, kit.COL.warn, ('  %d weight - below tier %d'):format(
-                            weight, nxtTier));
-                        kit.tip(im, ('Tier %d costs its FULL %d weight from your set -- the\n'
-                            .. 'job\'s tier %d is given, not a head start on the climb.\n'
-                            .. '%d more weight reaches it.'):format(
-                            nxtTier, nxt.points, top.tier or 0, nxt.points - weight));
+                        kit.ctext(im, kit.COL.warn, ('  Tier %d at %d weight (%d now)'):format(
+                            nxtTier, nxt.points, weight));
+                        kit.tip(im, ('The blue ladder counts its own weight from zero -- the\n'
+                            .. 'job\'s tier %d does not stand in for the blue rungs below\n'
+                            .. 'tier %d. It activates once your set feeds %d total weight;\n'
+                            .. '%d more from here.'):format(
+                            top.tier or 0, nxtTier, nxt.points, nxt.points - weight));
                     end
                 end
             elseif weight > 0 then
