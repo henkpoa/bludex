@@ -1528,8 +1528,14 @@ local stubIm = {
     GetColorU32 = function() return 0xFFFFFFFF; end,
     GetWindowDrawList = function() return { AddLine = function() end }; end,
 };
-local tset = sets.new('Traits smoke');
+-- the MERGED kind, so add() feeds it (a slotlist would refuse -- which is
+-- exactly what quietly emptied this fixture when the per-slot gate landed)
+local tset = sets.new('Traits smoke', 'levels');
 for _, id in ipairs(book.filter({ traitCat = ACC })) do sets.add(tset, id, book, 999); end
+-- ONE Clear Mind feeder: enough weight to stand on the job-held rung,
+-- not enough to climb past it -- the below-tier line's exact case
+local cmFeeders = book.filter({ traitCat = CM });
+if cmFeeders[1] ~= nil then sets.add(tset, cmFeeders[1], book, 999); end
 local tctx2 = {
     im = stubIm, book = book, sets = sets,
     blu = { onBlu = function() return true; end },
@@ -1556,6 +1562,8 @@ check(screen:find('<- SCH (sub job), rank 1', 1, true) ~= nil,
 check(screen:find('out of reach', 1, true) == nil
     and screen:find('is blocked', 1, true) == nil,
     'and NO rung is called out of reach or blocked (the CEXI law)');
+check(screen:find('below tier 2', 1, true) ~= nil,
+    'a job-granted ladder shows the road above it: "N weight - below tier 2"');
 -- and with no job data at all the same tab still renders, claiming nothing
 drew = {};
 tctx2.verdict, tctx2.jobPair, tctx2.jobTraits = nil, nil, {};
@@ -1749,6 +1757,9 @@ do
     local screen = table.concat(sdrew, '\n');
     check(#sdrew > 5, ('the flat editor drew (%d strings)'):format(#sdrew));
     check(screen:find('Flat', 1, true) ~= nil, 'the flat kind is named by the name box');
+    check(screen:find('Flat sets', 1, true) ~= nil
+        and screen:find('Slotlists', 1, true) ~= nil,
+        'the saved list groups the kinds under their own headings');
     check(screen:find('Convert', 1, true) ~= nil,
         'a saved set offers Convert under its name');
     check(screen:find('Share', 1, true) ~= nil,

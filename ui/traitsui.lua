@@ -199,6 +199,25 @@ function M.render(ctx)
                     kit.ctext(im, kit.COL.dim, ('  Active from %s'):format(jobLabel(v.blocker)));
                     kit.tip(im, M.givenTip(v));
                 end
+                -- THE ROAD ABOVE A JOB-GRANTED TIER (Henrik 2026-08-10:
+                -- "realistically I need 10+15 to get tier 2"): the job
+                -- gives the tier, never a head start on the climb -- the
+                -- next rung costs its FULL weight, so say where the set
+                -- stands against it, in the same words an unheld ladder uses
+                local top = v.active[1];
+                if top ~= nil and top.source == 'job' and info ~= nil and weight > 0 then
+                    local nxtTier = (top.tier or 0) + 1;
+                    local nxt = info.tiers[nxtTier];
+                    if nxt ~= nil and weight < nxt.points then
+                        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+                        kit.ctext(im, kit.COL.warn, ('  %d weight - below tier %d'):format(
+                            weight, nxtTier));
+                        kit.tip(im, ('Tier %d costs its FULL %d weight from your set -- the\n'
+                            .. 'job\'s tier %d is given, not a head start on the climb.\n'
+                            .. '%d more weight reaches it.'):format(
+                            nxtTier, nxt.points, top.tier or 0, nxt.points - weight));
+                    end
+                end
             elseif weight > 0 then
                 kit.ctext(im, kit.COL.warn, ('weight %d - below tier 1'):format(weight));
             else

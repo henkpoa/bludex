@@ -335,21 +335,41 @@ M.loadBuild = loadBuild;
 function M.headerPicker(ctx)
     local im, st, cfg = ctx.im, ctx.state, ctx.cfg;
     if #cfg.sets == 0 then return; end
-    local names = {};
-    for _, e in ipairs(cfg.sets) do names[#names + 1] = e.name; end
-    local cur = (st.activeSet and cfg.sets[st.activeSet]) and cfg.sets[st.activeSet].name or nil;
+    -- THE KINDS STAY SEPARATE (Henrik 2026-08-10: "so you understand what
+    -- lists you're working with"): flat sets first, slotlists after, and a
+    -- slotlist wears its tag in the list AND in the closed combo
+    local names, map = {}, {};
+    for i, e in ipairs(cfg.sets) do
+        if ctx.sets.kindOf(e) ~= 'timeline' then
+            names[#names + 1] = e.name;
+            map[#names] = i;
+        end
+    end
+    for i, e in ipairs(cfg.sets) do
+        if ctx.sets.kindOf(e) == 'timeline' then
+            names[#names + 1] = e.name .. '  [Slotlist]';
+            map[#names] = i;
+        end
+    end
+    local cur = nil;
+    local curEntry = st.activeSet and cfg.sets[st.activeSet] or nil;
+    if curEntry ~= nil then
+        cur = curEntry.name
+            .. (ctx.sets.kindOf(curEntry) == 'timeline' and '  [Slotlist]' or '');
+    end
     local pick = { value = cur };    -- rebuilt each frame: reflects, reacts
-    local w = math.min(kit.measure(im, names, 90) + 24, 200);
+    local w = math.min(kit.measure(im, names, 90) + 24, 220);
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     kit.ctext(im, kit.COL.dim, ' ');
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     if kit.combo(im, '##bdxheaderset', pick, names, cur or 'Pick a set', w) then
-        for i, e in ipairs(cfg.sets) do
-            if e.name == pick.value then
+        for j, label in ipairs(names) do
+            if label == pick.value then
+                local e = cfg.sets[map[j]];
                 if ctx.sets.kindOf(e) == 'levels' then
-                    loadBuild(ctx, i, nil);
+                    loadBuild(ctx, map[j], nil);
                 else
-                    st.activeSet = i;
+                    st.activeSet = map[j];
                     st.editLevel = nil;
                     st.editingSet = ctx.sets.clone(e, e.name);
                     st.assignSlot = nil;
@@ -361,7 +381,7 @@ function M.headerPicker(ctx)
             end
         end
     end
-    kit.tip(im, 'Switch the set being edited, from any tab.\nUnsaved edits on the current one are discarded\n(same as clicking a set in the Sets tab).');
+    kit.tip(im, 'Switch the set being edited, from any tab.\nFlat sets list first, Slotlists after (tagged).\nUnsaved edits on the current one are discarded\n(same as clicking a set in the Sets tab).');
     -- the second menu: WHICH BUILD of a set that has level builds
     local entry = st.activeSet and cfg.sets[st.activeSet] or nil;
     if entry ~= nil and ctx.sets.kindOf(entry) == 'levels' then
@@ -650,7 +670,16 @@ local function savedList(ctx)
         end
     end
     if kit.isFn(im, 'Selectable') then
-        for i, entry in ipairs(cfg.sets) do
+        -- THE KINDS STAY SEPARATE (Henrik 2026-08-10): flat sets under one
+        -- heading, slotlists under another, so what you are working with is
+        -- never a guess. Indices stay cfg.sets indices -- only the display
+        -- is grouped.
+        local anyFlat, anyTl = false, false;
+        for _, e in ipairs(cfg.sets) do
+            if ctx.sets.kindOf(e) == 'timeline' then anyTl = true;
+            else anyFlat = true; end
+        end
+        local function setRow(i, entry)
             local kind = ctx.sets.kindOf(entry);
             local tag = tostring(ctx.sets.count(entry));
             if kind == 'levels' then
@@ -732,6 +761,21 @@ local function savedList(ctx)
                         break;                     -- the ring just changed
                     end
                 end
+            end
+        end
+        if anyFlat then
+            if anyTl then kit.ctext(im, kit.COL.head, 'Flat sets'); end
+            for i, entry in ipairs(cfg.sets) do
+                if ctx.sets.kindOf(entry) ~= 'timeline' then setRow(i, entry); end
+            end
+        end
+        if anyTl then
+            if anyFlat then
+                if kit.isFn(im, 'Separator') then im.Separator(); end
+                kit.ctext(im, kit.COL.head, 'Slotlists');
+            end
+            for i, entry in ipairs(cfg.sets) do
+                if ctx.sets.kindOf(entry) == 'timeline' then setRow(i, entry); end
             end
         end
     end
