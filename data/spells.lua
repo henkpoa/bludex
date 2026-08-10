@@ -1,4 +1,4 @@
--- spells.lua -- bludex spell database (GENERATED 2026-08-04 by tools/generate_spells.py -- DO NOT EDIT)
+-- spells.lua -- bludex spell database (GENERATED 2026-08-07 by tools/generate_spells.py -- DO NOT EDIT)
 -- Availability: client-DAT truth via HANDOVER.md audit. Payload: public CatsEyeXI clone (= base-LSB;
 -- live server may override in private submodules). src= sql | sql-commented | stub | missing.
 -- Rows with verify={...} need in-game confirmation before their values are trusted.

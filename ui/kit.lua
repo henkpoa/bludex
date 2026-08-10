@@ -56,11 +56,44 @@ M.isFn = isFn;
 local function esc(s) return (tostring(s):gsub('%%', '%%%%')); end
 M.esc = esc;
 
+-- ---------------------------------------------------------------------------
+-- the hover gate -- how long the cursor must REST before a tooltip appears
+-- ---------------------------------------------------------------------------
+-- Field ask 2026-08-07: tooltips that fire the instant the cursor crosses an
+-- item stand in front of whatever you were reaching for, just from moving the
+-- mouse across the window. Every tooltip Bludex draws asks this first, so one
+-- setting covers them all.
+--
+-- imgui's own hover-delay flags are 1.89+ and this binding is older, so the
+-- dwell is timed here. Only one item can be hovered at a time, so one slot is
+-- enough: the key changing means the cursor moved to a different item, and a
+-- gap in the asking means it left the last one (nothing calls this for an item
+-- that is not hovered, so silence IS the cursor being elsewhere).
+M.hoverDelay = 0.5;          -- seconds; the host writes the setting here
+
+local hoverKey  = nil;
+local hoverAt   = 0;         -- when the dwell on hoverKey started
+local hoverSeen = 0;         -- when it was last asked about
+local HOVER_GAP = 0.25;      -- longer than any frame: a gap = hover lost
+
+-- Has `key` been hovered long enough to show its tooltip? `key` identifies the
+-- hovered item -- its tip text, a spell id, anything stable frame to frame.
+function M.hoverReady(key)
+    local d = tonumber(M.hoverDelay) or 0;
+    if d <= 0 then return true; end
+    local now = os.clock();
+    if key ~= hoverKey or (now - hoverSeen) > HOVER_GAP then
+        hoverKey, hoverAt = key, now;
+    end
+    hoverSeen = now;
+    return (now - hoverAt) >= d;
+end
+
 -- Attach a tooltip to the item just drawn. Multi-line is fine.
 function M.tip(im, tip)
     if tip == nil or tip == '' then return; end
     if not isFn(im, 'IsItemHovered') or not isFn(im, 'SetTooltip') then return; end
-    if im.IsItemHovered() then im.SetTooltip(esc(tip)); end
+    if im.IsItemHovered() and M.hoverReady(tip) then im.SetTooltip(esc(tip)); end
 end
 
 -- The panel-text standard, borrowed from dlac's uistyle.helpLabel: the label

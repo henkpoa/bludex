@@ -196,6 +196,13 @@ def parse_blue_spell_mods():
     return out
 
 def parse_blue_traits():
+    """category -> {traitId (the ladder's name-bearing id), tiers{points:{traitId,mods}}}
+
+    THE TRAIT ID IS PER TIER, not per category: category 24 is trait 15
+    (Double Attack) at 2 points and trait 16 (Triple Attack) at 4; category 28
+    is 20 (Gilfinder) then 19 (Treasure Hunter). blueutils suppresses a blue
+    trait by ID against the job traits, so a per-category id would answer for
+    the wrong tier (see lib/traitsource.lua)."""
     out = {}
     path = os.path.join(CLONE, "sql", "blue_traits.sql")
     for commented, v in sql_rows(path, "blue_traits"):
@@ -203,7 +210,59 @@ def parse_blue_traits():
             continue
         cat, pts, tid, mod, val = (int(x) for x in v)
         out.setdefault(cat, {"traitId": tid, "tiers": {}})
-        out[cat]["tiers"].setdefault(pts, []).append((mod, val))
+        tier = out[cat]["tiers"].setdefault(pts, {"traitId": tid, "mods": []})
+        if tier["traitId"] != tid:
+            warn("blue_traits cat %d @%dpts mixes trait ids %d and %d"
+                 % (cat, pts, tier["traitId"], tid))
+        tier["mods"].append((mod, val))
+    return out
+
+# ------------------------------------------------------- 6b. job traits (collisions)
+def parse_job_enum():
+    """scripts/enum/job.lua -> id -> 'WAR'"""
+    out = {}
+    path = os.path.join(CLONE, "scripts", "enum", "job.lua")
+    for line in open(path, encoding="utf-8"):
+        m = re.match(r"\s*([A-Z]{3})\s*=\s*(\d+),", line)
+        if m and int(m.group(2)) > 0:
+            out[int(m.group(2))] = m.group(1)
+    return out
+
+JOB_NAMES = {
+    1: "Warrior", 2: "Monk", 3: "White Mage", 4: "Black Mage", 5: "Red Mage",
+    6: "Thief", 7: "Paladin", 8: "Dark Knight", 9: "Beastmaster", 10: "Bard",
+    11: "Ranger", 12: "Samurai", 13: "Ninja", 14: "Dragoon", 15: "Summoner",
+    16: "Blue Mage", 17: "Corsair", 18: "Puppetmaster", 19: "Dancer",
+    20: "Scholar", 21: "Geomancer", 22: "Rune Fencer",
+}
+
+def parse_job_traits(blue_ids):
+    """sql/traits.sql -> job -> traitid -> [{level, rank, mods, merit, tag}]
+
+    Only the trait ids blue magic can ALSO grant: those are the ones that can
+    collide, and nothing else belongs in a blue-magic addon. Rows mirror the
+    server's own gate (battleutils::AddTraits): level > 0 and level <= yours,
+    highest rank wins per trait id."""
+    out = {}
+    path = os.path.join(CLONE, "sql", "traits.sql")
+    for commented, v in sql_rows(path, "traits"):
+        if commented or len(v) < 9:
+            continue
+        tid, job, level, rank = int(v[0]), int(v[2]), int(v[3]), int(v[4])
+        mod, val, merit = int(v[5]), int(v[6]), int(v[8])
+        tag = None if v[7].strip().upper() == "NULL" else unq(v[7])
+        if tid not in blue_ids or job <= 0 or level <= 0:
+            continue
+        if merit != 0:
+            warn("job trait %d (job %d) is merit-gated (merit %d) and collides "
+                 "with a blue trait -- traitsource reports it as conditional"
+                 % (tid, job, merit))
+        row = (out.setdefault(job, {}).setdefault(tid, {})
+                  .setdefault((level, rank),
+                              {"level": level, "rank": rank, "mods": [],
+                               "merit": merit, "tag": tag}))
+        if mod != 0:
+            row["mods"].append((mod, val))
     return out
 
 # ---------------------------------------------------------------- 6. trait names
@@ -578,20 +637,36 @@ def main():
     T.append("-- category -> tiers: set spells whose trait.category matches; sum their weights;")
     T.append("-- highest tier with points <= total weight is active (server: blueutils.cpp CalculateTraits).")
     T.append("-- Values are base-LSB (public clone); CEXI may override in private submodules.")
+    T.append("-- EACH TIER CARRIES ITS OWN traitId -- category 24 is Double Attack (15) at")
+    T.append("-- 2 points and Triple Attack (16) at 4 -- and the id is what a job trait")
+    T.append("-- suppresses. data/jobtraits.lua holds the other side of that collision.")
     T.append("")
-    T.append("local M = { categories = {} }")
+    T.append("local M = { categories = {}, traitNames = {} }")
     T.append("")
     for cat in sorted(btraits):
         tinfo = btraits[cat]
         tname = traitnames.get(tinfo["traitId"], "Trait %d" % tinfo["traitId"])
         tiers = []
         for pts in sorted(tinfo["tiers"]):
+            tier = tinfo["tiers"][pts]
             mods = ", ".join("{ stat = %s, value = %d }" %
                              (lq(modnames.get(m, "MOD%d" % m)), v)
-                             for m, v in tinfo["tiers"][pts])
-            tiers.append("{ points = %d, mods = { %s } }" % (pts, mods))
+                             for m, v in tier["mods"])
+            tiers.append("{ points = %d, traitId = %d, mods = { %s } }"
+                         % (pts, tier["traitId"], mods))
         T.append("M.categories[%d] = { name = %s, traitId = %d, tiers = { %s } }"
                  % (cat, lq(tname), tinfo["traitId"], ", ".join(tiers)))
+    T.append("")
+    # A rung's own name, because a ladder is not always ONE trait: category 24
+    # runs Double Attack then Triple Attack. Needed wherever a rung is named
+    # on its own (attribution) rather than as "tier N of <category>".
+    blue_ids = set()
+    for tinfo in btraits.values():
+        for tier in tinfo["tiers"].values():
+            blue_ids.add(tier["traitId"])
+    T.append("-- each rung's OWN trait name (a ladder can change trait partway up)")
+    for tid in sorted(blue_ids):
+        T.append("M.traitNames[%d] = %s" % (tid, lq(traitnames.get(tid, "Trait %d" % tid))))
     T.append("")
     T.append("-- Set-point budget law (server: blueutils.cpp GetTotalBlueMagicPoints):")
     T.append("--   base = clamp(((level-1)/10)*5 + 10, 0, 55)  -- level 75 => 45")
@@ -612,6 +687,62 @@ def main():
     out2 = os.path.join(OUTDIR, "traits.lua")
     open(out2, "w", encoding="utf-8", newline="\n").write("\n".join(T) + "\n")
     print("wrote " + os.path.abspath(out2))
+
+    # --------------------------------------------------------- jobtraits.lua
+    # The OTHER side of the collision: which jobs grant a trait blue magic can
+    # also grant, at which level and rank. A job trait beats a blue trait
+    # outright (blueutils.cpp: "Player has the real job trait, making them
+    # ineligible"), so this table is what lets Bludex say WHERE a trait came
+    # from -- and which set points bought nothing.
+    jobcodes = parse_job_enum()
+    jtraits  = parse_job_traits(blue_ids)
+
+    J = []
+    J.append("-- jobtraits.lua -- job traits that COLLIDE with blue traits (GENERATED %s" % today)
+    J.append("--                  by tools/generate_spells.py -- DO NOT EDIT)")
+    J.append("-- Source: sql/traits.sql, filtered to the %d trait ids blue magic can also" % len(blue_ids))
+    J.append("-- grant. A job trait SUPPRESSES the blue one outright, at any tier")
+    J.append("-- (blueutils.cpp CalculateTraits: \"Player has the real job trait, making")
+    J.append("-- them ineligible\" -- the TODO beside it is why the stronger-blue case does")
+    J.append("-- not exist). Job traits are added first (charutils.cpp BuildingCharTraitsTable),")
+    J.append("-- main job at your main level then sub job at your sub level.")
+    J.append("--")
+    J.append("-- BASE-LSB (public clone): CatsEyeXI may override these in the private")
+    J.append("-- submodules. The live 0x0AC trait bit is the referee -- see lib/traitsource.lua.")
+    J.append("-- content_tag is carried for the record only: CEXI runs RESTRICT_CONTENT = 0,")
+    J.append("-- so every row here is live.")
+    J.append("")
+    J.append("local M = { jobs = {}, codes = {}, names = {} }")
+    J.append("")
+    for jid in sorted(jobcodes):
+        J.append("M.codes[%d] = %s; M.names[%d] = %s"
+                 % (jid, lq(jobcodes[jid]), jid, lq(JOB_NAMES.get(jid, jobcodes[jid]))))
+    J.append("")
+    for jid in sorted(jtraits):
+        J.append("-- %s" % JOB_NAMES.get(jid, jobcodes.get(jid, "job %d" % jid)))
+        J.append("M.jobs[%d] = {" % jid)
+        for tid in sorted(jtraits[jid]):
+            rungs = []
+            for key in sorted(jtraits[jid][tid]):
+                r = jtraits[jid][tid][key]
+                mods = ", ".join("{ stat = %s, value = %d }" %
+                                 (lq(modnames.get(m, "MOD%d" % m)), v)
+                                 for m, v in r["mods"])
+                extra = ""
+                if r["merit"] != 0:
+                    extra += ", merit = %d" % r["merit"]
+                if r["tag"]:
+                    extra += ", tag = %s" % lq(r["tag"])
+                rungs.append("{ level = %d, rank = %d%s, mods = { %s } }"
+                             % (r["level"], r["rank"], extra, mods))
+            J.append("    [%d] = { %s },   -- %s"
+                     % (tid, ", ".join(rungs), traitnames.get(tid, "trait %d" % tid)))
+        J.append("}")
+    J.append("")
+    J.append("return M")
+    out3 = os.path.join(OUTDIR, "jobtraits.lua")
+    open(out3, "w", encoding="utf-8", newline="\n").write("\n".join(J) + "\n")
+    print("wrote " + os.path.abspath(out3))
 
     # ------------------------------------------------------------ hints.lua
     # Learn-location hints from blucheck's data (spellid -> zoneId -> mobs).

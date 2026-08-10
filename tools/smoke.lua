@@ -850,4 +850,204 @@ spellsui.tooltip(tctx, 719, true);
 check(tipText == nil, 'and waits out the hover delay like every other tooltip');
 kit.hoverDelay = 0.5;
 
+print('smoke: job traits (the collision table)');
+-- The rule under test (src/map/utils/blueutils.cpp, CalculateTraits): a job
+-- trait makes the blue one INELIGIBLE -- not weaker, not overridden when the
+-- blue tier is higher. Gone. Everything below is that rule, per ladder.
+local tsrc = require('bludex\\lib\\traitsource');
+check(tsrc.jobCode(14) == 'DRG' and tsrc.jobName(14) == 'Dragoon', 'job names');
+check(tsrc.abilityId(18) == 1554, 'Dual Wield reads at ability id 1554 (1536 + 18)');
+local drg30 = tsrc.jobTraits(14, 30);
+check(drg30[1] ~= nil and drg30[1].rank == 1, 'DRG has Accuracy Bonus at 30');
+check(tsrc.jobTraits(14, 29)[1] == nil, 'and not at 29');
+check(tsrc.jobTraits(14, 60)[1].rank == 2 and tsrc.jobTraits(14, 75)[1].rank == 2,
+    'rank 2 lands at 60 and holds to 75 (rank 3 is level 76)');
+check(tsrc.jobTraits(14, 75)[1].mods[1].value == 22, 'at its own value, +22 not +10');
+check(tsrc.jobTraits(16, 75)[1] == nil, 'BLU itself brings no colliding job trait');
+
+-- BLU75/DRG37: the sub job is where a 75 BLU meets its collisions
+local blu_drg = tsrc.jobs(16, 75, 14, 37);
+check(blu_drg[1] ~= nil and blu_drg[1].slot == 'sub' and blu_drg[1].code == 'DRG',
+    'BLU/DRG: Accuracy Bonus comes from the SUB job');
+check(blu_drg[1].rank == 1, 'at rank 1 -- a sub job is half your level');
+-- DRG75/BLU37: the same trait, the other way round, two ranks higher
+local drg_blu = tsrc.jobs(14, 75, 16, 37);
+check(drg_blu[1].slot == 'main' and drg_blu[1].rank == 2, 'DRG/BLU: main job, rank 2');
+
+print('smoke: trait attribution');
+local ACC = 16;                                  -- the Accuracy Bonus ladder
+local v = tsrc.verdict(ACC, 2, book, blu_drg);
+check(#v.suppressed == 1 and v.suppressed[1].job.code == 'DRG',
+    'BLU/DRG: the 2-weight Accuracy rung is suppressed by DRG');
+check(#v.active == 1 and v.active[1].source == 'job',
+    'what is live is the JOB trait, and it is reported as such');
+check(v.active[1].mods[1].value == 10, 'at the job\'s own tier (+10 at rank 1)');
+check(v.deadWeight == true, 'and the weight the set fed it bought nothing');
+check(v.contested == true, 'the ladder is flagged contested');
+
+-- no jobs in the way: the same ladder is the set's own
+local free = tsrc.verdict(ACC, 2, book, {});
+check(#free.suppressed == 0 and #free.active == 1 and free.active[1].source == 'set',
+    'with no colliding job the set owns the ladder');
+check(free.deadWeight == false and free.contested == false, 'nothing wasted, nothing contested');
+-- a job trait with an EMPTY set still shows: you have it, from them
+local idle = tsrc.verdict(ACC, 0, book, blu_drg);
+check(#idle.active == 1 and idle.active[1].source == 'job' and idle.deadWeight == false,
+    'a job trait is reported with an empty set, and nothing is called wasted');
+
+print('smoke: tiers correlate, stat values do not');
+-- Henrik, 2026-08-07, from the field: the tab read "Clear Mind  MpHeal +3
+-- [SCH (sub job)]". The two sides of this collision DO NOT SHARE A MODIFIER --
+-- job Clear Mind grants MPHEAL (mod 71), the blue ladder grants CLEAR_MIND
+-- (mod 295) -- so a stat value from one side means nothing against the other.
+-- The RANK is the game's own counter for the trait, and it is what compares.
+local CM = 4;                                        -- the Clear Mind ladder
+check(book.traits.traitNames[24] == 'Clear Mind'
+    and book.traits.traitNames[16] == 'Triple Attack',
+    'each rung id carries its own trait name');
+local sch30 = tsrc.jobs(16, 60, 20, 30);             -- SCH sub, rank 1 (level 20)
+check(sch30[24].rank == 1 and sch30[24].mods[1].stat == 'MPHEAL',
+    'SCH sub at 30 holds Clear Mind rank 1, and it grants MPHEAL');
+check(book.traits.categories[CM].tiers[1].mods[1].stat == 'CLEAR_MIND',
+    'while the blue rung grants CLEAR_MIND -- a different modifier entirely');
+local cm = tsrc.verdict(CM, 0, book, sch30);
+check(cm.active[1].source == 'job' and cm.active[1].tier == 1,
+    'so the verdict speaks in TIERS: tier 1, from the job');
+check(cm.active[1].traitName == 'Clear Mind', 'named by its own trait');
+check(cm.held[1] ~= nil and cm.held[1].code == 'SCH',
+    'rung 1 is HELD -- the job\'s rank reaches it (this is the green one)');
+check(cm.blocked[2] ~= nil and cm.blocked[3] ~= nil and cm.blocked[4] ~= nil,
+    'and rungs 2-4 are out of reach: blue cannot lift a job trait');
+check(cm.held[2] == nil, 'rung 2 is NOT held -- rank 1 does not reach it');
+-- climb the sub job and the held/out-of-reach line moves up with it
+local cm2 = tsrc.verdict(CM, 0, book, tsrc.jobs(16, 75, 20, 37));   -- rank 2 at 35
+check(cm2.held[1] ~= nil and cm2.held[2] ~= nil and cm2.blocked[3] ~= nil,
+    'at rank 2 the job holds two rungs');
+check(cm2.active[1].tier == 2, 'and the headline follows the rank');
+
+print('smoke: the per-tier trait id');
+-- Category 24 is TWO different traits: Double Attack (15) at 2 weight and
+-- Triple Attack (16) at 4. A per-category id would answer for the wrong one.
+local DA = 24;
+local tiers = book.traits.categories[DA].tiers;
+check(tiers[1].traitId == 15 and tiers[2].traitId == 16,
+    'the ladder carries a trait id per tier, not per category');
+local solo = tsrc.verdict(DA, 4, book, {});
+check(#solo.active == 1 and solo.active[1].traitId == 16,
+    'at 4 weight only Triple Attack applies -- it overwrites Double Attack');
+-- WAR grants Double Attack (25) but NOT Triple Attack: a PARTIAL block
+local blu_war = tsrc.jobs(16, 75, 1, 37);
+local part = tsrc.verdict(DA, 4, book, blu_war);
+check(#part.suppressed == 1 and part.suppressed[1].traitId == 15,
+    'BLU/WAR: WAR kills the Double Attack rung');
+check(part.deadWeight == false, 'but the ladder is NOT dead');
+local sawTA = false;
+for _, a in ipairs(part.active) do
+    if a.traitId == 16 and a.source == 'set' then
+        sawTA = a.traitName == 'Triple Attack' and a.tier == 2;
+    end
+end
+check(sawTA, 'Triple Attack still comes through from the set, named as itself');
+check(part.held[1] ~= nil and part.held[2] == nil and part.blocked[2] == nil,
+    'WAR holds rung 1 and does not touch rung 2 -- that rung is another trait');
+check(tsrc.verdict(DA, 2, book, blu_war).deadWeight == true,
+    'at 2 weight, though, WAR blocks the only rung reached');
+
+-- THF holds BOTH rungs of the Gilfinder ladder (Gilfinder 5, Treasure Hunter 15)
+local blu_thf = tsrc.jobs(16, 75, 6, 37);
+check(tsrc.verdict(28, 3, book, blu_thf).deadWeight == true,
+    'BLU/THF: THF holds both Gilfinder rungs, so all of it is dead weight');
+check(tsrc.ladderBlocks(28, book, blu_thf).all == true, 'ladderBlocks says the same');
+-- and THF's own Dual Wield starts at 83, far above any sub job
+check(#tsrc.ladderBlocks(25, book, blu_thf).blocks == 0,
+    'THF at sub level does NOT block Dual Wield (its trait starts at 83)');
+
+print('smoke: the live bit is the referee');
+-- The 0x0AC trait bit says whether a trait is UP; it can never say where it
+-- came from (blue traits set the same bits). A disagreement is reported, not
+-- smoothed over -- the job-trait table is base-LSB and CEXI may differ.
+local denied = tsrc.verdict(ACC, 2, book, blu_drg, function() return false; end);
+check(denied.disagrees == true, 'model says active, game says no -> disagrees');
+local agreed = tsrc.verdict(ACC, 2, book, blu_drg, function() return true; end);
+check(agreed.disagrees == nil and agreed.active[1].live == true, 'agreement is quiet');
+check(tsrc.verdict(ACC, 2, book, blu_drg).disagrees == nil,
+    'and with no live reader at all, nothing is claimed either way');
+
+print('smoke: the Traits tab renders');
+-- THE LAW THIS ENFORCES: an unknown Lua name is a silent nil GLOBAL, not an
+-- error, until the line runs. The tab draws inside pcall in game, so a typo
+-- shows up as "tab error:" on a panel nobody screenshots. Drive the real
+-- render against a stub binding instead, and let it throw here.
+local traitsui = require('bludex\\ui\\traitsui');
+local drew = {};                          -- every string the tab put on screen
+local function draw(s) drew[#drew + 1] = tostring(s); end
+local stubIm = {
+    Text = draw,
+    TextColored = function(_, s) draw(s); end,
+    TextWrapped = draw,
+    SameLine = function() end,
+    NewLine = function() end,
+    Separator = function() end,
+    Indent = function() end,
+    Unindent = function() end,
+    Selectable = function(label) draw(label); return false; end,
+    BeginChild = function() return true; end,
+    EndChild = function() end,
+    BeginCombo = function() return false; end,
+    EndCombo = function() end,
+    SetNextItemWidth = function() end,
+    CalcTextSize = function(s) return #tostring(s) * 7; end,
+    GetContentRegionAvail = function() return 780; end,
+    GetTextLineHeight = function() return 17; end,
+    GetCursorPosX = function() return 0; end,
+    GetCursorPosY = function() return 0; end,
+    SetCursorPosX = function() end,
+    SetCursorPosY = function() end,
+    PushID = function() end,
+    PopID = function() end,
+    PushStyleColor = function() end,
+    PopStyleColor = function() end,
+    IsItemHovered = function() return false; end,
+    IsItemClicked = function() return false; end,
+    SetTooltip = draw,
+    GetItemRectMin = function() return 0, 0; end,
+    GetItemRectMax = function() return 10, 10; end,
+    GetColorU32 = function() return 0xFFFFFFFF; end,
+    GetWindowDrawList = function() return { AddLine = function() end }; end,
+};
+local tset = sets.new('Traits smoke');
+for _, id in ipairs(book.filter({ traitCat = ACC })) do sets.add(tset, id, book, 999); end
+local tctx2 = {
+    im = stubIm, book = book, sets = sets,
+    blu = { onBlu = function() return true; end },
+    cfg = { traitsDensity = 'normal' },
+    state = { editingSet = tset, openCat = { [ACC] = true, [CM] = true }, detailOpen = { false } },
+    tsrc = tsrc, jobTraits = sch30,
+    jobPair = { mainJob = 16, mainLevel = 60, subJob = 20, subLevel = 30 },
+    verdict = function(c, w) return tsrc.verdict(c, w, book, sch30, nil); end,
+    budgetMax = function() return 79; end,
+};
+traitsui.render(tctx2);                    -- unguarded ON PURPOSE
+local screen = table.concat(drew, '\n');
+check(#drew > 20, ('the tab drew (%d strings)'):format(#drew));
+check(screen:find('BLU60 / SCH30', 1, true) ~= nil, 'the job pair is named on the tab');
+check(screen:find('Clear Mind', 1, true) ~= nil, 'the contested ladder is listed');
+-- THE FIELD REPORT, as a check: tier language in the headline, never a raw
+-- stat value the blue side does not even use
+check(screen:find('Tier 1 [SCH (sub job)]', 1, true) ~= nil,
+    'the headline reads "Tier 1 [SCH (sub job)]"');
+check(screen:find('MpHeal +3 [SCH', 1, true) == nil,
+    'and NOT the job trait\'s own stat value, which compares to nothing');
+check(screen:find('<- SCH (sub job), rank 1', 1, true) ~= nil,
+    'rung 1 is annotated with the job that has you standing on it');
+check(screen:find('out of reach', 1, true) ~= nil,
+    'and the rungs above it say why they cannot be climbed');
+-- and with no job data at all the same tab still renders, claiming nothing
+drew = {};
+tctx2.verdict, tctx2.jobPair, tctx2.jobTraits = nil, nil, {};
+traitsui.render(tctx2);
+check(#drew > 20, 'it renders without the job side too');
+check(table.concat(drew, '\n'):find('blocked', 1, true) == nil,
+    'and blocks nothing it cannot know about');
+
 print('smoke: all green');

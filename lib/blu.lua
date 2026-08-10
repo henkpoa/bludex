@@ -919,6 +919,40 @@ function M.effectiveLevel()
     return lvl;
 end
 
+-- BOTH jobs and BOTH levels, for the trait-collision model: a blue trait is
+-- killed by the same trait coming from either job (lib/traitsource.lua), so
+-- the whole pair matters, not just whichever side is BLU. All four nil off a
+-- readable character; sub job 0 = no sub job.
+function M.jobPair()
+    local ok, r = pcall(function()
+        local p = player();
+        return {
+            mainJob = p:GetMainJob(), mainLevel = p:GetMainJobLevel(),
+            subJob = p:GetSubJob(), subLevel = p:GetSubJobLevel(),
+        };
+    end);
+    if not ok or r == nil then return nil; end
+    return r;
+end
+
+-- IS THIS TRAIT UP RIGHT NOW -- the server's own answer, not ours.
+-- The server builds the merged trait list (job traits then blue) and ships it
+-- as a bit mask on packet 0x0AC, which the client keeps in its command table
+-- with job traits based at 0x600. So ability id 1536 + traitId is the live
+-- bit; dlac reads 1554 for Dual Wield the same way.
+--
+-- It is the REFEREE, never the source: blue traits set these same bits, so a
+-- lit bit says "you have it" and nothing about where it came from.
+-- true / false, or nil when unreadable.
+function M.hasTrait(traitId)
+    if traitId == nil then return nil; end
+    local ok, r = pcall(function()
+        return player():HasAbility(1536 + traitId) == true;
+    end);
+    if not ok then return nil; end
+    return r;
+end
+
 -- The level-sync view of the LIVE set: what the client holds right now.
 -- Part of the read surface, currently drawn by nothing: the header used to
 -- carry it as a second pair of meters beside the editing build's, and one

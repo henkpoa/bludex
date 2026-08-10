@@ -10,6 +10,7 @@
 local ROOT = (...):sub(1, -#('ui\\host') - 1);       -- relocatable require base
 local kit      = require(ROOT .. 'ui\\kit');
 local filetex  = require(ROOT .. 'ui\\filetex');
+local tsrc     = require(ROOT .. 'lib\\traitsource');
 local spellsui = require(ROOT .. 'ui\\spellsui');
 local setsui   = require(ROOT .. 'ui\\setsui');
 local traitsui = require(ROOT .. 'ui\\traitsui');
@@ -345,10 +346,35 @@ local function tabCtx(im, st, deps, embedded)
     -- embedding host may gate its beat (dlac's rides an activity predicate),
     -- and a tooltip can be hovered whether or not the beat is running.
     kit.hoverDelay = tonumber(deps.cfg.tooltipDelay) or 0.5;
+    -- THE JOB SIDE OF THE TRAIT COLLISION, resolved once per render: which
+    -- traits your two jobs already grant, and therefore which blue tiers the
+    -- server will throw away (lib/traitsource.lua). An unreadable character
+    -- gives an empty map -- nothing is claimed when nothing can be read.
+    local jp = deps.blu.jobPair and deps.blu.jobPair() or nil;
+    local jobTraits = jp and tsrc.jobs(jp.mainJob, jp.mainLevel, jp.subJob, jp.subLevel) or {};
+    -- THE REFEREE, ONLY WHEN IT IS AWAKE. The client's trait bits arrive on
+    -- 0x0AC and are all zero until they do (a fresh zone, a job change still
+    -- in flight) -- and an empty table reads exactly like "you have none of
+    -- these". Hand the live reader over only once a trait we EXPECT is lit;
+    -- until then nothing is contradicted, because nothing has been read.
+    local hasTrait = nil;
+    if deps.blu.hasTrait ~= nil then
+        for traitId in pairs(jobTraits) do
+            if deps.blu.hasTrait(traitId) == true then
+                hasTrait = deps.blu.hasTrait;
+                break;
+            end
+        end
+    end
     return {
         im = im, book = deps.book, blu = deps.blu, sets = deps.sets,
         cfg = deps.cfg, save = deps.save, state = st,
         embedded = embedded == true,
+        tsrc = tsrc, jobPair = jp, jobTraits = jobTraits,
+        -- one ladder's whole answer: active tiers and where each came from
+        verdict = function(cat, weight)
+            return tsrc.verdict(cat, weight, deps.book, jobTraits, hasTrait);
+        end,
         -- true once an embedding host's sanctioned float surface has run:
         -- the codex then routes Spell Info there instead of its in-panel pane
         floatWindow = deps.floatWindow == true,

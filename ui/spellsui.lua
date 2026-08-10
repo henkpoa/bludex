@@ -81,6 +81,15 @@ function M.spellButton(ctx, id, size, selected, dimmed)
     return clicked;
 end
 
+-- The job side of a trait ladder, when the host wired it in (ctx.jobTraits).
+-- nil when it did not -- an unwired host claims nothing rather than claiming
+-- "no job grants this".
+function M.ladderBlocks(ctx, cat)
+    if ctx.tsrc == nil or ctx.jobTraits == nil or cat == nil then return nil; end
+    local ok, r = pcall(ctx.tsrc.ladderBlocks, cat, ctx.book, ctx.jobTraits);
+    return ok and r or nil;
+end
+
 local function learnedText(ctx, id)
     if ctx.blu.onBlu() or ctx.book.learned(id) then
         if ctx.book.learned(id) then return 'learned', kit.COL.ok; end
@@ -140,6 +149,23 @@ function M.tooltip(ctx, id, hovered)
                 add(('   %d / %d - for rank %d'):format(weight, nextP, nextRank), kit.COL.dim);
             else
                 add(('   %d - max rank reached'):format(weight), kit.COL.ok);
+            end
+        end
+        -- THE COLLISION, where the decision is made. A job trait discards the
+        -- blue one outright, so weight fed into a ladder your jobs already
+        -- hold is spent for nothing -- worth knowing before the spell goes in.
+        local bl = M.ladderBlocks(ctx, cat);
+        if bl ~= nil and #bl.blocks > 0 then
+            local j = bl.blocks[1].job;
+            local who = ('%s (%s job)'):format(j.code or '?',
+                j.slot == 'sub' and 'sub' or 'main');
+            if bl.all then
+                add(('   BLOCKED: %s already has this at tier %d'):format(who, j.rank),
+                    kit.COL.err);
+                add('   the blue trait is discarded, at any tier', kit.COL.err);
+            else
+                add(('   %s holds tier %d of this ladder - that rung is discarded'):format(
+                    who, bl.blocks[1].tierIndex), kit.COL.warn);
             end
         end
     end
@@ -277,6 +303,20 @@ function M.detail(ctx, id)
     if s.trait then
         kit.kv(im, 'Trait', ('%s  (weight %d)'):format(
             book.traitName(s.trait.category), s.trait.weight));
+        -- and whether that weight can reach anything: a job trait of the same
+        -- name discards the blue one outright rather than stacking with it
+        local bl = M.ladderBlocks(ctx, s.trait.category);
+        if bl ~= nil and #bl.blocks > 0 then
+            local j = bl.blocks[1].job;
+            local who = ('%s (%s job)'):format(j.code or '?',
+                j.slot == 'sub' and 'sub' or 'main');
+            kit.wrapped(im, bl.all and kit.COL.err or kit.COL.warn,
+                bl.all
+                    and ('Blocked: %s already has %s at tier %d. The server keeps the job trait and discards the blue one, at any tier - weight fed here buys nothing. (Only the tier compares: the two grant different modifiers.)'):format(
+                        who, book.traitName(s.trait.category), j.rank)
+                    or ('%s holds tier %d of %s; that rung is discarded, the higher one still applies.'):format(
+                        who, bl.blocks[1].tierIndex, book.traitName(s.trait.category)));
+        end
     end
     if s.skillchain and #s.skillchain > 0 then
         kit.kvw(im, 'Skillchain', table.concat(s.skillchain, ', '));
