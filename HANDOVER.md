@@ -5,8 +5,11 @@ FOUR live field rounds with Henrik in game, all landed same day; supersedes
 the 2026-08-08 timeline handover, kept below as §0 for the slotlist's design
 history, and the 2026-08-04 handover below that as §H)
 **Repo:** https://github.com/henkpoa/bludex — public, `main` + `dev` (all work on `dev`,
-dev→main only on Henrik's explicit go; same law in dlac). `addon.version` is
-**1.1.0 on dev** — NO release until the field list below is done.
+dev→main only on Henrik's explicit go; same law in dlac). `addon.version`
+**1.1.0 — RELEASED to main 2026-08-10** on Henrik's go, after his four live
+field rounds the same day. The field list in §-1 stays open as the next
+session's first errand; items confirmed there harden the release, they do
+not gate it anymore.
 
 ---
 
