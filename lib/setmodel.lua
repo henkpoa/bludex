@@ -965,6 +965,161 @@ function M.convertTo(set, kind, book)
 end
 
 -- ---------------------------------------------------------------------------
+-- SHARE TEXT (2026-08-10, the dlac friend-share flow scaled to one set):
+-- a set as ONE pasteable line -- BDXSET1|kind|name|payload|crc4 -- with no
+-- tabs anywhere, so chat, Discord and clipboards carry it whole. The
+-- checksum catches a truncated or mangled paste BEFORE the tolerant decode
+-- could quietly import half a set. Backups never travel: the text is the
+-- set's authorship, not its history.
+--
+-- Payloads (all built from ',', ';', '@', '~', '=' -- never '|' or tabs):
+--   flat      id,id,...                                    (20 csv)
+--   levels    base-csv[~rule=key][~41=csv][~71=csv]...
+--   timeline  builtFor~chains    (chains: ';'-joined slots of 'id@from')
+-- The name percent-encodes '%', '|', '~' and whitespace-breakers.
+-- ---------------------------------------------------------------------------
+
+local function shareEncName(s)
+    return (tostring(s):gsub('[%%|~\t\r\n]', function(c)
+        return ('%%%02X'):format(c:byte());
+    end));
+end
+
+local function shareDecName(s)
+    return (tostring(s):gsub('%%(%x%x)', function(h)
+        return string.char(tonumber(h, 16));
+    end));
+end
+
+local function shareCrc(s)
+    local n = 0;
+    for i = 1, #s do n = (n * 31 + s:byte(i)) % 65536; end
+    return ('%04x'):format(n);
+end
+
+local function shareEncIds(ids)
+    local parts = {};
+    for i = 1, 20 do parts[i] = tostring(tonumber(ids and ids[i]) or 0); end
+    return table.concat(parts, ',');
+end
+
+local function shareDecIds(s)
+    local ids, i = zeroIds(), 0;
+    for tok in tostring(s or ''):gmatch('[^,]+') do
+        i = i + 1;
+        if i > 20 then break; end
+        ids[i] = tonumber(tok) or 0;
+    end
+    return ids;
+end
+
+local function shareEncChains(chains)
+    local slots = {};
+    for i = 1, 20 do
+        local parts = {};
+        for _, e in ipairs(chains and chains[i] or {}) do
+            parts[#parts + 1] = ('%d@%d'):format(tonumber(e.id) or 0, tonumber(e.from) or 1);
+        end
+        slots[i] = table.concat(parts, ',');
+    end
+    return table.concat(slots, ';');
+end
+
+local function shareDecChains(s)
+    local chains = emptyChains();
+    local slot = 0;
+    for tok in (tostring(s or '') .. ';'):gmatch('(.-);') do
+        slot = slot + 1;
+        if slot > 20 then break; end
+        for entry in tok:gmatch('[^,]+') do
+            local id, from = entry:match('^(%-?%d+)@(%-?%d+)$');
+            id, from = tonumber(id), tonumber(from);
+            if id ~= nil and from ~= nil and from >= 1 and from <= 75 then
+                chains[slot][#chains[slot] + 1] = { id = id, from = from };
+            end
+        end
+        table.sort(chains[slot], function(a, b) return a.from < b.from; end);
+    end
+    return chains;
+end
+
+function M.shareText(set)
+    local kind = M.kindOf(set);
+    local payload;
+    if kind == 'timeline' then
+        payload = tostring(tonumber(set.builtFor) or 75) .. '~' .. shareEncChains(set.chains);
+    elseif kind == 'levels' then
+        local parts = { shareEncIds(set.ids) };
+        if M.RULE_KEYS[set.rule or ''] then
+            parts[#parts + 1] = 'rule=' .. tostring(set.rule);
+        end
+        for _, t in ipairs(set.builds or {}) do
+            parts[#parts + 1] = ('%d=%s'):format(tonumber(t.level) or 71, shareEncIds(t.ids));
+        end
+        payload = table.concat(parts, '~');
+    else
+        payload = shareEncIds(set.ids);
+    end
+    local body = kind .. '|' .. shareEncName(set.name) .. '|' .. payload;
+    return 'BDXSET1|' .. body .. '|' .. shareCrc(body);
+end
+
+-- The paste side. Tolerates the line arriving wrapped in chat framing
+-- ('Mindie: BDXSET1|...') and trailing whitespace; refuses a damaged or
+-- truncated body by checksum, with a reason a person can act on.
+-- Returns set, nil -- or nil, why.
+function M.parseShare(text)
+    local body, sum = tostring(text or ''):match('BDXSET1|(.+)|(%x%x%x%x)%s*$');
+    if body == nil then return nil, 'not a bludex set share (no BDXSET1 line)'; end
+    if shareCrc(body) ~= sum:lower() then
+        return nil, 'the text is damaged - copy and paste the WHOLE line';
+    end
+    local kind, nameEnc, payload = body:match('^(%a+)|(.-)|(.*)$');
+    if kind == nil then return nil, 'the share line is malformed'; end
+    local name = shareDecName(nameEnc);
+    if name == '' then name = 'Imported'; end
+    if kind == 'flat' then
+        local set = M.new(name, 'flat');
+        set.ids = shareDecIds(payload);
+        return set;
+    end
+    if kind == 'levels' then
+        local set = M.new(name, 'levels');
+        local first = true;
+        for tok in (payload .. '~'):gmatch('(.-)~') do
+            if first then
+                set.ids = shareDecIds(tok);
+                first = false;
+            else
+                local rule = tok:match('^rule=(%a+)$');
+                local lvl, csv = tok:match('^(%d+)=(.*)$');
+                if rule ~= nil and M.RULE_KEYS[rule] then
+                    set.rule = rule;
+                elseif lvl ~= nil then
+                    set.builds[#set.builds + 1] = {
+                        level = tonumber(lvl), ids = shareDecIds(csv),
+                    };
+                end
+            end
+        end
+        M.normalizeGroup(set);
+        return set;
+    end
+    if kind == 'timeline' then
+        local bf, chains = payload:match('^(%d+)~(.*)$');
+        if bf == nil then return nil, 'the timeline payload is malformed'; end
+        local set = M.new(name, 'timeline');
+        local n = tonumber(bf) or 75;
+        if n < 1 or n > 75 then n = 75; end
+        set.builtFor = n;
+        set.chains = shareDecChains(chains);
+        M.syncLegacyIds(set, nil);
+        return set;
+    end
+    return nil, ('unknown set kind "%s" - a newer bludex made this?'):format(kind);
+end
+
+-- ---------------------------------------------------------------------------
 -- flat readers -- every one takes a v2 set (reads its ids mirror = the
 -- level-75 resolution) OR a plain 20-id array (a resolveAtLevel result),
 -- so level-aware callers pass the resolution for the level they preview

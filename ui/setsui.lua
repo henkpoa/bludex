@@ -677,6 +677,7 @@ local function savedList(ctx)
         -- the chooser takes over the middle column: a new set IS its kind
         -- from the first click (docs/set-types-plan.md 3)
         st.pickKind = not st.pickKind or nil;
+        st.shareOpen, st.importOpen = nil, nil;
     end
     kit.tip(im, 'Start a new set. You pick which of the three kinds it is\n'
         .. '(Flat / Lvl Subsets / Slotlist) before anything is created.');
@@ -708,6 +709,14 @@ local function savedList(ctx)
         .. '(config/addons/blusets/*.txt) as bludex saved sets.\n'
         .. 'A set name that already exists here is skipped.');
 
+    -- the friend-share pair (docs/set-types-plan.md 8, the dlac flow scaled
+    -- to a set): one line out, one line in
+    if kit.litButton(im, 'Import from text', st.importOpen == true, LEFT_W - 20, 20) then
+        st.importOpen = not st.importOpen or nil;
+        st.shareOpen, st.pickKind, st.convertOpen = nil, nil, nil;
+    end
+    kit.tip(im, 'Paste a set someone sent you (a BDXSET1 line) and\nsave it as your own.');
+
     -- name box, with the set's kind beside the label -- the one fact about
     -- a set that never changes after the chooser
     local ekind = ctx.sets.kindOf(st.editingSet);
@@ -730,12 +739,21 @@ local function savedList(ctx)
     -- drops it (which is why a lossy convert takes two clicks).
     local convEntry = st.activeSet and cfg.sets[st.activeSet] or nil;
     if convEntry ~= nil then
-        if kit.litButton(im, 'Convert...', st.convertOpen == true, LEFT_W - 20, 20) then
+        local halfW = math.floor((LEFT_W - 24) / 2);
+        if kit.litButton(im, 'Convert...', st.convertOpen == true, halfW, 20) then
             st.convertOpen = not st.convertOpen or nil;
             st.convertConfirm = nil;
+            st.shareOpen, st.importOpen = nil, nil;
         end
         kit.tip(im, 'Turn this saved set into another kind. What the new kind\n'
-            .. 'cannot carry is listed -- and dropped -- when you do.');
+            .. 'cannot carry is listed -- and dropped -- when you do\n'
+            .. '(the old state banks as backup 1, so it is undoable).');
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        if kit.litButton(im, 'Share...', st.shareOpen == true, halfW, 20) then
+            st.shareOpen = not st.shareOpen or nil;
+            st.importOpen, st.pickKind, st.convertOpen = nil, nil, nil;
+        end
+        kit.tip(im, 'This set as one line of text -- send it to a friend,\nthey paste it under Import from text.');
     end
     if st.convertOpen and convEntry ~= nil then
         if M.unsaved(ctx) then
@@ -1435,14 +1453,152 @@ local function flatPlanner(ctx)
     if st.applyNote then kit.ctext(im, kit.COL.dim, st.applyNote); end
 end
 
--- the middle column, dispatched: the chooser while New is deciding, then
--- the editor the editing set's kind calls for
+-- ---------------------------------------------------------------------------
+-- SHARE / IMPORT FROM TEXT (docs/set-types-plan.md 8) -- the dlac
+-- friend-share flow, one set at a time: Share shows the line and copies
+-- it; Import parses a paste LIVE and says what it recognized before
+-- anything is created. Both take the middle column, like the chooser.
+-- ---------------------------------------------------------------------------
+local function sharePane(ctx)
+    local im, st, cfg = ctx.im, ctx.state, ctx.cfg;
+    local entry = st.activeSet and cfg.sets[st.activeSet] or nil;
+    if entry == nil then st.shareOpen = nil; return; end
+    kit.header(im, ('Share "%s"'):format(entry.name));
+    kit.ctext(im, kit.COL.dim, 'One line, sent whole: chat, Discord, anywhere.\n'
+        .. 'The other side pastes it under Import from text.\n'
+        .. 'Backups stay home - the text is the set, not its history.');
+    if M.unsaved(ctx) then
+        kit.ctext(im, kit.COL.warn, 'Unsaved edits are NOT in this text - Save to include them.');
+    end
+    if kit.isFn(im, 'Separator') then im.Separator(); end
+    local text = ctx.sets.shareText(entry);
+    -- a copy SOURCE, rebuilt every frame -- not an editor
+    if kit.isFn(im, 'SetNextItemWidth') then
+        im.SetNextItemWidth(kit.availWidth(im, MID_W) - 8);
+    end
+    if kit.isFn(im, 'InputText') then
+        pcall(im.InputText, '##bdxsharetext', { text }, #text + 8);
+    else
+        kit.ctext(im, kit.COL.text or kit.COL.dim, text);
+    end
+    if kit.isFn(im, 'SetClipboardText') then
+        if kit.litButton(im, 'Copy to clipboard', false,
+            kit.measure(im, { 'Copy to clipboard' }, 120), 24) then
+            pcall(im.SetClipboardText, text);
+            st.applyNote = ('Copied "%s" to the clipboard - paste it to your friend.'):format(entry.name);
+        end
+        kit.tip(im, 'The whole line, one click.');
+    else
+        kit.ctext(im, kit.COL.dim, '(no clipboard in this binding - select the text and Ctrl+C)');
+    end
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    if kit.litButton(im, 'Back', false, kit.measure(im, { 'Back' }, 50), 24) then
+        st.shareOpen = nil;
+    end
+    if st.applyNote then kit.ctext(im, kit.COL.dim, st.applyNote); end
+end
+
+local function importPane(ctx)
+    local im, st, cfg = ctx.im, ctx.state, ctx.cfg;
+    kit.header(im, 'Import from text');
+    kit.ctext(im, kit.COL.dim, 'Paste the whole BDXSET1 line someone sent you.\n'
+        .. 'Chat framing around it is fine - the line is found inside.');
+    if kit.isFn(im, 'Separator') then im.Separator(); end
+    st.importBuf = st.importBuf or { '' };
+    local boxW = kit.availWidth(im, MID_W) - 8;
+    if kit.isFn(im, 'InputTextMultiline') then
+        pcall(im.InputTextMultiline, '##bdximporttext', st.importBuf, 16384, { boxW, 70 });
+    elseif kit.isFn(im, 'InputText') then
+        if kit.isFn(im, 'SetNextItemWidth') then im.SetNextItemWidth(boxW); end
+        pcall(im.InputText, '##bdximporttext', st.importBuf, 16384);
+    end
+    -- parsed LIVE, dlac-style: the moment the paste lands, it is named --
+    -- or refused with a reason a person can act on
+    local cur = st.importBuf[1] or '';
+    if st.importLen ~= #cur then
+        st.importLen = #cur;
+        st.importSet, st.importWhy = nil, nil;
+        if cur ~= '' then
+            st.importSet, st.importWhy = ctx.sets.parseShare(cur);
+        end
+    end
+    if st.importSet ~= nil then
+        local inc = st.importSet;
+        local kind = ctx.sets.kindOf(inc);
+        local extra = '';
+        if kind == 'levels' and #(inc.builds or {}) > 0 then
+            extra = (', %d level build%s'):format(#inc.builds,
+                (#inc.builds == 1) and '' or 's');
+        elseif kind == 'timeline' then
+            extra = (', built for Lv.%d'):format(inc.builtFor or 75);
+        end
+        kit.ctext(im, kit.COL.ok, ('Recognized: "%s" - a %s set, %d spell%s%s.'):format(
+            inc.name, M.KIND_INFO[kind].label, ctx.sets.count(inc),
+            (ctx.sets.count(inc) == 1) and '' or 's', extra));
+        -- a name collision imports under a numbered name, never clobbers
+        local final = inc.name;
+        local n = 2;
+        local function taken(want)
+            for _, e in ipairs(cfg.sets) do
+                if ctx.book.norm(e.name) == ctx.book.norm(want) then return true; end
+            end
+            return false;
+        end
+        while taken(final) do
+            final = ('%s (%d)'):format(inc.name, n);
+            n = n + 1;
+        end
+        if final ~= inc.name then
+            kit.ctext(im, kit.COL.warn, ('The name is taken - it will import as "%s".'):format(final));
+        end
+        if kit.litButton(im, 'Import', false, kit.measure(im, { 'Import' }, 70), 24, kit.PAL.go) then
+            local entry = ctx.sets.clone(inc, final);
+            ctx.sets.upgrade(entry, ctx.book);
+            table.insert(cfg.sets, entry);
+            st.activeSet = #cfg.sets;
+            if ctx.sets.kindOf(entry) == 'levels' then
+                st.editLevel = nil;
+                st.editingSet = ctx.sets.draft(entry, nil);
+            else
+                st.editLevel = nil;
+                st.editingSet = ctx.sets.clone(entry, entry.name);
+            end
+            st.assignSlot = nil;
+            cfg.activeSetName = entry.name;
+            if ctx.save then ctx.save(); end
+            st.importOpen = nil;
+            st.importBuf, st.importLen, st.importSet = nil, nil, nil;
+            st.applyNote = ('Imported "%s" - a %s set.'):format(
+                entry.name, M.KIND_INFO[ctx.sets.kindOf(entry)].label);
+        end
+        kit.tip(im, 'Saves it as your own set and opens it for editing.');
+    elseif st.importWhy ~= nil then
+        kit.ctext(im, kit.COL.warn, st.importWhy);
+    end
+    if kit.isFn(im, 'SameLine') and st.importSet ~= nil then im.SameLine(); end
+    if kit.litButton(im, 'Back', false, kit.measure(im, { 'Back' }, 50), 24) then
+        st.importOpen = nil;
+    end
+end
+
+-- the middle column, dispatched: the chooser while New is deciding, the
+-- share/import panes while one is open, then the editor the editing set's
+-- kind calls for
 local function midColumn(ctx)
-    if ctx.state.pickKind then
+    local st = ctx.state;
+    if st.pickKind then
         kindChooser(ctx);
         return;
     end
-    if ctx.sets.kindOf(ctx.state.editingSet) == 'timeline' then
+    if st.shareOpen then
+        sharePane(ctx);
+        return;
+    end
+    if st.importOpen then
+        importPane(ctx);
+        return;
+    end
+    if ctx.sets.kindOf(st.editingSet) == 'timeline' then
         slotPlanner(ctx);
     else
         flatPlanner(ctx);
@@ -1474,12 +1630,26 @@ local function statsPanel(ctx)
         kit.ctext(im, kit.COL.dim, 'no trait weight at this level');
     end
     for _, ev in ipairs(evals) do
-        if ev.tier then
+        -- what the SET earns is not always what you GET: a job trait of the
+        -- same name discards the blue one (Traits tab has the full story) --
+        -- the attribution came back with the trait work, review 2026-08-10:
+        -- the timeline rewrite of this tab had lost it
+        local v = ctx.verdict and ctx.verdict(ev.cat, ev.weight) or nil;
+        if v ~= nil and v.deadWeight and v.blocker ~= nil then
+            kit.ctext(im, kit.COL.err, ('%s: blocked by %s'):format(
+                ev.name, v.blocker.code or 'your job'));
+            kit.tip(im, ('%s already grants %s (tier %d). The server keeps the JOB\n'
+                .. 'trait and throws the blue one away whatever its tier, so the %d\n'
+                .. 'weight this set feeds the ladder buys nothing.\n\n'
+                .. 'Only the tier compares between them -- the job trait and the blue\n'
+                .. 'rungs grant different modifiers. See the Traits tab.'):format(
+                v.blocker.name or 'Your job', ev.name, v.blocker.rank, ev.weight));
+        elseif ev.tier then
             kit.ctext(im, kit.COL.ok, ('%s: %s'):format(ev.name, ev.tierText));
         else
             kit.ctext(im, kit.COL.dim, ('%s: below tier 1'):format(ev.name));
         end
-        if ev.nextPoints then
+        if ev.nextPoints and not (v and v.deadWeight) then
             kit.ctext(im, kit.COL.dim, ('   %d more weight -> %s'):format(
                 ev.nextPoints - ev.weight, ev.nextText or 'next tier'));
         end
@@ -1621,7 +1791,13 @@ function M.render(ctx)
     -- 'Clea', 'Man' and 'Dele' all clipped in the field at the old fixed
     -- widths)
     local rowW = kit.measure(im, { 'New', 'Save', 'Delete' }, 50);
-    LEFT_W = math.max(210, rowW * 3 + 32);
+    -- the left column must also hold a rung row whole ('>71  77 / 79+ 19 / 20')
+    -- and the Levels row (add list beside Remove) -- measured, never guessed
+    -- (the clipping law; field 2026-08-07: the rows clipped at the old width)
+    local rungW = kit.measure(im, { '>71   77 / 79+  19 / 20  ' }, 0) + 24;
+    local lvlW = kit.measure(im, { 'Add a level' }, 90)
+        + kit.measure(im, { 'Remove' }, 66) + 30;
+    LEFT_W = math.max(210, rowW * 3 + 32, rungW, lvlW);
     local gameRow = kit.measure(im, { 'Apply in game', 'Applying...' }, 100)
         + kit.measure(im, { 'Read current', 'Confirm read?' }, 90)
         + kit.measure(im, { 'Clear' }, 50);

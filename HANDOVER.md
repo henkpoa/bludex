@@ -69,14 +69,24 @@ CONVERSION IN PLACE** (plan §6): Convert... under the name box, the flat
 projection as the bridge (`setmodel.convertTo`/`convertLoss`), losses
 named before the two-click confirm, unsaved edits must settle first,
 source never mutated. AND (fifth slice, same day) **BACKUPS FOR EVERY
-KIND** (plan §6b): kind-shaped backups, restoreBackup flips kinds --
+KIND** (plan §7): kind-shaped backups, restoreBackup flips kinds --
 Convert banks the old state as backup 1 with the ring carried across,
 so a lossy conversion is UNDOABLE; save-over banks on every kind, the
 right-click ring opens on every row, sets2bak grammar kind-tagged.
-The plan has nothing parked left. Still queued: (d) the job-traits
-field round, (e) the field checklist below (§0), once per kind, plus
-one live band-crossing under Lvl Set Switch and one conversion + undo
-round-trip.
+The plan has nothing parked left. THEN (sixth slice, same day): the
+**Sets-tab trait summary got its attribution back** -- the timeline
+rewrite of setsui had silently dropped the "blocked by WAR" verdict
+line and the left column's measured widths (the 2026-08-07 clipping
+fix); both are restored, so all three trait surfaces (Traits tab,
+spell tooltip/Assign, Sets summary) speak the collision again. AND
+**SHARE / IMPORT FROM TEXT** (plan §8, the dlac flow scaled to a set):
+Share... beside Convert... puts the set on one BDXSET1 line
+(checksummed, tab-free, backups stay home), Import from text parses a
+paste live, names what it recognized, refuses damage whole, and
+numbers name collisions. Still queued: (d) the job-traits field round,
+(e) the field checklist below (§0), once per kind, plus one live
+band-crossing under Lvl Set Switch, one conversion + undo round-trip,
+and one share line through real Discord and back.
 
 ---
 

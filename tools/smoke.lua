@@ -744,6 +744,50 @@ check(cnv.backups[1].kind == 'flat',
     'the flat state it replaced banked in turn -- the undo is undoable');
 end
 
+print('smoke: share text (one set, one pasteable line)');
+do
+-- every kind round-trips whole through its share line
+local sf = sets.new('My|Set ~ 100%', 'flat'); sf.ids[1] = 529; sf.ids[7] = 603;
+local line = sets.shareText(sf);
+check(line:find('^BDXSET1|') ~= nil and line:find('\t') == nil,
+    'the line is one BDXSET1 token, no tabs anywhere');
+local rf, why = sets.parseShare(line);
+check(rf ~= nil and rf.name == 'My|Set ~ 100%' and sets.equal(sf, rf),
+    'a flat set round-trips, awkward name and all');
+
+local sl = sets.new('Climb', 'levels'); sl.ids[1] = 529;
+sets.groupAdd(sl, 41); sets.groupPut(sl, 41, { [1] = 549 });
+sl.rule = 'switch';
+local rl = sets.parseShare(sets.shareText(sl));
+check(rl ~= nil and sets.equal(sl, rl)
+    and rl.rule == 'switch' and rl.builds[1].level == 41,
+    'a levels set round-trips: base, rule and builds');
+
+local stl = sets.new('Plan');
+check(sets.addEntry(stl, 1, 603, nil, book)
+    and sets.addEntry(stl, 1, 529, nil, book), 'share fixture stacks a chain');
+stl.builtFor = 30;
+sets.pushBackup(stl, stl, 100);
+local rt = sets.parseShare(sets.shareText(stl));
+check(rt ~= nil and sets.equal(stl, rt) and rt.builtFor == 30,
+    'a timeline round-trips: chains and builtFor');
+check(rt.backups == nil, 'and backups never travel');
+
+-- the paste side is forgiving where it can be, strict where it must be
+local framed = 'Mindie: ' .. sets.shareText(sf) .. '  ';
+check(sets.parseShare(framed) ~= nil, 'chat framing around the line is fine');
+local damaged = sets.shareText(sf):gsub('BDXSET1|flat', 'BDXSET1|falt');
+local _, dwhy = sets.parseShare(damaged);
+check(dwhy ~= nil and dwhy:find('damaged', 1, true) ~= nil,
+    'a mangled body fails the checksum with a reason');
+local _, twhy = sets.parseShare('hello there');
+check(twhy ~= nil and twhy:find('BDXSET1', 1, true) ~= nil,
+    'plain text is refused by name');
+local trunc = sets.shareText(sl):sub(1, 40);
+check(sets.parseShare(trunc) == nil,
+    'a truncated paste imports nothing (never half a set)');
+end
+
 print('smoke: sorted apply layout');
 local slIds = { 623, 513, 0, 719 };   -- Head Butt, Sandspin, empty, Searing Tempest
 local sl = sets.sortedLayout(slIds, book);
@@ -1661,6 +1705,10 @@ do
     check(screen:find('Flat', 1, true) ~= nil, 'the flat kind is named by the name box');
     check(screen:find('Convert', 1, true) ~= nil,
         'a saved set offers Convert under its name');
+    check(screen:find('Share', 1, true) ~= nil,
+        'and Share beside it');
+    check(screen:find('Import from text', 1, true) ~= nil,
+        'the left column offers Import from text');
 
     sdrew = {};
     setsuiM.render(rctx(sets.draft(lset, 41), 2, nil, 41));

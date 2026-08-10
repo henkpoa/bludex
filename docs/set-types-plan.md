@@ -129,7 +129,7 @@ kind from then on.
 
 This replaces the "Read current into a new set" escape hatch named in §3.
 
-## 6b. Backups for every kind (built in the fourth slice, same day)
+## 7. Backups for every kind (built in the fourth slice, same day)
 
 The backup ring is no longer a timeline privilege. A backup is
 **kind-shaped** — it banks its source's authorship as its kind holds it
@@ -146,7 +146,23 @@ groupPut lands — the right-click ring opens on every saved row, and
 
 Nothing from the plan is parked anymore.
 
-## 7. Proof
+## 8. Share / Import from text (built in the fifth slice, same day)
+
+The dlac friend-share flow, scaled to one set. **Share...** (beside
+Convert..., saved sets only) shows the set as ONE line --
+`BDXSET1|kind|name|payload|crc4`, no tabs anywhere, so chat, Discord and
+clipboards carry it whole -- with a copy-source text box and a
+Copy-to-clipboard button (degrading to select-and-Ctrl+C when the
+binding has no clipboard). **Import from text** (under Import blusets)
+parses a paste LIVE, dlac-style: the moment the line lands it is named
+("Recognized: ... - a Slotlist set, 12 spells, built for Lv.75") or
+refused with a reason; chat framing around the line is tolerated, a
+failed checksum refuses the paste whole (never half a set), and a name
+collision imports under a numbered name, never clobbering. Backups do
+not travel -- the text is the set's authorship, not its history.
+`setmodel.shareText` / `parseShare` are pure and smoke-pinned.
+
+## 9. Proof
 
 Smoke: the old `level builds` sections return (they test the group API,
 which is back verbatim), plus a `set kinds` section: kindOf inference,
