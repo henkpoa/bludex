@@ -591,11 +591,25 @@ local function renderBody(im, st, deps, embedded)
     -- the header meters are the EDITING set against the budget -- the
     -- planning numbers needed while adding from the codex. Live-vs-
     -- planned shows per-slot in the Sets tab (dimming).
-    local max = budgetMax(deps);
-    kit.meter(im, '   Set:', deps.sets.usedPoints(st.editingSet, deps.book), max, ' pts');
-    kit.tip(im, max ~= nil
-        and 'Points used by the set you are editing (its level-75 plan) /\nyour total from the game client (CatsEyeXI bonuses included).'
-        or 'Points used by the set you are editing (its level-75 plan).\nThe total appears when you are on BLU (or set budgetOverride).');
+    -- THE PLAN AGAINST ITS OWN BUDGET, with the live reading in brackets
+    -- (Henrik 2026-08-10, sixth round). A base build IS the level-75 plan,
+    -- so measuring it against the budget for the level you happen to stand
+    -- at read as permanently over ('67 / 49 pts' at Lv.40). It is priced at
+    -- 75 now, and what the game holds right now rides along in brackets --
+    -- which is the whole sync line, folded into the space it belongs in.
+    local planLvl = (st.editingSet.draft and st.editingSet.level) or 75;
+    local max = deps.blu.budget(planLvl) or budgetMax(deps);
+    local ss = deps.blu.syncStats(deps.book);
+    local synced = (ss ~= nil and ss.level < 75) and ss or nil;
+    local liveMax = synced and deps.blu.budget() or nil;
+    kit.meter(im, '   Set:', deps.sets.usedPoints(st.editingSet, deps.book), max, ' pts',
+        synced and synced.activePoints or nil, liveMax);
+    kit.tip(im, (max ~= nil
+        and 'Points used by the set you are editing / the budget it is\nplanned against.'
+        or 'Points used by the set you are editing.\nThe total appears when you are on BLU (or set budgetOverride).')
+        .. (synced and ('\n\nIn brackets: what the game holds RIGHT NOW at Lv.%d,\n'
+            .. 'against the budget for that level. The rest of the set is\n'
+            .. 'disabled by the game itself and comes back with the level.'):format(synced.level) or ''));
     if kit.isFn(im, 'SameLine') then im.SameLine(); end
     -- SLOTS the plan occupies (the ids mirror), NOT chain entries: a Wild
     -- Oats -> Bludgeon stack is one slot, not two (review 2026-08-08). The
@@ -605,30 +619,15 @@ local function renderBody(im, st, deps, embedded)
     for i = 1, 20 do
         if ((st.editingSet.ids or {})[i] or 0) ~= 0 then slots75 = slots75 + 1; end
     end
-    kit.meter(im, '   Slots:', slots75, deps.sets.slotMax(st.editingSet), '');
+    kit.meter(im, '   Slots:', slots75, deps.sets.slotMax(st.editingSet), '',
+        synced and synced.active or nil, synced and synced.maxSlots or nil);
+    kit.tip(im, 'Slots the plan occupies / the slots it is planned against.'
+        .. (synced and ('\n\nIn brackets: spells live RIGHT NOW / the %d slots the\n'
+            .. 'game gives at Lv.%d. The rest of the set is still yours --\n'
+            .. 'it returns with the level.'):format(synced.maxSlots, synced.level) or ''));
     -- the set picker (Henrik 2026-08-10): every saved set one click away,
     -- and a second menu for WHICH build when the set has level builds
     setsui.headerPicker(ctx);
-    -- the level-sync line (Henrik 2026-08-06): the meters above stay the
-    -- PLAN (the editing set at full level); when the effective BLU level is
-    -- under the 75 cap this shows what the client holds RIGHT NOW -- the
-    -- sync-enabled spells' points against the synced budget, and those
-    -- spells against the synced slot count (the server's slot rule).
-    local ss = deps.blu.syncStats(deps.book);
-    if ss ~= nil and ss.level < 75 then
-        if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        -- the budget FOR THE SYNCED LEVEL, not the client's leftover from
-        -- full level (field 2026-08-06: this read "7 / 79 pts" at a Lv40 sync
-        -- whose real budget is 49, because points() had not recomputed)
-        local liveMax = deps.blu.budget();
-        kit.ctext(im, kit.COL.warn, ('   Sync Lv.%d: %d / %s pts  %d / %d slots'):format(
-            ss.level, ss.activePoints, liveMax and tostring(liveMax) or '?',
-            ss.active, ss.maxSlots));
-        kit.tip(im, ('Level sync: what is live RIGHT NOW at Lv.%d.\n'
-            .. 'The game disabled the rest of the set itself; everything\n'
-            .. 'returns when the sync ends. The Set/Slots meters keep\n'
-            .. 'showing the plan at full level.'):format(ss.level));
-    end
     -- the cap the client holds can belong to a level we have left (the client
     -- only recomputes it when the native Set Spells menu opens). Say so
     -- rather than showing a confident wrong number -- and name the one action

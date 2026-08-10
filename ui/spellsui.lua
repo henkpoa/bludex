@@ -411,7 +411,11 @@ end
 -- state for tooltip(); nil on the fallback path (tooltip self-checks then).
 -- In-set spells draw green; unlearned draw opts.dimColor (default dim)
 -- while on BLU; in-set wins. opts.label overrides the row text (the traits
--- tab composes weight/level into it).
+-- tab composes the trait points and level into it).
+-- `opts.dimArt` greys the ICON without touching the text rule -- what a row
+-- the level cannot give you yet needs (Henrik 2026-08-10, sixth round:
+-- grey the row instead of tagging every one of them), where the caller
+-- already owns the text color through opts.textCol.
 function M.listRow(ctx, id, iconSz, nameW, selected, showIcon, opts)
     local im, book = ctx.im, ctx.book;
     local s = book.spells[id];
@@ -425,6 +429,7 @@ function M.listRow(ctx, id, iconSz, nameW, selected, showIcon, opts)
     local label = (opts and opts.label) or s.name;
     local dimColor = (opts and opts.dimColor) or kit.COL.dim;
     local dim = ctx.blu.onBlu() and not book.learned(id) or false;
+    local artDim = dim or ((opts and opts.dimArt) == true);
     local inSet = ctx.sets.contains(ctx.state.editingSet, id) ~= nil;
     -- opts.textCol overrides the whole coloring rule -- the Sets tab's own
     -- rows are ALL in the set, so the green tint says nothing there
@@ -467,7 +472,7 @@ function M.listRow(ctx, id, iconSz, nameW, selected, showIcon, opts)
                 if h ~= nil and kit.isFn(im, 'Image') then
                     pcall(im.SetCursorPosX, x0);
                     pcall(im.SetCursorPosY, y0);
-                    local tint = dim and { 0.45, 0.45, 0.50, 0.85 } or { 1, 1, 1, 1 };
+                    local tint = artDim and { 0.45, 0.45, 0.50, 0.85 } or { 1, 1, 1, 1 };
                     local okI = pcall(im.Image, h, { iconSz, iconSz }, { 0, 0 }, { 1, 1 }, tint);
                     if not okI then pcall(im.Image, h, { iconSz, iconSz }); end
                 end
@@ -490,7 +495,7 @@ function M.listRow(ctx, id, iconSz, nameW, selected, showIcon, opts)
         if drawIcon then
             local h = filetex.spell(book, s, 'grid64');
             if h ~= nil and kit.isFn(im, 'Image') then
-                local tint = dim and { 0.45, 0.45, 0.50, 0.85 } or { 1, 1, 1, 1 };
+                local tint = artDim and { 0.45, 0.45, 0.50, 0.85 } or { 1, 1, 1, 1 };
                 local okI = pcall(im.Image, h, { iconSz, iconSz }, { 0, 0 }, { 1, 1 }, tint);
                 if not okI then pcall(im.Image, h, { iconSz, iconSz }); end
                 if kit.isFn(im, 'SameLine') then im.SameLine(); end

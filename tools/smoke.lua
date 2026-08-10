@@ -1875,6 +1875,36 @@ do
     check(screen:match('Head Butt  Lv%.%d+') ~= nil,
         'each spell row carries its own level -- the sort order, made legible');
 
+    -- GREY, NOT LABELLED (Henrik 2026-08-10, sixth round). Synced to 20 with
+    -- nothing live: slot 9 is past the level's brackets and Venom Shell (42)
+    -- is over its ceiling. Both used to wear a tag on every row; now the
+    -- colour carries it and only 'not active yet' -- a DIFFERENT thing, one
+    -- Apply fixes -- keeps its words.
+    -- built in a closure: the main chunk is near Lua's 200-local ceiling
+    blu.effectiveLevel = function() return 20; end
+    blu.currentSet = function()
+        return { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    end
+    sdrew = {};
+    setsuiM.render(rctx((function()
+        local q = sets.new('Synced', 'flat');
+        for _, id in ipairs({ 549, 603, 623, 529, 513 }) do
+            sets.add(q, id, book, 999);
+        end
+        return q;
+    end)(), nil));
+    screen = table.concat(sdrew, '\n');
+    check(screen:find('Venom Shell  Lv.42', 1, true) ~= nil,
+        'a sync-disabled spell still lists, editable, with its own level');
+    check(screen:find('disabled by level sync', 1, true) == nil,
+        'and says nothing about the sync -- the grey says it');
+    check(screen:find('no slot until', 1, true) == nil,
+        'nor does a slot past the level tag itself');
+    check(screen:find('(not active yet)', 1, true) ~= nil,
+        'but a spell the game COULD hold and does not keeps its words');
+    blu.effectiveLevel = function() return 42; end     -- back to the block's own
+    blu.currentSet = function() return {}; end
+
     sdrew = {};
     setsuiM.render(rctx(sets.draft(lset, 41, book), 2, nil, 41));
     screen = table.concat(sdrew, '\n');
@@ -1941,5 +1971,31 @@ do
         blu.syncStats, blu.rungCap =
         _cur2, _eff2, _onb2, _bud2, _sync2, _rc2;
 end
+
+-- THE FOLDED METER (Henrik 2026-08-10, sixth round: the separate sync line
+-- "takes up too much space"). Wrapped in a function so its locals get their
+-- own budget -- the main chunk is near Lua's 200-local ceiling.
+print('smoke: the folded meter (the live reading rides in brackets)');
+(function()
+    local out = {};
+    local mim = {
+        Text = function(s) out[#out + 1] = tostring(s); end,
+        TextColored = function(_, s) out[#out + 1] = tostring(s); end,
+        SameLine = function() end,
+    };
+    local function drawn(...)
+        out = {};
+        kit.meter(mim, ...);
+        return table.concat(out, ' ');
+    end
+    check(drawn('Set:', 67, 79, ' pts', 18, 49):find('67 (18) / 79 (49) pts', 1, true) ~= nil,
+        'the plan outside the brackets, what is live inside');
+    check(drawn('Slots:', 20, 20, '', 10, 12):find('20 (10) / 20 (12)', 1, true) ~= nil,
+        'and the same for slots');
+    check(drawn('Set:', 67, 79, ' pts'):find('67 / 79 pts', 1, true) ~= nil,
+        'no brackets at all at full level -- there is nothing to say');
+    check(drawn('Set:', 67, nil, ' pts', 18, 49):find('67 (18) / ? (49) pts', 1, true) ~= nil,
+        'an unknown budget still shows the live pair beside it');
+end)();
 
 print('smoke: all green');

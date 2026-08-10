@@ -1020,26 +1020,28 @@ local function chainRow(ctx, slot, shown, liveIds, locked, nameW)
         else
             local s = book.spells[e.id];
             local lo, hi = ctx.sets.entryRange(set, slot, activeIdx);
-            local liveTag = '';
-            if liveIds ~= nil and not liveIds[e.id] then
-                -- a sync-disabled spell is not WAITING for an apply -- the
-                -- game holds it and returns it when the sync ends
-                local lvl = ctx.blu.effectiveLevel();
-                if lvl ~= nil and lvl < 75 and s ~= nil
-                    and s.level ~= nil and s.level > lvl then
-                    liveTag = '  (disabled by level sync)';
-                else
-                    liveTag = '  (not active yet)';
-                end
+            -- SYNC-DISABLED IS GREY, NOT LABELLED (Henrik 2026-08-10, sixth
+            -- round) -- the same law the flat list follows, and the row
+            -- already carries the levels that explain it. Not waiting for an
+            -- apply either: the game gives it back when the sync ends.
+            local lvl = ctx.blu.effectiveLevel();
+            local why = nil;
+            if lvl ~= nil and lvl < 75 and s ~= nil
+                and s.level ~= nil and s.level > lvl then
+                why = ('Lv.%d cannot cast this - the sync disabled it, and\nthe game gives it back when the sync ends.'):format(lvl);
             end
+            local pending = (why == nil) and liveIds ~= nil and not liveIds[e.id];
             local label = ((s ~= nil) and s.name or ('#' .. e.id))
-                .. ('  %d-%d'):format(lo or floor, hi or 75) .. liveTag;
+                .. ('  %d-%d'):format(lo or floor, hi or 75)
+                .. (pending and '  (not active yet)' or '');
             -- every row here is 'in the set', so the green tint says
-            -- nothing -- head color instead, except unlearned stays loud
-            local headCol = kit.COL.head;
+            -- nothing -- head color instead, grey for what the level cannot
+            -- give you, and unlearned stays loud over both
+            local headCol = (why ~= nil) and kit.COL.dim or kit.COL.head;
             if ctx.blu.onBlu() and not book.learned(e.id) then headCol = kit.COL.err; end
             local lclick, rclick, hov = spellsui.listRow(ctx, e.id, 24, nameW,
-                selected, true, { label = label, textCol = headCol });
+                selected, true,
+                { label = label, textCol = headCol, dimArt = why ~= nil });
             if lclick then
                 -- the click MARKS the slot (Henrik 2026-08-10); the spell
                 -- becomes the info target without forcing the window open
@@ -1060,8 +1062,9 @@ local function chainRow(ctx, slot, shown, liveIds, locked, nameW)
                     return;                        -- the chain just changed
                 end
             end
-            spellsui.tooltip(ctx, e.id, hov,
-                { { 'click: mark the slot for Assign - right-click: Edit slot / Remove', kit.COL.dim } });
+            local extra = { { 'click: mark the slot for Assign - right-click: Edit slot / Remove', kit.COL.dim } };
+            if why ~= nil then table.insert(extra, 1, { why, kit.COL.warn }); end
+            spellsui.tooltip(ctx, e.id, hov, extra);
         end
     end
 
@@ -1161,13 +1164,21 @@ local function slotPlanner(ctx)
     else
         capShown = M.budgetFn(ctx)(shown);
     end
-    kit.meter(im, ('Points Lv.%d'):format(shown), ctx.sets.usedPoints(ids, book), capShown, '');
-    if capShown == nil then
-        kit.tip(im, 'The budget for this level is not known yet (learned bonus\nunmeasured). Bands below are provisional meanwhile.');
-    end
+    -- the LIVE reading rides in brackets rather than on its own line (Henrik
+    -- 2026-08-10, sixth round) -- and only while it says something the plan
+    -- does not: previewing the very level you stand at, the two agree.
+    local ss = ctx.blu.syncStats(book);
+    local synced = (ss ~= nil and ss.level < 75 and ss.level ~= shown) and ss or nil;
+    kit.meter(im, ('Points Lv.%d'):format(shown), ctx.sets.usedPoints(ids, book), capShown, '',
+        synced and synced.activePoints or nil, synced and ctx.blu.budget() or nil);
+    kit.tip(im, (capShown == nil
+        and 'The budget for this level is not known yet (learned bonus\nunmeasured). Bands below are provisional meanwhile.'
+        or ('The plan at Lv.%d against that level\'s budget.'):format(shown))
+        .. (synced and ('\n\nIn brackets: what the game holds RIGHT NOW at Lv.%d.'):format(synced.level) or ''));
     local activeN = 0;
     for i = 1, 20 do if (ids[i] or 0) ~= 0 then activeN = activeN + 1; end end
-    kit.meter(im, 'Slots ', activeN, ctx.sets.slotsAtLevel(shown), '');
+    kit.meter(im, 'Slots ', activeN, ctx.sets.slotsAtLevel(shown), '',
+        synced and synced.active or nil, synced and synced.maxSlots or nil);
     kit.ctext(im, kit.COL.dim, ('Total MP %d'):format(ctx.sets.usedMP(ids, book)));
 
     -- the whole-curve verdict (plan 2.6): red = enforced and real (Apply
@@ -1181,18 +1192,6 @@ local function slotPlanner(ctx)
         local col = (b.enforced and not b.provisional) and kit.COL.err
             or (b.enforced and kit.COL.warn or kit.COL.dim);
         kit.ctext(im, col, '  ' .. ctx.sets.bandText(b));
-    end
-
-    -- the level-sync line: the meters above are the PLAN at the preview
-    -- level; this is what the client holds right now while synced
-    local ss = ctx.blu.syncStats(book);
-    if ss ~= nil and ss.level < 75 then
-        local liveMax = ctx.blu.budget();      -- the synced level's budget
-        kit.ctext(im, kit.COL.warn, ('Sync Lv.%d: %d / %s pts, %d / %d slots'):format(
-            ss.level, ss.activePoints, liveMax and tostring(liveMax) or '?',
-            ss.active, ss.maxSlots));
-        kit.tip(im, 'What the level sync leaves live right now - the game\n'
-            .. 'disabled the rest itself and restores it when the sync ends.');
     end
 
     -- game actions (widths measured -- the clipping law)
@@ -1552,9 +1551,11 @@ local function flatPlanner(ctx)
         .. 'The spells sit in LEVEL ORDER, lowest first -- which is the order\n'
         .. 'Apply sends them, so reading up from the bottom is the order a\n'
         .. 'level sync takes them away in.\n\n'
+        .. 'A row your level cannot give you yet is GREYED, never barred:\n'
+        .. 'its own Lv. says why, and it edits like any other.\n\n'
         .. 'Left-click a row for Spell Info, right-click removes it.');
     if ctx.sets.count(set) == 0 then
-        kit.ctext(im, kit.COL.dim, 'The set is empty - add spells from the Codex or Traits.');
+        kit.wrapped(im, kit.COL.dim, 'The set is empty - add spells from the Codex or Traits.');
     end
     local nameW = math.max(kit.availWidth(im, MID_W) - 78, 120);
     local lvl = ctx.blu.effectiveLevel();
@@ -1584,26 +1585,39 @@ local function flatPlanner(ctx)
                     or '   (empty)');
             else
                 local s = book.spells[id];
-                local liveTag = '';
-                if liveIds ~= nil and not liveIds[id] then
-                    -- the most specific reason it is not live, first: the
-                    -- slot may not exist at this level at all, the spell may
-                    -- be over the sync ceiling -- and neither is WAITING for
-                    -- an apply, the game returns them when the sync ends
-                    if lvl ~= nil and lvl < g.floor then
-                        liveTag = ('  (no slot until Lv.%d)'):format(g.floor);
-                    elseif lvl ~= nil and lvl < 75 and s ~= nil
-                        and s.level ~= nil and s.level > lvl then
-                        liveTag = '  (disabled by level sync)';
-                    else
-                        liveTag = '  (not active yet)';
-                    end
+                -- WHAT YOUR LEVEL CANNOT GIVE YOU IS GREY, NOT LABELLED
+                -- (Henrik 2026-08-10, sixth round: "instead of saying on
+                -- every slot (disabled by) or (no slot until), maybe we
+                -- should just grey it out... we already provide the levels
+                -- on the slots"). Two reasons, one look: the slot is past
+                -- the level's bracket, or the spell is over the sync
+                -- ceiling. Neither is WAITING for an apply -- the game
+                -- returns them when the sync ends -- and neither stops you
+                -- editing the row. The reason still lives in the tooltip,
+                -- where it costs no space.
+                local why = nil;
+                if lvl ~= nil and lvl < g.floor then
+                    why = ('Lv.%d has no slot this deep - it opens at Lv.%d.'):format(
+                        lvl, g.floor);
+                elseif lvl ~= nil and lvl < 75 and s ~= nil
+                    and s.level ~= nil and s.level > lvl then
+                    why = ('Lv.%d cannot cast this - the sync disabled it, and\nthe game gives it back when the sync ends.'):format(lvl);
                 end
+                -- 'not active yet' is a DIFFERENT thing and keeps its words:
+                -- the game could hold this and does not, so Apply is the fix
+                local pending = (why == nil) and liveIds ~= nil and not liveIds[id];
                 local label = ('%s  Lv.%s%s'):format(
                     (s ~= nil) and s.name or ('#' .. id),
-                    (s ~= nil) and (s.level or '?') or '?', liveTag);
+                    (s ~= nil) and (s.level or '?') or '?',
+                    pending and '  (not active yet)' or '');
+                -- every row here is in the set, so the green tint says
+                -- nothing: head normally, grey for out of reach, and
+                -- unlearned still wins outright (Apply drops it entirely)
+                local rowCol = (why ~= nil) and kit.COL.dim or kit.COL.head;
+                if ctx.blu.onBlu() and not book.learned(id) then rowCol = kit.COL.err; end
                 local lclick, rclick, hov = spellsui.listRow(ctx, id, 24, nameW,
-                    st.selectedId == id, true, { label = label });
+                    st.selectedId == id, true,
+                    { label = label, textCol = rowCol, dimArt = why ~= nil });
                 if lclick then
                     st.selectedId = id;
                     st.detailOpen[1] = true;
@@ -1614,8 +1628,11 @@ local function flatPlanner(ctx)
                     st.applyNote = nil;
                     return;                    -- the rows just shifted down
                 end
-                spellsui.tooltip(ctx, id, hov,
-                    { { 'right-click: remove from the set', kit.COL.dim } });
+                local extra = { { 'right-click: remove from the set', kit.COL.dim } };
+                if why ~= nil then
+                    table.insert(extra, 1, { why, kit.COL.warn });
+                end
+                spellsui.tooltip(ctx, id, hov, extra);
             end
         end
     end
@@ -2150,7 +2167,11 @@ function M.render(ctx)
         + kit.measure(im, { 'Clear' }, 50);
     local levelRow = kit.measure(im, { 'Level change:' }, 60)
         + kit.measure(im, { 'Auto-apply', 'Manual' }, 64) * 2;
-    MID_W = math.max(340, gameRow + 34, levelRow + 34);
+    -- the floor is a READING width, not a fitting one: the slot list runs
+    -- twenty spell names deep and 340 clipped the longer ones (Henrik
+    -- 2026-08-10, sixth round: "can we make the middle column a little
+    -- wider"). The measured rows still win whenever they need more.
+    MID_W = math.max(400, gameRow + 34, levelRow + 34);
     -- while the share/import panes are up they own EVERYTHING right of the
     -- saved list (Henrik 2026-08-10, from the field: "we have ample space")
     -- -- the stats panel has nothing to say about a text box anyway
