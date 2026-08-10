@@ -198,9 +198,10 @@ function M.applyEditing(ctx, forLevel)
         ctx.cfg.lastAppliedSet = (entry ~= nil) and entry.name or '';
         st.replanPending = nil;
         if ctx.save then ctx.save(); end
-        st.applyNote = forLevel
-            and ('Applying the plan for Lv.%d - watch the chat log.'):format(lvl)
-            or 'Applying the changes, lowest level first - watch the chat log.';
+        -- no success note (Henrik 2026-08-10, from the field: "the green
+        -- button says it all") -- the chat log narrates the apply itself,
+        -- and this line only ever restated it. Refusals still speak above.
+        st.applyNote = nil;
     end
 end
 
@@ -1022,31 +1023,11 @@ local function slotPlanner(ctx)
     end
     if kit.isFn(im, 'Separator') then im.Separator(); end
 
-    -- what the CLIENT has set right now, for the per-row live tags
-    local liveIds = nil;
-    local live = ctx.blu.currentSet();
-    if #live == 20 then
-        liveIds = {};
-        for i = 1, 20 do if live[i] ~= 0 then liveIds[live[i]] = true; end end
-    end
-
-    local nameW = math.max(kit.availWidth(im, MID_W) - 78, 120);
-    for _, g in ipairs(ctx.sets.brackets()) do
-        local locked = shown < g.floor;
-        kit.ctext(im, locked and kit.COL.dim or kit.COL.head,
-            ('Lv.%d-%d'):format(g.floor, bracketTop(g.floor)));
-        if locked then
-            if kit.isFn(im, 'SameLine') then im.SameLine(); end
-            kit.ctext(im, kit.COL.dim, '  (locked at this level)');
-        end
-        for _, slot in ipairs(g.slots) do
-            chainRow(ctx, slot, shown, liveIds, locked, nameW);
-        end
-    end
-
-    if kit.isFn(im, 'Separator') then im.Separator(); end
     -- meters at the PREVIEW level. At the live level the client-preferred
     -- budget applies (ctx.budgetMax); elsewhere only the model can answer.
+    -- METERS AND ACTIONS SIT ABOVE THE LIST (Henrik 2026-08-10, from the
+    -- field): the slot list runs twenty rows deep, and Apply must not
+    -- live at the bottom of it.
     local ids = ctx.sets.resolveAtLevel(set, shown, book);
     local capShown;
     if liveLvl ~= nil and shown == liveLvl then
@@ -1192,6 +1173,29 @@ local function slotPlanner(ctx)
     kit.tip(im, 'Nothing applies by itself. A note in the header, a small\n'
         .. 'float window while Bludex is closed, and one chat line -\n'
         .. 'you click Apply when it suits.');
+
+    -- the slot list, below everything that describes and acts on it
+    if kit.isFn(im, 'Separator') then im.Separator(); end
+    -- what the CLIENT has set right now, for the per-row live tags
+    local liveIds = nil;
+    local live = ctx.blu.currentSet();
+    if #live == 20 then
+        liveIds = {};
+        for i = 1, 20 do if live[i] ~= 0 then liveIds[live[i]] = true; end end
+    end
+    local nameW = math.max(kit.availWidth(im, MID_W) - 78, 120);
+    for _, g in ipairs(ctx.sets.brackets()) do
+        local locked = shown < g.floor;
+        kit.ctext(im, locked and kit.COL.dim or kit.COL.head,
+            ('Lv.%d-%d'):format(g.floor, bracketTop(g.floor)));
+        if locked then
+            if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            kit.ctext(im, kit.COL.dim, '  (locked at this level)');
+        end
+        for _, slot in ipairs(g.slots) do
+            chainRow(ctx, slot, shown, liveIds, locked, nameW);
+        end
+    end
 end
 
 -- ---------------------------------------------------------------------------
