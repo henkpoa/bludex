@@ -226,13 +226,18 @@ function M.upgrade(set, book)
     end
     if chainCount == 0 and idCount > 0 then
         set.chains = M.buildChains(set.ids, book);
-        set.builtFor = set.builtFor or 75;
+        set.builtFor = 75;
         M.syncLegacyIds(set, book);
         return true;
     end
     -- make sure the shape is complete (a store decode arrives without the
     -- ids mirror -- re-derive it here)
-    if set.builtFor == nil then set.builtFor = 75; changed = true; end
+    -- ALWAYS 75 (Henrik 2026-08-10, sixth round: "it should always be built
+    -- for 75"). The field stays -- the wire format and the dlac store both
+    -- carry it, and a stored set must keep its shape -- but nothing sets it
+    -- to anything else any more, and an older set that carries a lower
+    -- floor is pinned here. Budget enforcement is the whole curve now.
+    if set.builtFor ~= 75 then set.builtFor = 75; changed = true; end
     for i = 1, 20 do
         if set.chains[i] == nil then set.chains[i] = {}; changed = true; end
     end
@@ -942,9 +947,9 @@ function M.copyFrom(set, srcIds, book)
         return rep;
     end
     -- A SLOTLIST takes one spell per slot, each activating at its own level
-    -- -- the same placement convertTo uses, and the only honest one from a
-    -- flat reading: nothing in a 20-id list says when anything should take
-    -- over from anything else. Chains are yours to build from here.
+    -- -- the only honest placement from a flat reading: nothing in a 20-id
+    -- list says when anything should take over from anything else. Chains
+    -- are yours to build from here.
     M.clear(set);
     local pick = {};
     for i = 1, 20 do
@@ -980,78 +985,6 @@ function M.draft(entry, level, book)
                 level = level, ids = M.groupIds(entry, level) };
     if book ~= nil then M.sortFlat(d, book); end
     return d;
-end
-
--- ---------------------------------------------------------------------------
--- KIND CONVERSION (docs/set-types-plan.md 6): a saved set may become
--- another kind, in place. THE FLAT PROJECTION IS THE BRIDGE -- what the
--- set plans at the cap (a flat set's ids, a levels set's BASE build, a
--- timeline's level-75 mirror) -- and whatever the projection cannot carry
--- is dropped: convertLoss NAMES it so the UI can say so before the click.
--- ---------------------------------------------------------------------------
-
-local function flatProjection(set, book)
-    if M.kindOf(set) == 'timeline' then
-        return M.resolveAtLevel(set, 75, book);
-    end
-    return copyIds(set.ids);
-end
-
--- What converting this set to `kind` would drop, as reader-facing phrases.
--- Empty = lossless.
-function M.convertLoss(set, kind, book)
-    local from = M.kindOf(set);
-    local out = {};
-    if from == kind then return out; end
-    if from == 'levels' then
-        local n = #(set.builds or {});
-        if n > 0 then
-            out[#out + 1] = ('its %d level build%s'):format(n, (n == 1) and '' or 's');
-        end
-        if M.RULE_KEYS[set.rule or ''] then
-            out[#out + 1] = ('its stored level-change rule (%s)'):format(set.rule);
-        end
-    elseif from == 'timeline' then
-        if not M.isFlat(set, book) then
-            local entries, markers = 0, 0;
-            for slot = 1, 20 do
-                for _, e in ipairs((set.chains or {})[slot] or {}) do
-                    if e.id == 0 then markers = markers + 1;
-                    else entries = entries + 1; end
-                end
-            end
-            local beyond = (entries - M.countIds(set.ids or {})) + markers;
-            if beyond > 0 then
-                out[#out + 1] = ('its timeline (%d entr%s beyond the Lv.75 plan)')
-                    :format(beyond, (beyond == 1) and 'y' or 'ies');
-            else
-                -- every spell survives, but not its timing: activation
-                -- levels are authorship the flat projection cannot carry
-                out[#out + 1] = 'its activation levels (the spells survive, the timing does not)';
-            end
-        end
-        -- backups are NOT a loss: the ring crosses with the set, and the
-        -- convert itself banks the old state (kind-shaped backups restore
-        -- across kinds -- the conversion is undoable)
-    end
-    return out;
-end
-
--- A NEW set of `kind` built from this one's flat projection, same name.
--- Never mutates the source -- the caller decides what replaces what.
-function M.convertTo(set, kind, book)
-    if M.kindOf(set) == kind then return M.clone(set, set.name); end
-    local ids = flatProjection(set, book);
-    local c = M.new(set.name, kind);
-    if kind == 'timeline' then
-        -- sorted placement, one entry per spell at its own level -- the
-        -- same faithful layout the v2 migration used
-        c.chains = M.buildChains(ids, book);
-        M.syncLegacyIds(c, book);
-    else
-        c.ids = ids;
-    end
-    return c;
 end
 
 -- ---------------------------------------------------------------------------

@@ -93,6 +93,15 @@ end
 local function learnedText(ctx, id)
     if ctx.blu.onBlu() or ctx.book.learned(id) then
         if ctx.book.learned(id) then return 'learned', kit.COL.ok; end
+        -- NOT EVERY SPELL YOU LACK IS ONE YOU MISSED (Henrik 2026-08-10,
+        -- sixth round). A granted spell -- Thunderbolt, off the food Lengua
+        -- Regia -- is not learned from a mob at all, so the red "not
+        -- learned" was accusing you of a gap you cannot close. It reads as
+        -- what it is, and the note below names what does grant it.
+        local s = ctx.book.spells[id];
+        if s ~= nil and s.grantedBy ~= nil then
+            return 'not learnable - granted', kit.COL.badge;
+        end
         return 'not learned', kit.COL.err;
     end
     return nil, nil;
@@ -244,6 +253,10 @@ function M.detail(ctx, id)
     end
     if s.unbridled then
         kit.ctext(im, kit.COL.badge, 'Unbridled Learning');
+    end
+    if s.grantedBy then
+        kit.wrapped(im, kit.COL.badge,
+            ('Not learned from a mob - granted by %s.'):format(s.grantedBy));
     end
     if not s.castable then
         kit.ctext(im, kit.COL.err, 'Learnable but NEVER castable at the 75 cap.');
@@ -428,7 +441,11 @@ function M.listRow(ctx, id, iconSz, nameW, selected, showIcon, opts)
     end
     local label = (opts and opts.label) or s.name;
     local dimColor = (opts and opts.dimColor) or kit.COL.dim;
-    local dim = ctx.blu.onBlu() and not book.learned(id) or false;
+    -- unlearned draws loud -- but a GRANTED spell is not unlearned, it is
+    -- simply not something you learn (Henrik 2026-08-10, sixth round), so
+    -- it never wears the red of a gap you could have closed
+    local dim = ctx.blu.onBlu() and not book.learned(id)
+        and s.grantedBy == nil or false;
     local artDim = dim or ((opts and opts.dimArt) == true);
     local inSet = ctx.sets.contains(ctx.state.editingSet, id) ~= nil;
     -- opts.textCol overrides the whole coloring rule -- the Sets tab's own
@@ -781,14 +798,12 @@ function M.render(ctx)
     f.stat = f.stat or {};
     st.detailOpen = st.detailOpen or { false };
 
-    -- THE SLOTLIST MARKER (Henrik 2026-08-10: "mark this out clearly"):
-    -- a slotlist assigns per slot, so codex right-clicks cannot add into it
-    if ctx.sets ~= nil and ctx.sets.kindOf ~= nil
-        and ctx.sets.kindOf(st.editingSet) == 'timeline' then
-        kit.wrapped(im, kit.COL.warn, 'Editing a Slotlist set: spells are assigned '
-            .. 'PER SLOT in the Sets tab (mark a slot, pick from Assign). '
-            .. 'Right-click here only REMOVES.');
-    end
+    -- The slotlist banner is GONE (Henrik 2026-08-10, sixth round: "we can
+    -- add via the add menu atm, so please remove this text"). It was written
+    -- when a codex right-click could only REMOVE from a slotlist; the assign
+    -- menu landed on that same right-click a round later and the warning
+    -- went stale where it stood, telling people the opposite of the truth.
+    -- The menu names the slots itself -- nothing left to warn about.
 
     -- filter row -- combo widths measured over every label they can show
     -- (the kit law: a hardcoded width clips a trailing character; "All eleme").

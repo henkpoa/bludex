@@ -81,8 +81,26 @@ kinds, amended in place through the rounds), `docs/timeline-sets-plan.md`
    for a slotlist. It REPLACES, never merges. One click into an empty
    build, two over a full one. A slotlist source's per-level authorship
    cannot survive the flattening and the tooltip says so up front.
-   `convertTo` / `convertLoss` still exist and are still tested, but NO UI
-   reaches them now — decide whether to delete them or give them a home.
+   `convertTo` / `convertLoss` / `flatProjection` are DELETED (same day, on
+   Henrik's call): a set's kind is fixed for life again, chosen at New. The
+   backup ring still restores ACROSS kinds — that property is the ring's
+   own, not conversion's, and is still pinned by its own fixture.
+   Two more of the same round:
+   * **`Built for Lv.` is gone.** Every set is enforced from 75; `upgrade`
+     pins `builtFor = 75` on adopt. The FIELD stays — the BDXSET1 payload
+     and the dlac store both carry it, so removing it would break a
+     versioned wire contract for nothing.
+   * **The codex's Slotlist banner is gone.** It was written when a codex
+     right-click could only REMOVE from a slotlist; the assign menu landed
+     on that same right-click a round later and the warning went stale
+     where it stood, telling people the opposite of the truth.
+   * **GRANTED spells are not learnable spells.** `spell.grantedBy` names
+     what hands you a spell no mob teaches (Thunderbolt ← the food Lengua
+     Regia). Such a spell keeps its codex row, but never draws in the
+     unlearned red, never reads `not learned`, and never sits in the
+     Missing filter — you cannot go and close that gap. Generator side:
+     `FIELD_GRANTED` in `tools/generate_spells.py`, so a regeneration keeps
+     it.
 
 0. **PLAN AT THE LEVEL YOU ARE, WEAR AT THE LEVEL YOU STAND** (Henrik
    2026-08-10, sixth round). `blu.realLevel` reads `GetJobLevel(16)` — the
@@ -300,8 +318,8 @@ it had anything. Generator carries `WIKI_TRAITS`/`WIKI_TRAIT_CATEGORIES`.
   autoRestore=true users — auto now unsets, nobody inherits that silently.
 * **Slot numbers never render** — bracket group headers only ("Lv.21-30"),
   since the engine re-sorts slots on every apply anyway.
-* **builtFor edits live under the Name box** (left column), default 75 on
-  everything migrated and new.
+* **builtFor is pinned to 75** (sixth round, 2026-08-10). The editor box is
+  gone; `upgrade` pins the field on adopt and it stays on the wire.
 * An adversarial code review ran over the whole branch before merge; its
   13 findings (backup-ring reset, silent refusals, stale nudges, decode
   clamps, the /bdx apply back door, meter semantics, per-frame sweep cost)
@@ -317,8 +335,8 @@ it had anything. Generator carries `WIKI_TRAITS`/`WIKI_TRAIT_CATEGORIES`.
       header reads "matches your Lv.N plan".
 - [ ] Ding a level with a pending swap: Manual nudge (header + float +
       chat), then Auto mode, debounce not firing mid-bounce.
-- [ ] Sync down with a builtFor=1 set: low entries return via re-plan, no
-      server-rejected tail; flat set stays QUIET.
+- [ ] Sync down with a full 75 plan: the refused tail is NAMED, banked, and
+      set by itself when the level returns; flat set stays QUIET.
 - [ ] Badge + Apply block on a deliberately overfilled leveling set;
       `/bdx apply` refuses too.
 - [ ] dlac flavor: chains round-trip the store; an OLD dlac module still

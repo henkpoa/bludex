@@ -68,9 +68,23 @@ FIELD_MODS = {
     728: [("MP", 30), ("VIT", 4), ("INT", 4), ("MND", 4)],    # Tenebral Crush
 }
 FIELD_NOTES = {
-    736: "Requires Unbridled Learning AND the food Lengua Regia (cooked from "
-         "behemoth tongue). Casting deactivates Unbridled Learning. "
-         "AoE stun 10-15s, not subject to Anvil Lightning's level/NM scaling.",
+    736: "Granted by the food Lengua Regia -- never learned from a mob. "
+         "With that food up AND Unbridled Learning active, a Lv.75 BLU can "
+         "cast it; casting deactivates Unbridled Learning. AoE stun 10-15s, "
+         "not subject to Anvil Lightning's level/NM scaling. "
+         "Lengua Regia (Cooking 105 / Alchemy 60): Fire Crystal, Behemoth "
+         "Tongue, Chimera Blood, Mithran Tomato, Dried Marjoram, Black "
+         "Pepper -- and it carries DEX+4, MND+3, Refresh+1, Magic Accuracy "
+         "+15% (max 25) and Blue magic recast -5%.",
+}
+# NOT LEARNED THE ORDINARY WAY (Henrik 2026-08-10, sixth round: "remove
+# thunderbolt as a learnable spell ... only eating a certain food will give
+# you the ability to cast it"). These stay in the codex -- they are real
+# spells and worth reading about -- but they are not something you can go
+# out and learn, so nothing counts them as missing or draws them in the
+# unlearned red. The value names what DOES grant them.
+FIELD_GRANTED = {
+    736: "the food Lengua Regia (cooked from behemoth tongue)",
 }
 
 # ---- WIKI-SOURCED values (bg-wiki, 2026-08-08) -----------------------------
@@ -565,6 +579,7 @@ def main():
             "trait": trait, "chains": chains, "bursts": bursts, "mods": mods,
             "numhits": int(sc["numhits"]) if sc and sc.get("numhits") else None,
             "note": FIELD_NOTES.get(sid),
+            "grantedBy": FIELD_GRANTED.get(sid),
             "src": src, "verify": sorted(set(verify)),
         })
 
@@ -647,6 +662,8 @@ def main():
                 ["{ stat = %s, value = %d }" % (lq(m), v) for m, v in r["mods"]]))
         if r["numhits"] and r["numhits"] > 1:
             f.append("numhits = %d" % r["numhits"])
+        if r["grantedBy"]:
+            f.append("grantedBy = %s" % lq(r["grantedBy"]))
         if r["note"]:
             f.append("note = %s" % lq(r["note"]))
         f.append("src = %s" % lq(r["src"]))

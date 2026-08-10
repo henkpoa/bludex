@@ -26,6 +26,23 @@ print('smoke: data');
 local n = 0; for _ in pairs(book.spells) do n = n + 1; end
 check(n == 136, '136 spells loaded');
 check(#book.filter({}) == 135, '135 castable through the default filter');
+
+-- GRANTED, NOT LEARNABLE (Henrik 2026-08-10, sixth round: "remove
+-- thunderbolt as a learnable spell ... only eating a certain food will give
+-- you the ability to cast it"). It stays in the codex -- it is a real spell
+-- and worth reading about -- but nothing counts it as a gap you could close.
+check(book.spells[736].grantedBy ~= nil
+    and book.spells[736].grantedBy:find('Lengua Regia', 1, true) ~= nil,
+    'Thunderbolt names what grants it, and it is not a mob');
+check(book.spells[736].note:find('Cooking 105', 1, true) ~= nil,
+    'and the note carries the recipe, so the codex answers the next question too');
+do
+    local missing = book.filter({ learned = false });
+    local sawTb = false;
+    for _, id in ipairs(missing) do if id == 736 then sawTb = true; end end
+    check(not sawTb, 'and it never sits in Missing -- you cannot go and learn it');
+    check(#missing > 100, '...while every ordinary unlearned spell still does');
+end
 check(book.spells[623].name == 'Head Butt', 'Head Butt by id');
 check(book.byName[book.norm('O. Counterstance')] == 696, 'normalized name lookup');
 check(book.spells[736].unbridled == true, 'Thunderbolt is unbridled');
@@ -738,60 +755,7 @@ print('smoke: copy from another set (the top-level spells, laid out per kind)');
         'a band draft takes what it can cast and NAMES what it cannot');
 end)();
 
-print('smoke: kind conversion (the flat projection is the bridge)');
-do
--- flat -> timeline: lossless, and the source is never touched
-local cf = sets.new('Conv', 'flat');
-sets.add(cf, 529, book, 80); sets.add(cf, 603, book, 80);
--- ADDS LAND IN LEVEL ORDER, whatever order they are made in (Henrik
--- 2026-08-10, fifth round): Wild Oats (4) ahead of Bludgeon (18), so the
--- editor's slot list reads as the level-sync drop order.
-check(cf.ids[1] == 603 and cf.ids[2] == 529,
-    'a flat add sorts by level, not by when you clicked');
-local before = {};
-for i = 1, 20 do before[i] = cf.ids[i]; end
-check(#sets.convertLoss(cf, 'timeline', book) == 0,
-    'a build-less flat set converts to a slotlist losslessly');
-local ct = sets.convertTo(cf, 'timeline', book);
-check(ct.kind == 'timeline' and ct.chains[1][1].id == 603,
-    'flat -> timeline: sorted placement, lowest level in the lowest slot');
-local same = (cf.kind == 'levels');
-for i = 1, 20 do if cf.ids[i] ~= before[i] then same = false; end end
-check(same, 'the source is never mutated');
-
--- flat -> timeline WITH builds: the base crosses; builds and a stored
--- rule are NAMED as the loss
-sets.groupAdd(cf, 41);
-sets.groupPut(cf, 41, { [1] = 549 });
-cf.rule = 'switch';
-local closs = sets.convertLoss(cf, 'timeline', book);
-check(#closs == 2 and closs[1]:find('1 level build', 1, true) ~= nil
-    and closs[2]:find('switch', 1, true) ~= nil,
-    'a set with builds names the build and the stored rule it drops');
-
--- timeline -> flat: flat-shaped crosses clean; a real timeline is named
-check(#sets.convertLoss(ct, 'levels', book) == 0,
-    'a flat-shaped timeline converts back losslessly');
-local deep = sets.new('Deep');
-check(sets.addEntry(deep, 1, 603, nil, book)
-    and sets.addEntry(deep, 1, 529, nil, book), 'conversion fixture stacks a chain');
-local dloss = sets.convertLoss(deep, 'levels', book);
-check(#dloss == 1 and dloss[1]:find('1 entry beyond', 1, true) ~= nil,
-    'timeline -> flat counts the entries the Lv.75 plan leaves behind');
-sets.pushBackup(deep, deep, 1000);
-check(#sets.convertLoss(deep, 'levels', book) == 1,
-    'backups are NOT a named loss -- the ring crosses with the set');
-local dflat = sets.convertTo(deep, 'levels', book);
-check(dflat.kind == 'levels' and dflat.ids[1] == 529 and #dflat.builds == 0,
-    'what crosses is the Lv.75 plan (Bludgeon, not the retired Wild Oats)');
-
--- same kind = a plain clone: timeline detail and backups survive intact
-local dsame = sets.convertTo(deep, 'timeline', book);
-check(dsame.chains[1][2] ~= nil and #(dsame.backups or {}) == 1,
-    'convert to the same kind is a full clone, nothing projected away');
-end
-
-print('smoke: backups for every kind (and the conversion undo)');
+print('smoke: backups for every kind (the ring crosses kinds)');
 do
 -- a flat ring: bank, mutate, restore, and the replaced state banks in turn
 local bf1 = sets.new('B', 'flat'); bf1.ids[1] = 529;
@@ -815,12 +779,15 @@ check(sets.restoreBackup(bl, 1, book, 200)
     and sets.groupBuild(bl, 41) ~= nil and bl.rule == 'switch',
     'restoring brings the builds and the rule back');
 
--- THE CONVERSION UNDO (the flow setsui's Convert runs: the ring crosses
--- and the state being left banks on it): convert away, restore backup 1,
--- and the set is its OLD KIND again
+-- A BACKUP RING CROSSES KINDS. Convert is gone (2026-08-10, sixth round --
+-- Copy from took its place), but the property it relied on is the ring's
+-- own and still holds: a levels state banked under a slotlist restores as
+-- levels, shadowing none of the other kind's fields. Hand-built now that
+-- nothing converts.
 local csrc = sets.new('CU', 'levels'); csrc.ids[1] = 529;
 sets.groupAdd(csrc, 41); sets.groupPut(csrc, 41, { [1] = 549 });
-local cnv = sets.convertTo(csrc, 'timeline', book);
+local cnv = sets.new('CU', 'timeline');
+sets.addEntry(cnv, 1, 529, nil, book);
 cnv.backups = csrc.backups;
 sets.pushBackup(cnv, csrc, 300);
 check(sets.kindOf(cnv) == 'timeline' and cnv.builds == nil,
@@ -1098,7 +1065,12 @@ check(#dec[1].chains[2] == 0 and dec[1].chains[20] ~= nil,
 dm._codec.attachBackups(dec, dm._codec.encodeBackups({ tset }));
 check(dec[1].backups ~= nil and dec[1].backups[1].ts == 12345
     and #dec[1].backups[1].chains[1] == 3, 'sets2bak: backups reattach by name');
+-- the WIRE carries builtFor faithfully (checked above) -- it is the ADOPT
+-- that pins it to 75 now (Henrik 2026-08-10, sixth round: "it should always
+-- be built for 75"), so both sides go through it before they compare
 sets.upgrade(dec[1], book);
+check(dec[1].builtFor == 75, 'and the adopt pins builtFor to 75, whatever arrived');
+sets.upgrade(tset, book);
 check(sets.equal(dec[1], tset), 'the round-tripped set equals the original');
 check(dm._codec.decodeSets2('')[1] == nil and dm._codec.decodeSets2('#v2')[1] == nil,
     'sets2 decode tolerates empty and header-only');

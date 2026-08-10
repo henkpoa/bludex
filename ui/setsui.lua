@@ -943,31 +943,12 @@ local function savedList(ctx)
         end
     end
 
-    if ekind == 'timeline' then
-        -- the built-for floor (plan 2.5): where budget ENFORCEMENT starts.
-        -- 75 = an endgame set (nothing below is its problem); 1 = a leveling
-        -- set that must fit everywhere.
-        kit.helpLabel(im, 'Built for Lv.',
-            'The level this set must actually FIT from. The point budget is\n'
-            .. 'enforced from here up to 75: violations below only inform\n'
-            .. '(grey bands), violations at or above BLOCK Apply (red).\n\n'
-            .. '75 = an endgame set -- over-budget at lower levels is fine,\n'
-            .. 'you never play it there. 1 = a leveling set that must fit at\n'
-            .. 'every level. Anything between works too.', kit.COL.dim);
-        if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        st.builtForBuf = st.builtForBuf or { '' };
-        st.builtForBuf[1] = tostring(st.editingSet.builtFor or 75);
-        if kit.isFn(im, 'SetNextItemWidth') then im.SetNextItemWidth(40); end
-        if kit.isFn(im, 'InputText') then
-            if pcall(im.InputText, '##bdxbuiltfor', st.builtForBuf, 3) then
-                local n = tonumber(st.builtForBuf[1]);
-                if n ~= nil and n >= 1 and n <= 75 then
-                    n = math.floor(n);
-                    if n ~= st.editingSet.builtFor then st.editingSet.builtFor = n; end
-                end
-            end
-        end
-    elseif ekind == 'levels' then
+    -- THE 'Built for Lv.' BOX IS GONE (Henrik 2026-08-10, sixth round: "it
+    -- should always be built for 75"). It set where budget enforcement
+    -- STARTS, and every set is enforced from 75 now -- setmodel.upgrade
+    -- pins the field, which stays in the model and on the wire so shared
+    -- and stored sets keep their shape.
+    if ekind == 'levels' then
         -- everything else about the SET, in order: what it does on a level
         -- change, then the levels it has. Both belong to the set, not to
         -- the build open in the editor.
