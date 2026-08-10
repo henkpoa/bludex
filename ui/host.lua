@@ -577,6 +577,9 @@ end
 -- open windows itself, so the codex either uses the host's float surface
 -- (renderDetailFloat below) or falls back to an in-panel pane.
 local function renderBody(im, st, deps, embedded)
+    -- ONE ctx per frame, built up front: the header picker needs it before
+    -- the buttons do
+    local ctx = tabCtx(im, st, deps, embedded);
     -- header: logo + budget
     local logo = filetex.ui('logo-64');
     if logo ~= nil and kit.isFn(im, 'Image') then
@@ -603,6 +606,9 @@ local function renderBody(im, st, deps, embedded)
         if ((st.editingSet.ids or {})[i] or 0) ~= 0 then slots75 = slots75 + 1; end
     end
     kit.meter(im, '   Slots:', slots75, deps.sets.slotMax(st.editingSet), '');
+    -- the set picker (Henrik 2026-08-10): every saved set one click away,
+    -- and a second menu for WHICH build when the set has level builds
+    setsui.headerPicker(ctx);
     -- the level-sync line (Henrik 2026-08-06): the meters above stay the
     -- PLAN (the editing set at full level); when the effective BLU level is
     -- under the 75 cap this shows what the client holds RIGHT NOW -- the
@@ -696,7 +702,6 @@ local function renderBody(im, st, deps, embedded)
     -- and Apply light GREEN when they have work, Revert discards the unsaved
     -- changes. One definition each -- setsui owns the verbs, including the
     -- consolidated live-vs-plan compare (applyState).
-    local ctx = tabCtx(im, st, deps, embedded);
     local unsaved = setsui.unsaved(ctx);
     local astate, alevel = setsui.applyState(ctx);
     -- the manual-replan nudge self-clears the moment live MATCHES a plan --

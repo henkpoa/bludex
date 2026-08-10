@@ -113,11 +113,17 @@ right-click add RESTORED for the merged kind; a SLOTLIST refuses adds
 by name (per-slot only), both tabs banner it, the whole slot row is
 the Assign mark (the + is gone), and Assign gained a trait filter
 (build a trait slot by slot). Actions sit above the list in both
-editors. Still queued: (d) the job-traits field round -- now including
-one in-game confirmation that a higher blue tier really does apply
-over a sub-job trait, (e) the field checklist below (§0), once per
-kind, plus one live band-crossing under Lvl Set Switch, one conversion
-+ undo round-trip, and one share line through real Discord and back.
+editors. AND the HEADER SET PICKER (same round): a combo between the
+Slots meter and Save/Apply lists every saved set -- switch the editing
+set from any tab -- with a second combo beside it for WHICH build when
+the picked set has level builds (Base / Lv.X-Y). Selection behaves
+exactly like clicking in the Sets tab (drafts for the merged kind,
+unsaved edits discarded). Still queued: (d) the job-traits field round
+-- now including one in-game confirmation that a higher blue tier
+really does apply over a sub-job trait, (e) the field checklist below
+(§0), once per kind, plus one live band-crossing under Lvl Set Switch,
+one conversion + undo round-trip, and one share line through real
+Discord and back.
 
 ---
 

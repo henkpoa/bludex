@@ -1791,6 +1791,15 @@ do
         and screen:find('blusets', 1, true) ~= nil,
         'the import pane renders, the blusets pull tucked inside it');
 
+    -- the header set picker (field 2026-08-10): driven bare, unguarded ON
+    -- PURPOSE -- a typo in it would hide inside renderBody's pcall in game
+    sdrew = {};
+    setsuiM.headerPicker(rctx(sets.draft(lset, 41), 2, nil, 41));
+    check(#sdrew >= 1, 'the header set picker renders (build menu included)');
+    setsuiM.headerPicker(rctx(sets.clone(tset, tset.name), 3));
+    setsuiM.headerPicker(rctx(sets.new('N', 'flat'), nil));
+    check(true, 'and takes a timeline selection and no selection at all');
+
     blu.currentSet, blu.effectiveLevel, blu.onBlu, blu.budget,
         blu.syncStats, blu.rungCap =
         _cur2, _eff2, _onb2, _bud2, _sync2, _rc2;

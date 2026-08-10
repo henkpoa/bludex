@@ -327,6 +327,71 @@ local function loadBuild(ctx, index, level)
 end
 M.loadBuild = loadBuild;
 
+-- THE HEADER SET PICKER (Henrik 2026-08-10, from the field: "between
+-- slots and save/apply, a scroll menu with all the sets"): switch the
+-- editing set from any tab, without the trip to the Sets tab. A merged
+-- set that HAS level builds opens a second menu beside it for WHICH
+-- build. Drawn by host.renderBody on the header line.
+function M.headerPicker(ctx)
+    local im, st, cfg = ctx.im, ctx.state, ctx.cfg;
+    if #cfg.sets == 0 then return; end
+    local names = {};
+    for _, e in ipairs(cfg.sets) do names[#names + 1] = e.name; end
+    local cur = (st.activeSet and cfg.sets[st.activeSet]) and cfg.sets[st.activeSet].name or nil;
+    local pick = { value = cur };    -- rebuilt each frame: reflects, reacts
+    local w = math.min(kit.measure(im, names, 90) + 24, 200);
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    kit.ctext(im, kit.COL.dim, ' ');
+    if kit.isFn(im, 'SameLine') then im.SameLine(); end
+    if kit.combo(im, '##bdxheaderset', pick, names, cur or 'Pick a set', w) then
+        for i, e in ipairs(cfg.sets) do
+            if e.name == pick.value then
+                if ctx.sets.kindOf(e) == 'levels' then
+                    loadBuild(ctx, i, nil);
+                else
+                    st.activeSet = i;
+                    st.editLevel = nil;
+                    st.editingSet = ctx.sets.clone(e, e.name);
+                    st.assignSlot = nil;
+                    st.applyNote = nil;
+                    cfg.activeSetName = e.name;
+                    if ctx.save then ctx.save(); end
+                end
+                break;
+            end
+        end
+    end
+    kit.tip(im, 'Switch the set being edited, from any tab.\nUnsaved edits on the current one are discarded\n(same as clicking a set in the Sets tab).');
+    -- the second menu: WHICH BUILD of a set that has level builds
+    local entry = st.activeSet and cfg.sets[st.activeSet] or nil;
+    if entry ~= nil and ctx.sets.kindOf(entry) == 'levels' then
+        local lvls = ctx.sets.groupLevels(entry);
+        if #lvls > 0 then
+            local bnames = { 'Base' };
+            for _, lvl in ipairs(lvls) do
+                bnames[#bnames + 1] = ('Lv.%d-%d'):format(lvl, ctx.sets.bandTop(lvl));
+            end
+            local bcur = 'Base';
+            if st.editingSet.draft and st.editingSet.level ~= nil then
+                bcur = ('Lv.%d-%d'):format(st.editingSet.level,
+                    ctx.sets.bandTop(st.editingSet.level));
+            end
+            local bpick = { value = bcur };
+            local bw = kit.measure(im, bnames, 70) + 24;
+            if kit.isFn(im, 'SameLine') then im.SameLine(); end
+            if kit.combo(im, '##bdxheaderbuild', bpick, bnames, bcur, bw) then
+                if bpick.value == 'Base' then
+                    loadBuild(ctx, st.activeSet, nil);
+                else
+                    local lv = tonumber(bpick.value:match('^Lv%.(%d+)'));
+                    if lv ~= nil then loadBuild(ctx, st.activeSet, lv); end
+                end
+            end
+            kit.tip(im, 'Which build of this set is being edited:\nthe base, or one of its level ranges.');
+        end
+    end
+end
+
 -- ---------------------------------------------------------------------------
 -- saved sets (left column): select, badge, backups, name, built-for
 -- ---------------------------------------------------------------------------
