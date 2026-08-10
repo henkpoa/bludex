@@ -6,10 +6,12 @@ the 2026-08-08 timeline handover, kept below as §0 for the slotlist's design
 history, and the 2026-08-04 handover below that as §H)
 **Repo:** https://github.com/henkpoa/bludex — public, `main` + `dev` (all work on `dev`,
 dev→main only on Henrik's explicit go; same law in dlac). `addon.version`
-**1.1.0 — RELEASED to main 2026-08-10** on Henrik's go, after his four live
-field rounds the same day. The field list in §-1 stays open as the next
-session's first errand; items confirmed there harden the release, they do
-not gate it anymore.
+**1.1.1 — RELEASED to main 2026-08-10** on Henrik's go, after SIX live field
+rounds the same day (1.1.0 reached main after four; 1.1.1 carries rounds
+five and six on top and is the first of the two to be TAGGED — there is no
+v1.1.0 tag or GitHub release, so anyone updating from GitHub crosses both).
+The field list in §-1 stays open as the next session's first errand; items
+confirmed there harden the release, they do not gate it anymore.
 
 ---
 
@@ -18,7 +20,7 @@ not gate it anymore.
 One long day: the dev/feature-branch merge, the kind model, and four field
 rounds, every fix landed and pushed the same day. The git log from `9f6b90f`
 (the merge) to HEAD carries the play-by-play; THIS section is the state a
-successor needs. Suite: **452 checks green** — run
+successor needs. Suite: **513 checks green** — run
 `lua bludex/tools/smoke.lua` from `Ashita/addons/` (or `smoke_posix.lua`,
 same coverage, POSIX paths). Design docs: `docs/set-types-plan.md` (the
 kinds, amended in place through the rounds), `docs/timeline-sets-plan.md`
