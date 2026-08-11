@@ -223,6 +223,30 @@ function M.render(ctx)
                 -- a set-earned ladder too, where the tag stays silent). The
                 -- blue ladder counts its own points from zero either way.
                 local top = v.active[1];
+                -- WHAT THIS LADDER WOULD COST IF YOU PAID IT EXACTLY. The rung
+                -- has a price in trait points and the spells you happen to have
+                -- set are rarely the cheapest way to meet it (Auto Refresh at
+                -- 75: 27 set points fed into a rung 9 would hold).
+                local hold = nil;
+                if ctx.sets.cheapestHold ~= nil then
+                    local okHold, res = pcall(ctx.sets.cheapestHold, evalSource, book, cat);
+                    hold = okHold and res or nil;
+                end
+                -- The surplus means two DIFFERENT things and must never be
+                -- worded as one: past the last rung it buys nothing ever,
+                -- below it the spare points are progress toward the next.
+                local function holdLine(nextTier)
+                    if hold == nil then return ''; end
+                    local names = {};
+                    for _, f in ipairs(hold.keep) do names[#names + 1] = f.name; end
+                    local fate = nextTier
+                        and ('The other %d set points only count toward tier %d.')
+                            :format(hold.saved, nextTier)
+                        or ('The other %d set points buy nothing at all.'):format(hold.saved);
+                    return ('\n\nTier %d costs %d Points, and %d set points hold it:\n%s.\n%s')
+                        :format(hold.tier, hold.points, hold.cost,
+                                table.concat(names, ', '), fate);
+                end
                 if top ~= nil and info ~= nil and weight > 0 then
                     local nxtTier = (top.tier or 0) + 1;
                     local nxt = info.tiers[nxtTier];
@@ -234,8 +258,9 @@ function M.render(ctx)
                             and ('\nThe job\'s tier %d does not stand in for the blue\nrungs below it.'):format(top.tier or 0)
                             or '';
                         kit.tip(im, ('Tier %d activates once your set feeds %d total points\n'
-                            .. '-- %d more from here.%s'):format(
-                            nxtTier, nxt.points, nxt.points - weight, jobNote));
+                            .. '-- %d more from here.%s%s'):format(
+                            nxtTier, nxt.points, nxt.points - weight, jobNote,
+                            holdLine(nxtTier)));
                     end
                     -- MAXED, AND STILL BEING FED (Henrik 2026-08-11, from the
                     -- field: "if I equip everything I only get 1 MP / tick
@@ -246,13 +271,18 @@ function M.render(ctx)
                     local last = info.tiers[#info.tiers];
                     if last ~= nil and weight > last.points then
                         if kit.isFn(im, 'SameLine') then im.SameLine(); end
-                        kit.ctext(im, kit.COL.warn, ('  Maxed - %d Points spare'):format(
-                            weight - last.points));
+                        local spare = ('  Maxed - %d Points spare'):format(
+                            weight - last.points);
+                        if hold ~= nil then
+                            spare = spare .. (', %d set pts free'):format(hold.saved);
+                        end
+                        kit.ctext(im, kit.COL.warn, spare);
                         kit.tip(im, ('Tier %d is the top of this ladder for blue magic,\n'
                             .. 'and it costs %d points. The %d above it buy nothing --\n'
                             .. 'those spells are earning their set points elsewhere\n'
-                            .. 'or not at all.'):format(
-                            #info.tiers, last.points, weight - last.points));
+                            .. 'or not at all.%s'):format(
+                            #info.tiers, last.points, weight - last.points,
+                            holdLine(nil)));
                     end
                 end
             elseif weight > 0 then

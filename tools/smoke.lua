@@ -1883,6 +1883,42 @@ do
         'and never prices a tier 2 that blue magic does not get');
     check(arScreen:find('weight', 1, true) == nil,
         'the new line keeps the no-"weight" grammar');
+
+    -- THE CHEAPEST HOLD. A rung has a price in trait points and a set can pay
+    -- it many ways; the spells you happen to have set are rarely the cheapest.
+    local h = sets.cheapestHold(arSet, book, AR);
+    check(h ~= nil and h.maxed == true and h.points == 8,
+        'the Auto Refresh ladder reports a cheaper way to stand on its one rung');
+    local held = 0;
+    for _, f in ipairs(h.keep) do held = held + f.tp; end
+    check(held >= h.points, 'the kept spells really do still reach the rung');
+    check(h.cost + h.saved == h.spent, 'kept + freed accounts for every set point');
+    check(h.cost == 9 and h.saved == 18,
+        ('9 set points hold it where 27 are being spent (got %d, frees %d)')
+            :format(h.cost, h.saved));
+    -- exhaustive check of the DP against brute force, on the real ladder
+    local best = nil;
+    local pool = {};
+    for _, id in ipairs(arSet.ids) do
+        local sp = book.spells[id];
+        if sp and sp.trait and sp.trait.category == AR then
+            pool[#pool + 1] = { tp = sp.trait.weight, sp = sp.setPoints or 0 };
+        end
+    end
+    for mask = 0, (2 ^ #pool) - 1 do
+        local tp, sp = 0, 0;
+        for i = 1, #pool do
+            if math.floor(mask / (2 ^ (i - 1))) % 2 == 1 then
+                tp = tp + pool[i].tp; sp = sp + pool[i].sp;
+            end
+        end
+        if tp >= h.points and (best == nil or sp < best) then best = sp; end
+    end
+    check(best == h.cost,
+        ('the DP matches brute force over all %d subsets (%s vs %s)')
+            :format(2 ^ #pool, tostring(best), tostring(h.cost)));
+    check(arScreen:find('set pts free', 1, true) ~= nil,
+        'and the tab names the set points a trim would free');
 end
 
 print('smoke: the level-change rule (the levels kind\'s watcher)');

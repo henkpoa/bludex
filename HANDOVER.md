@@ -370,8 +370,25 @@ poured points into it. It now appends `Maxed - N Points spare`. The waste was
 invisible before only because the ladder used to claim a rung above the one
 blue magic gets — correcting the cut is what made it nameable. Auto Refresh
 at 75 is the worst case: 27 set points fed in, 9 would hold the rung.
-(A follow-up that NAMES the cheapest holding subset was offered and declined
-for now — "just name the surplus". The subset-sum is the owed part.)
+**The cheapest hold** (`setmodel.cheapestHold`, built same day on Henrik's
+go): a rung has a price in TRAIT points and a set can pay it many ways — the
+spells you happen to have set are rarely the cheapest. Given a ladder, it
+returns the minimum-SET-point subset of that set's own feeders that still
+holds the tier you are standing on, plus what dropping the rest would free.
+A 0/1 knapsack with sums capped at the rung's price, so it is exact and tiny
+(≤20 feeders over ≤48 points); the suite checks it against brute force over
+all 256 subsets of the real Auto Refresh ladder.
+
+It is **advisory and must stay worded that way**. Every spell feeds exactly
+one category, so a trim can never cost another ladder its tier — but it can
+cost you a spell you set to CAST, and the stat mods it carries while set. It
+names what the TRAIT does not need, never what you do not want. The surplus
+also means two different things and the tooltips never merge them: past the
+last rung it buys nothing ever; below it the spare points are progress toward
+the next tier.
+
+Auto Refresh at 75 is the worst case in the data: 27 set points spent, **9**
+would hold the rung, 18 free.
 
 **THE JOB-LADDER CROSS-CHECK** (third pass, same day — Henrik asked for the
 remaining `verify` ladders to be checked in game; they turned out not to need
