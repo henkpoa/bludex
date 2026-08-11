@@ -197,6 +197,14 @@ client DAT (names, availability), and in-game field verification on CatsEyeXI. E
 spell row carries a `src` marker and, where a value is still unconfirmed, a `verify`
 list.
 
+**Trait points are the exception**: the server repository is not the authority there.
+Its blue-trait tables mix two scales and ship only the first rung of most ladders, so
+the whole trait ladder — 8 points per rung, what each spell feeds it, and the rung
+values — comes from bg-wiki, cross-checked in game. The server repository still says
+which modifiers a ladder moves and which trait owns each rung. Ladders marked
+`confidence = 'verify'` in `data/traits.lua` are the ones whose upper rung values are
+still waiting on a field reading.
+
 Spell icons are original artwork (AI-assisted, hand-curated) — three sizes per spell.
 
 ## Credits

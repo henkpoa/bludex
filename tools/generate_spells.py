@@ -9,7 +9,10 @@ Sources (all local, never fetched):
                                     validTargets, requirements (unbridled bit), slug->id
   3. sql/blue_spell_list.sql     -> set points, trait category+weight, skillchain props
   4. sql/blue_spell_mods.sql     -> stat bonuses while set
-  5. sql/blue_traits.sql         -> trait ladder (category -> tiers)
+  5. sql/blue_traits.sql         -> trait ladder SHAPE only (which modifiers a
+                                    category moves, which trait id owns a rung).
+                                    The SCALE and the rung VALUES come from
+                                    bg-wiki -- see WIKI_LADDER for why.
   6. sql/traits.sql              -> traitid -> display name
   7. src/map/modifier.h          -> mod id -> enum name
   8. scripts/enum/skillchain_type.lua -> sc id -> name (+ element comments -> burst map)
@@ -88,32 +91,138 @@ FIELD_GRANTED = {
 }
 
 # ---- WIKI-SOURCED values (bg-wiki, 2026-08-08) -----------------------------
-# The eight SoA burst spells' TRAITS. Henrik's call: the wiki is the
-# authority for everything but the level -- traits, MP cost etc. are the
-# same on CatsEyeXI. Each spell feeds its trait at weight 8 ("Job Trait (8)"
-# on every page). Stat bonuses were cross-checked the same day and MATCH the
+# The eight SoA burst spells' TRAIT CATEGORIES. Henrik's call: the wiki is the
+# authority for everything but the level -- traits, MP cost etc. are the same
+# on CatsEyeXI. Stat bonuses were cross-checked the same day and MATCH the
 # 2026-08-04 field readings above, so FIELD_MODS stands as-is.
 #   719 Searing Tempest  -> Attack Bonus      (cat 8)
 #   720 Spectral Floe    -> Magic Atk. Bonus  (cat 6)
 #   721 Anvil Lightning  -> Accuracy Bonus    (cat 16)
 #   722 Entomb           -> Defense Bonus     (cat 11)
-#   725 Blinding Fulgor  -> Magic Eva. Bonus  (cat 29 -- wiki addendum below)
+#   725 Blinding Fulgor  -> Magic Eva. Bonus  (cat 201 -- addendum below)
 #   726 Scouring Spate   -> Magic Def. Bonus  (cat 13)
 #   727 Silent Storm     -> Evasion Bonus     (cat 18)
-#   728 Tenebral Crush   -> Magic Acc. Bonus  (cat 30 -- wiki addendum below)
-WIKI_TRAITS = {
-    719: (8, 8), 720: (6, 8), 721: (16, 8), 722: (11, 8),
-    725: (29, 8), 726: (13, 8), 727: (18, 8), 728: (30, 8),
+#   728 Tenebral Crush   -> Magic Acc. Bonus  (cat 202 -- addendum below)
+# The WEIGHT is no longer carried here: WIKI_FEEDER_POINTS below sets every
+# feeder's trait points, these eight included (all 8, being lv99-tier spells).
+WIKI_TRAIT_CATS = {
+    719: 8, 720: 6, 721: 16, 722: 11,
+    725: 201, 726: 13, 727: 18, 728: 202,
 }
+
+# ---- THE TRAIT-POINT SCALE (bg-wiki, scraped 2026-08-11) -------------------
+# WHY THIS EXISTS. base-LSB's blue trait data mixes TWO SCALES. The bulk of
+# blue_spell_list carries a legacy "1 unit" weight and blue_traits asks for 2
+# points per tier; but later rows were entered with the REAL bg-wiki trait
+# points and never converted -- Auto Refresh (cat 14) matches the wiki exactly,
+# Max Hp Boost's thresholds (8/16/24/32) are already wiki-scale, and stray rows
+# like Embalming Earth sit at 8 inside an otherwise-legacy ladder. Mixing them
+# is what made Searing Tempest alone out-weigh five era spells put together.
+#
+# It also cost every "Bonus" ladder its upper rungs: the wiki is explicit that
+# a Blue Mage climbs Attack Bonus to tier V through spells. LSB ships one rung.
+#
+# So: the wiki is the authority for the whole scale, per Henrik's standing
+# rule. EVERY trait costs 8 trait points per tier -- no exceptions across all
+# 30 categories. What varies is what each spell CONTRIBUTES.
+WIKI_POINTS_PER_TIER = 8
+
+# category -> (trait points a feeder contributes, {spell name: override}).
+# Most categories pay 4 per era spell and 8 per lv99 spell. Three do not:
+# Skillchain Bonus and Mag. Burst Bonus pay 6, Gilfinder pays 6, and Auto
+# Refresh is per-spell all the way down (which is exactly how LSB has it).
+WIKI_FEEDER_POINTS = {
+    1:  (4, {"Nectarous Deluge": 8}),
+    2:  (4, {}),
+    3:  (4, {"Sweeping Gouge": 8}),
+    4:  (4, {}),
+    5:  (4, {}),
+    6:  (4, {"Subduction": 8, "Spectral Floe": 8}),
+    7:  (4, {}),
+    8:  (4, {"Embalming Earth": 8, "Searing Tempest": 8}),
+    9:  (4, {}),
+    10: (4, {}),
+    11: (4, {"Atra. Libations": 8, "Entomb": 8}),
+    12: (4, {}),
+    13: (4, {"Rending Deluge": 8, "Scouring Spate": 8}),
+    14: (1, {"Frightful Roar": 2, "Self-Destruct": 2, "Light of Penance": 2,
+             "Voracious Trunk": 3, "Actinic Burst": 4, "Plasma Charge": 4,
+             "Winds of Promyvion": 4}),
+    15: (4, {"Restoral": 8}),
+    16: (4, {"Nature's Meditation": 8, "Anvil Lightning": 8}),
+    17: (4, {"Retinal Glare": 8}),
+    18: (4, {"Tempestuous Upheaval": 8, "Silent Storm": 8}),
+    19: (4, {}),
+    20: (4, {"Diffusion Ray": 8}),
+    21: (4, {}),
+    22: (4, {"Erratic Flutter": 8}),
+    23: (6, {"Paralyzing Triad": 8}),
+    24: (4, {"Thrashing Assault": 8}),
+    25: (4, {"Molting Plumage": 8}),
+    26: (4, {}),
+    27: (6, {"Rail Cannon": 8}),
+    28: (6, {}),
+    201: (8, {}),
+    202: (8, {}),
+}
+
+# category -> (confidence, [rung values]). Rung N sits at N*8 trait points.
+# Each ladder is cut at the last rung blue magic can actually REACH with the
+# wiki's own feeder list, so no ladder advertises a rung no set can buy.
+#
+# The value is in the SAME UNIT as LSB's modifier for that category, which is
+# why the wiki's percentages are not always usable:
+#   'wiki'   -- the wiki's ladder is in LSB's unit; taken as-is. Where LSB
+#               shipped a rung, its value MATCHES (Attack Bonus 10, Dual Wield
+#               10/15/25, Double Attack 7, Triple Attack 5, Zanshin 15 ...),
+#               which is the cross-check that the whole scale is right.
+#   'verify' -- unit mismatch or the wiki is silent. Rung 1 keeps LSB's
+#               shipped value; anything above it is a reasoned guess and
+#               every rung is flagged for the field.
+WIKI_LADDER = {
+    1:  ("wiki",   [8, 10, 12]),
+    2:  ("wiki",   [1]),
+    3:  ("wiki",   [8, 10]),
+    4:  ("wiki",   [1, 2, 3, 4, 5, 6]),
+    5:  ("verify", [2, 4]),          # SLEEPRES is a rank, not the wiki's %
+    6:  ("wiki",   [20, 24, 28, 32, 36, 40]),
+    7:  ("wiki",   [8]),
+    8:  ("wiki",   [10, 22, 35, 48, 60]),
+    9:  ("verify", [10]),            # wiki quotes a proc RATE, LSB a bonus
+    10: ("wiki",   [10, 20]),
+    11: ("wiki",   [10, 22, 35, 48]),
+    12: ("wiki",   [8]),
+    13: ("wiki",   [10, 12, 14]),
+    14: ("wiki",   [1, 2]),
+    15: ("wiki",   [30, 60, 120, 180]),
+    16: ("wiki",   [10, 22, 35, 48]),
+    17: ("wiki",   [25, 28, 31]),
+    18: ("wiki",   [10, 22, 35]),
+    19: ("verify", [2]),             # GRAVITYRES is a rank, not the wiki's %
+    20: ("wiki",   [10, 15, 20]),
+    21: ("wiki",   [10, 12]),
+    22: ("verify", [5, 15, 20]),     # BLU starts at the wiki's Tier 0 (5%);
+                                     # LSB's second rung (15) skips Tier I
+    23: ("wiki",   [8, 12, 16]),
+    24: ("wiki",   [(15, 7), (16, 5)]),   # Double Attack -> Triple Attack
+    25: ("wiki",   [10, 15, 25, 30]),
+    26: ("wiki",   [15]),
+    27: ("wiki",   [5, 7, 9]),
+    28: ("wiki",   [(20, 1), (19, 1)]),   # Gilfinder -> Treasure Hunter
+    201: ("wiki",  [10]),
+    202: ("wiki",  [10]),
+}
+
 # Trait categories base-LSB's blue_traits.sql does not know (the June 2015
-# trait additions): the category ids 29/30 are BLUDEX-INTERNAL (they never
-# cross the wire -- traitEval sums per category locally), the traitIds are
-# LSB trait.h's TRAIT_MAGIC_ACC_BONUS=125 / TRAIT_MAGIC_EVA_BONUS=126, and
-# the tier VALUES follow the sibling bonus traits' +10 convention -- verify
-# the numbers against CEXI when a chance arises.
+# trait additions). These ids are BLUDEX-INTERNAL -- they never cross the wire,
+# traitEval sums per category locally. They sit at 201/202 and NOT at 29/30
+# because LSB already uses trait_category 29 for a real spell (Foul Waters);
+# squatting on a live id would have mis-fed the ladder the day that spell
+# landed. The traitIds are LSB trait.h's TRAIT_MAGIC_ACC_BONUS=125 /
+# TRAIT_MAGIC_EVA_BONUS=126; bg-wiki confirms both ladders at 8 points for +10.
 WIKI_TRAIT_CATEGORIES = [
-    (29, "Magic Eva. Bonus", 126, [(8, [("MEVA", 10)])]),
-    (30, "Magic Acc. Bonus", 125, [(8, [("MACC", 10)])]),
+    (201, "Magic Eva. Bonus", 126, "MEVA"),
+    (202, "Magic Acc. Bonus", 125, "MACC"),
 ]
 
 warnings = []
@@ -238,26 +347,64 @@ def parse_blue_spell_mods():
         out.setdefault(sid, []).append((modid, val))
     return out
 
-def parse_blue_traits():
+def parse_blue_traits(modnames):
     """category -> {traitId (the ladder's name-bearing id), tiers{points:{traitId,mods}}}
 
     THE TRAIT ID IS PER TIER, not per category: category 24 is trait 15
-    (Double Attack) at 2 points and trait 16 (Triple Attack) at 4; category 28
+    (Double Attack) at 8 points and trait 16 (Triple Attack) at 16; category 28
     is 20 (Gilfinder) then 19 (Treasure Hunter). blueutils suppresses a blue
     trait by ID against the job traits, so a per-category id would answer for
-    the wrong tier (see lib/traitsource.lua)."""
-    out = {}
+    the wrong tier (see lib/traitsource.lua).
+
+    LSB supplies the SHAPE -- which modifiers a category moves, and which trait
+    id owns each rung. bg-wiki supplies the SCALE -- 8 trait points per rung --
+    and the rung VALUES, including the upper rungs LSB never shipped. See the
+    WIKI_LADDER header for why LSB's own numbers cannot be used directly."""
+    lsb = {}
     path = os.path.join(CLONE, "sql", "blue_traits.sql")
     for commented, v in sql_rows(path, "blue_traits"):
         if commented or len(v) != 5:
             continue
         cat, pts, tid, mod, val = (int(x) for x in v)
-        out.setdefault(cat, {"traitId": tid, "tiers": {}})
-        tier = out[cat]["tiers"].setdefault(pts, {"traitId": tid, "mods": []})
-        if tier["traitId"] != tid:
+        lsb.setdefault(cat, {})
+        rung = lsb[cat].setdefault(pts, {"traitId": tid, "mods": []})
+        if rung["traitId"] != tid:
             warn("blue_traits cat %d @%dpts mixes trait ids %d and %d"
-                 % (cat, pts, tier["traitId"], tid))
-        tier["mods"].append((mod, val))
+                 % (cat, pts, rung["traitId"], tid))
+        rung["mods"].append(mod)
+
+    modids = {}
+    for mid, mname in modnames.items():
+        modids.setdefault(mname, mid)
+
+    # the two categories LSB has no rows for at all
+    for cat, tname, tid, stat in WIKI_TRAIT_CATEGORIES:
+        mid = modids.get(stat)
+        if mid is None:
+            warn("modifier.h has no %s -- cat %d cannot be built" % (stat, cat))
+            continue
+        lsb[cat] = {WIKI_POINTS_PER_TIER: {"traitId": tid, "mods": [mid]}}
+
+    out = {}
+    for cat in sorted(lsb):
+        shape = [lsb[cat][p] for p in sorted(lsb[cat])]
+        if cat not in WIKI_LADDER:
+            warn("cat %d has no WIKI_LADDER entry -- left on the LSB scale" % cat)
+            out[cat] = {"traitId": shape[0]["traitId"], "confidence": "lsb",
+                        "tiers": {p: {"traitId": lsb[cat][p]["traitId"],
+                                      "mods": [(m, 0) for m in lsb[cat][p]["mods"]]}
+                                  for p in lsb[cat]}}
+            continue
+        confidence, ladder = WIKI_LADDER[cat]
+        tiers = {}
+        for i, entry in enumerate(ladder):
+            # a rung LSB never shipped reuses the shape of the last one it did
+            base = shape[i] if i < len(shape) else shape[-1]
+            tid, value = entry if isinstance(entry, tuple) else (base["traitId"], entry)
+            tiers[(i + 1) * WIKI_POINTS_PER_TIER] = {
+                "traitId": tid, "mods": [(m, value) for m in base["mods"]]}
+        out[cat] = {"traitId": shape[0]["traitId"], "confidence": confidence,
+                    "tiers": tiers}
     return out
 
 # ------------------------------------------------------- 6b. job traits (collisions)
@@ -397,9 +544,9 @@ def main():
     slist      = parse_spell_list()
     blist      = parse_blue_spell_list()
     bmods      = parse_blue_spell_mods()
-    btraits    = parse_blue_traits()
     traitnames = parse_trait_names()
     modnames   = parse_mods()
+    btraits    = parse_blue_traits(modnames)
     scnames, burstmap = parse_skillchains()
     scripts    = parse_scripts()
     slug2id    = {v["slug"]: k for k, v in slist.items()}
@@ -562,9 +709,22 @@ def main():
             # base LSB carries no blue_spell_mods rows for the CatsEyeXI
             # custom spells; Spectral Floe proved they DO have stats in game
             verify.append("mods")
-        if sid in WIKI_TRAITS:
-            trait = WIKI_TRAITS[sid]
+        if sid in WIKI_TRAIT_CATS:
+            trait = (WIKI_TRAIT_CATS[sid], None)   # weight filled in below
             verify = [v for v in verify if v != "trait"]
+        # THE TRAIT WEIGHT IS THE WIKI'S, NEVER LSB'S -- see WIKI_FEEDER_POINTS.
+        # LSB's weight column mixes a legacy 1-unit scale with real wiki points,
+        # which is what let one spell out-weigh five (Searing Tempest vs the
+        # whole Attack Bonus era list).
+        if trait:
+            cat = trait[0]
+            if cat in WIKI_FEEDER_POINTS:
+                default, overrides = WIKI_FEEDER_POINTS[cat]
+                trait = (cat, overrides.get(name, default))
+            else:
+                warn("spell %d (%s) feeds cat %d, which has no WIKI_FEEDER_POINTS"
+                     % (sid, name, cat))
+                trait = (cat, trait[1] or 0)
         if unbridled:
             setpts = None
         if bl is None and stype == "Magical":
@@ -683,15 +843,33 @@ def main():
     # ------------------------------------------------------------ traits.lua
     T = []
     T.append("-- traits.lua -- bludex trait ladder (GENERATED %s by tools/generate_spells.py -- DO NOT EDIT)" % today)
-    T.append("-- category -> tiers: set spells whose trait.category matches; sum their weights;")
-    T.append("-- highest tier with points <= total weight is active (server: blueutils.cpp CalculateTraits).")
-    T.append("-- Values are base-LSB (public clone); CEXI may override in private submodules.")
+    T.append("-- category -> tiers: set spells whose trait.category matches; sum their")
+    T.append("-- trait points; the highest tier with points <= the total is active")
+    T.append("-- (server: blueutils.cpp CalculateTraits).")
+    T.append("--")
+    T.append("-- THE SCALE IS bg-wiki's, NOT base-LSB's. Every ladder costs 8 trait points")
+    T.append("-- per rung; a feeder spell pays 4 (6 for Skillchain/Mag. Burst/Gilfinder,")
+    T.append("-- 8 for the lv99 spells, per-spell for Auto Refresh). base-LSB mixes that")
+    T.append("-- scale with a legacy 1-unit one and ships only the FIRST rung of most")
+    T.append("-- ladders -- see tools/generate_spells.py WIKI_LADDER for the whole story.")
+    T.append("-- LSB still supplies the shape: which modifiers a ladder moves, and which")
+    T.append("-- trait id owns each rung.")
+    T.append("--")
     T.append("-- EACH TIER CARRIES ITS OWN traitId -- category 24 is Double Attack (15) at")
-    T.append("-- 2 points and Triple Attack (16) at 4 -- and the id is what a job trait")
+    T.append("-- 8 points and Triple Attack (16) at 16 -- and the id is what a job trait")
     T.append("-- suppresses. data/jobtraits.lua holds the other side of that collision.")
+    T.append("--")
+    T.append("-- confidence = 'verify' means the rung VALUES still want a field reading:")
+    T.append("-- the wiki quotes them in a unit LSB's modifier does not share.")
+    T.append("-- Categories 201/202 are bludex-internal (never on the wire): base-LSB has")
+    T.append("-- no blue_traits rows for Magic Eva./Magic Acc. Bonus. They are NOT 29/30 --")
+    T.append("-- LSB already uses trait_category 29 for a real spell (Foul Waters).")
     T.append("")
     T.append("local M = { categories = {}, traitNames = {} }")
     T.append("")
+    # seed the two names traits.sql has no row for, BEFORE anything reads them
+    for cat, tname, tid, _stat in WIKI_TRAIT_CATEGORIES:
+        traitnames.setdefault(tid, tname)
     for cat in sorted(btraits):
         tinfo = btraits[cat]
         tname = traitnames.get(tinfo["traitId"], "Trait %d" % tinfo["traitId"])
@@ -703,22 +881,10 @@ def main():
                              for m, v in tier["mods"])
             tiers.append("{ points = %d, traitId = %d, mods = { %s } }"
                          % (pts, tier["traitId"], mods))
-        T.append("M.categories[%d] = { name = %s, traitId = %d, tiers = { %s } }"
-                 % (cat, lq(tname), tinfo["traitId"], ", ".join(tiers)))
-    T.append("")
-    T.append("-- bg-wiki addendum (2026-08-08): the SoA burst spells' traits are absent")
-    T.append("-- from base-LSB blue_traits.sql. Category ids 29/30 are bludex-internal")
-    T.append("-- (never on the wire); traitIds are LSB trait.h; tier values follow the")
-    T.append("-- sibling bonus traits' +10 convention -- verify against CEXI.")
-    for cat, tname, tid, wtiers in WIKI_TRAIT_CATEGORIES:
-        tiers = []
-        for pts, mods_l in wtiers:
-            mods = ", ".join("{ stat = %s, value = %d }" % (lq(m), v)
-                             for m, v in mods_l)
-            tiers.append("{ points = %d, traitId = %d, mods = { %s } }" % (pts, tid, mods))
-        T.append("M.categories[%d] = { name = %s, traitId = %d, tiers = { %s } }"
-                 % (cat, lq(tname), tid, ", ".join(tiers)))
-        traitnames.setdefault(tid, tname)
+        conf = ("" if tinfo["confidence"] == "wiki"
+                else ", confidence = %s" % lq(tinfo["confidence"]))
+        T.append("M.categories[%d] = { name = %s, traitId = %d%s, tiers = { %s } }"
+                 % (cat, lq(tname), tinfo["traitId"], conf, ", ".join(tiers)))
     T.append("")
     # A rung's own name, because a ladder is not always ONE trait: category 24
     # runs Double Attack then Triple Attack. Needed wherever a rung is named
@@ -727,8 +893,6 @@ def main():
     for tinfo in btraits.values():
         for tier in tinfo["tiers"].values():
             blue_ids.add(tier["traitId"])
-    for _, _, tid, _ in WIKI_TRAIT_CATEGORIES:
-        blue_ids.add(tid)
     T.append("-- each rung's OWN trait name (a ladder can change trait partway up)")
     for tid in sorted(blue_ids):
         T.append("M.traitNames[%d] = %s" % (tid, lq(traitnames.get(tid, "Trait %d" % tid))))

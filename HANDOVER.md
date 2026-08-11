@@ -143,7 +143,7 @@ kinds, amended in place through the rounds), `docs/timeline-sets-plan.md`
    `lib/traitsource.lua`'s header records the reversal): a job trait GIVES
    its tier (never "blocks", nothing is "out of reach"); the blue ladder
    counts its own points from zero and a higher blue tier applies at its
-   full threshold. Tier thresholds are TOTALS (tier 2 at 4 total points —
+   full threshold. Tier thresholds are TOTALS (tier 2 at 16 total points —
    Henrik questioned, then confirmed). One price grammar everywhere:
    **"Tier N: X/Y Points"** (Henrik 2026-08-10, fifth round — the word
    "weight" is retired from every user-facing string; `trait.weight` stays
@@ -298,14 +298,50 @@ release after the field pass.
 
 Traits added from bg-wiki (his call: wiki is truth for all but level):
 719→Attack Bonus, 720→Magic Atk., 721→Accuracy, 722→Defense, 725→Magic
-Eva. (NEW cat 29), 726→Magic Def., 727→Evasion, 728→Magic Acc. (NEW cat
-30) — weight 8 each; stats cross-checked and they MATCH the 2026-08-04
-field readings, so mods stand. Cats 29/30 are bludex-internal ids
-(traitId = LSB trait.h 126/125, tier at 8 pts, +10 sibling convention —
-the tier VALUES are the one assumption left; eyeball in game). bg-wiki
-itself was egress-blocked from the cloud session — values came through
-per-spell web-search extraction, cross-checked against upstream LSB where
-it had anything. Generator carries `WIKI_TRAITS`/`WIKI_TRAIT_CATEGORIES`.
+Eva. (NEW cat 201), 726→Magic Def., 727→Evasion, 728→Magic Acc. (NEW cat
+202) — 8 trait points each; stats cross-checked and they MATCH the
+2026-08-04 field readings, so mods stand. Cats 201/202 are bludex-internal
+ids (traitId = LSB trait.h 126/125, rung at 8 pts, +10) — bg-wiki has since
+confirmed both ladders outright, so the "assumption" note is retired.
+
+### THE TRAIT-POINT SCALE (Henrik, from the field, 2026-08-11)
+
+**base-LSB is not the authority for blue traits. bg-wiki is.** Henrik set
+Attack Bonus in game, watched his attack climb as he added spells, and
+brought the wiki's table: every feeder is worth 4 trait points, a rung costs
+8, and a Blue Mage climbs the ladder to tier V. bludex was showing one rung
+and a weight of 1 per spell.
+
+The cause: `blue_spell_list`/`blue_traits` **mix two scales**. Most rows
+carry a legacy "1 unit" weight against a 2-point rung; later rows hold the
+REAL wiki numbers and were never converted — Auto Refresh matches the wiki
+exactly, Max Hp Boost's thresholds are already 8/16/24/32, and stray rows
+like Embalming Earth sit at 8 inside an otherwise-legacy ladder. Dropping
+the SoA spells in at their true 8 made ONE spell out-weigh five era spells.
+
+Rebuilt 2026-08-11 from a 26-page bg-wiki scrape. **LSB supplies the shape**
+(which modifiers a ladder moves, which trait id owns each rung); **the wiki
+supplies the scale and the rung values**. Generator carries
+`WIKI_POINTS_PER_TIER` / `WIKI_FEEDER_POINTS` / `WIKI_LADDER`; the scrape
+itself is summarised in that file's headers.
+
+What a blanket ×4 would have got wrong, and why the scrape was worth it:
+Skillchain Bonus, Mag. Burst Bonus and Gilfinder pay **6** per feeder, not
+4; Auto Refresh is per-spell (1/2/3/4); Glutinous Dart is 4 where LSB says
+8; Max Mp Boost rung 2 is 20 where LSB says 30; Store Tp rung 2 is 15 where
+LSB says 25; and Gilfinder→Treasure Hunter sits at 16, LSB's "3" having been
+a spell-COUNT hack.
+
+Ladders carrying `confidence = 'verify'` (Resist Sleep, Resist Gravity,
+Rapid Shot, Fast Cast) are the ones where the wiki quotes a unit LSB's
+modifier does not share — rung 1 keeps LSB's shipped value, anything above
+it wants a field reading. **Fast Cast is the one real open question**: BLU
+starts at the wiki's Tier 0 (5%) and LSB's second rung (15%) skips Tier I.
+
+Category ids 201/202 replaced 29/30 in the same pass — base-LSB already uses
+`trait_category` 29 for a real spell (Foul Waters), so the internal ids had
+been squatting on a live id that would have mis-fed the ladder the day that
+spell landed. A smoke check now pins that they stay clear of the live range.
 
 ### Decisions made on maintainer authority (alternatives noted)
 

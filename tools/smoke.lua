@@ -372,21 +372,26 @@ end)();
 
 print('smoke: SoA burst spell traits (bg-wiki 2026-08-08)');
 -- Henrik's call: the wiki is authoritative for everything but the level;
--- traits, MP etc. are the same on CatsEyeXI. Each spell feeds weight 8.
+-- traits, MP etc. are the same on CatsEyeXI. Each of the eight is a lv99-tier
+-- spell, so each pays the wiki's 8 trait points.
 check(book.spells[719].trait.category == 8 and book.spells[719].trait.weight == 8,
-    'Searing Tempest feeds Attack Bonus at weight 8');
+    'Searing Tempest feeds Attack Bonus at 8 trait points');
 check(book.spells[720].trait.category == 6, 'Spectral Floe feeds Magic Atk. Bonus');
 check(book.spells[721].trait.category == 16, 'Anvil Lightning feeds Accuracy Bonus');
 check(book.spells[722].trait.category == 11, 'Entomb feeds Defense Bonus');
-check(book.spells[725].trait.category == 29, 'Blinding Fulgor feeds Magic Eva. Bonus');
+check(book.spells[725].trait.category == 201, 'Blinding Fulgor feeds Magic Eva. Bonus');
 check(book.spells[726].trait.category == 13, 'Scouring Spate feeds Magic Def. Bonus');
 check(book.spells[727].trait.category == 18, 'Silent Storm feeds Evasion Bonus');
-check(book.spells[728].trait.category == 30, 'Tenebral Crush feeds Magic Acc. Bonus');
-check(book.traits.categories[29] ~= nil and book.traits.categories[29].name == 'Magic Eva. Bonus'
-    and book.traits.categories[29].tiers[1].points == 8
-    and book.traits.categories[29].traitId == 126,
+check(book.spells[728].trait.category == 202, 'Tenebral Crush feeds Magic Acc. Bonus');
+-- 201/202, NOT 29/30: base-LSB already uses trait_category 29 for a real
+-- spell (Foul Waters), so the bludex-internal ids sit clear of the live range.
+check(book.traits.categories[29] == nil and book.traits.categories[30] == nil,
+    'the internal ladders do NOT squat on live LSB category ids');
+check(book.traits.categories[201] ~= nil and book.traits.categories[201].name == 'Magic Eva. Bonus'
+    and book.traits.categories[201].tiers[1].points == 8
+    and book.traits.categories[201].traitId == 126,
     'the Magic Eva. Bonus addendum ladder exists (trait.h 126, tier at 8)');
-check(book.traits.categories[30] ~= nil and book.traits.categories[30].traitId == 125,
+check(book.traits.categories[202] ~= nil and book.traits.categories[202].traitId == 125,
     'the Magic Acc. Bonus addendum ladder exists (trait.h 125)');
 local soa = sets.new('SoA', 'levels');
 check(sets.add(soa, 720, book, 99), 'Spectral Floe joins a set');
@@ -401,6 +406,72 @@ for _, id in ipairs(book.filter({ traitCat = 6 })) do
     if id == 720 then hasFloe = true; end
 end
 check(hasFloe, 'the trait filter finds Spectral Floe under Magic Atk. Bonus');
+
+print('smoke: the trait-point scale is bg-wiki\'s (2026-08-11)');
+-- WHAT WENT WRONG BEFORE (Henrik, from the field): base-LSB mixes two scales.
+-- Most of blue_spell_list carries a legacy "1 unit" weight against a 2-point
+-- tier, but later rows hold the REAL bg-wiki trait points and were never
+-- converted. Dropping the SoA spells in at their true 8 next to era spells
+-- still on 1 made ONE spell out-weigh five. The whole scale is the wiki's now.
+-- (scoped: the main chunk is near Lua's 200-local ceiling)
+do
+local EVERY_RUNG = 8;
+local badRung, badStep = nil, nil;
+for cat, info in pairs(book.traits.categories) do
+    local prev = 0;
+    for _, tier in ipairs(info.tiers) do
+        if tier.points % EVERY_RUNG ~= 0 then badRung = cat; end
+        if tier.points ~= prev + EVERY_RUNG then badStep = cat; end
+        prev = tier.points;
+    end
+end
+check(badRung == nil, 'every rung on every ladder is a multiple of 8 trait points');
+check(badStep == nil, 'and the rungs step by exactly 8, from 8 -- no ladder skips');
+
+-- the ladder the field report was about
+local AB = book.traits.categories[8];
+check(AB.name == 'Attack Bonus' and #AB.tiers == 5,
+    'Attack Bonus is a FIVE rung ladder, not the single rung base-LSB ships');
+local abv = {};
+for i, t in ipairs(AB.tiers) do abv[i] = t.mods[1].value; end
+check(abv[1] == 10 and abv[2] == 22 and abv[3] == 35 and abv[4] == 48 and abv[5] == 60,
+    'and it climbs 10/22/35/48/60 the way bg-wiki says');
+check(AB.tiers[2].mods[2].stat == 'RATT' and AB.tiers[2].mods[2].value == 22,
+    'ranged attack rides every rung with melee');
+
+-- the exact symptom: one spell must not out-weigh the rest of its own ladder
+local st = book.spells[719].trait.weight;      -- Searing Tempest, a lv99 spell
+local bd = book.spells[620].trait.weight;      -- Battle Dance, an era spell
+check(bd == 4, 'an era feeder pays the wiki\'s 4 trait points, not LSB\'s 1');
+check(st == 2 * bd, 'and a lv99 feeder pays 8 -- worth exactly TWO era spells');
+
+-- what a level-75 CatsEyeXI blue mage can actually reach on that ladder
+local ab75 = sets.new('AB', 'levels');
+local abTotal, abCost = 0, 0;
+for _, id in ipairs({ 620, 594, 554, 540, 616, 719 }) do
+    check(sets.add(ab75, id, book, 75), 'Attack Bonus feeder ' .. id .. ' joins');
+    abTotal = abTotal + book.spells[id].trait.weight;
+    abCost = abCost + book.spells[id].setPoints;
+end
+check(abTotal == 28 and abCost == 28,
+    'all six feeders available at 75 = 28 trait points for 28 set points');
+local abEv = nil;
+for _, ev in ipairs(sets.traitEval(ab75, book)) do
+    if ev.cat == 8 then abEv = ev; end
+end
+check(abEv ~= nil and abEv.tier ~= nil and abEv.tier.points == 24
+    and abEv.tier.mods[1].value == 35,
+    'which lands tier III, +35 Attack -- the climb Henrik watched in game');
+check(abEv.nextPoints == 32, 'and tier IV is named as 32, out of reach at 75');
+
+-- the categories the wiki does NOT price at 4, which a blanket x4 would break
+local arSeen = {};
+for _, id in ipairs(book.filter({ traitCat = 14 })) do
+    arSeen[book.spells[id].trait.weight] = true;
+end
+check(arSeen[1] and arSeen[2] and arSeen[4],
+    'Auto Refresh really is 1/2/3/4 per spell -- the one ladder LSB had right');
+end
 
 print('smoke: timeline chains (docs/timeline-sets-plan.md)');
 -- the bracket rule, and its agreement with the server's slot count at
@@ -1546,9 +1617,14 @@ check(drg_blu[1].slot == 'main' and drg_blu[1].rank == 2, 'DRG/BLU: main job, ra
 
 print('smoke: trait attribution');
 local ACC = 16;                                  -- the Accuracy Bonus ladder
-local v = tsrc.verdict(ACC, 2, book, blu_drg);
+-- read the rung's cost off the ladder rather than pinning a literal: the
+-- trait-point SCALE is bg-wiki's and has moved once already (LSB's legacy
+-- 2-per-tier -> the real 8). What is under test is the collision, not the price.
+local ACC1 = book.traits.categories[ACC].tiers[1].points;
+check(ACC1 == 8, 'a ladder rung costs the wiki\'s 8 trait points');
+local v = tsrc.verdict(ACC, ACC1, book, blu_drg);
 check(#v.suppressed == 1 and v.suppressed[1].job.code == 'DRG',
-    'BLU/DRG: the 2-weight Accuracy rung is suppressed by DRG');
+    'BLU/DRG: the first Accuracy rung is suppressed by DRG');
 check(#v.active == 1 and v.active[1].source == 'job',
     'what is live is the JOB trait, and it is reported as such');
 check(v.active[1].mods[1].value == 10, 'at the job\'s own tier (+10 at rank 1)');
@@ -1556,7 +1632,7 @@ check(v.deadWeight == true, 'and the weight the set fed it bought nothing');
 check(v.contested == true, 'the ladder is flagged contested');
 
 -- no jobs in the way: the same ladder is the set's own
-local free = tsrc.verdict(ACC, 2, book, {});
+local free = tsrc.verdict(ACC, ACC1, book, {});
 check(#free.suppressed == 0 and #free.active == 1 and free.active[1].source == 'set',
     'with no colliding job the set owns the ladder');
 check(free.deadWeight == false and free.contested == false, 'nothing wasted, nothing contested');
@@ -1601,18 +1677,19 @@ check(cm2.held[1] ~= nil and cm2.held[2] ~= nil and cm2.held[3] == nil,
 check(cm2.active[1].tier == 2, 'and the headline follows the rank');
 
 print('smoke: the per-tier trait id');
--- Category 24 is TWO different traits: Double Attack (15) at 2 weight and
--- Triple Attack (16) at 4. A per-category id would answer for the wrong one.
+-- Category 24 is TWO different traits: Double Attack (15) on rung 1 and
+-- Triple Attack (16) on rung 2. A per-category id would answer for the wrong one.
 local DA = 24;
 local tiers = book.traits.categories[DA].tiers;
 check(tiers[1].traitId == 15 and tiers[2].traitId == 16,
     'the ladder carries a trait id per tier, not per category');
-local solo = tsrc.verdict(DA, 4, book, {});
+local DA2 = tiers[2].points;
+local solo = tsrc.verdict(DA, DA2, book, {});
 check(#solo.active == 1 and solo.active[1].traitId == 16,
-    'at 4 weight only Triple Attack applies -- it overwrites Double Attack');
+    'on rung 2 only Triple Attack applies -- it overwrites Double Attack');
 -- WAR grants Double Attack (25) but NOT Triple Attack: a PARTIAL block
 local blu_war = tsrc.jobs(16, 75, 1, 37);
-local part = tsrc.verdict(DA, 4, book, blu_war);
+local part = tsrc.verdict(DA, DA2, book, blu_war);
 check(#part.suppressed == 1 and part.suppressed[1].traitId == 15,
     'BLU/WAR: WAR kills the Double Attack rung');
 check(part.deadWeight == false, 'but the ladder is NOT dead');
@@ -1625,8 +1702,8 @@ end
 check(sawTA, 'Triple Attack still comes through from the set, named as itself');
 check(part.held[1] ~= nil and part.held[2] == nil,
     'WAR holds rung 1 and does not touch rung 2 -- that rung is another trait');
-check(tsrc.verdict(DA, 2, book, blu_war).deadWeight == true,
-    'at 2 weight, though, WAR already grants the only rung reached');
+check(tsrc.verdict(DA, tiers[1].points, book, blu_war).deadWeight == true,
+    'on rung 1 alone, though, WAR already grants the only rung reached');
 
 -- THF grants the Gilfinder rung outright; the Treasure Hunter rung above
 -- it stays the set's to earn (the CEXI law: nothing is out of reach)
@@ -1642,11 +1719,11 @@ print('smoke: the live bit is the referee');
 -- The 0x0AC trait bit says whether a trait is UP; it can never say where it
 -- came from (blue traits set the same bits). A disagreement is reported, not
 -- smoothed over -- the job-trait table is base-LSB and CEXI may differ.
-local denied = tsrc.verdict(ACC, 2, book, blu_drg, function() return false; end);
+local denied = tsrc.verdict(ACC, ACC1, book, blu_drg, function() return false; end);
 check(denied.disagrees == true, 'model says active, game says no -> disagrees');
-local agreed = tsrc.verdict(ACC, 2, book, blu_drg, function() return true; end);
+local agreed = tsrc.verdict(ACC, ACC1, book, blu_drg, function() return true; end);
 check(agreed.disagrees == nil and agreed.active[1].live == true, 'agreement is quiet');
-check(tsrc.verdict(ACC, 2, book, blu_drg).disagrees == nil,
+check(tsrc.verdict(ACC, ACC1, book, blu_drg).disagrees == nil,
     'and with no live reader at all, nothing is claimed either way');
 
 print('smoke: the Traits tab renders');
