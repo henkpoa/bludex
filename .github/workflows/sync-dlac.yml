@@ -29,14 +29,37 @@ jobs:
           ref: dev
           path: .dlac
 
+      # THE STAMP IS WRITTEN LAST, NOT HERE. VENDORED.md names the bludex
+      # commit this folder came from, so it differs on EVERY push to main --
+      # which made a dlac commit out of every docs-only push: library
+      # byte-identical, one line of provenance different, dlac's dev and main
+      # diverged for nothing. The previous stamp is carried across the rebuild
+      # untouched (byte for byte -- `cat`/`printf` would eat the trailing
+      # newline and reintroduce the very diff this avoids), so the comparison
+      # below sees only real library changes.
       - name: Vendor the module into dlac/jobhelpers/blu/bludex
         run: |
           DEST=.dlac/jobhelpers/blu/bludex
+          PREV="$RUNNER_TEMP/VENDORED.prev"
+          if [ -f "$DEST/VENDORED.md" ]; then cp "$DEST/VENDORED.md" "$PREV"; fi
           rm -rf "$DEST"
           mkdir -p "$DEST"
           cp -r lib ui data icons "$DEST"/
           cp dlacmodule/init.lua dlacmodule/README.md "$DEST"/
           if [ -f LICENSE ]; then cp LICENSE "$DEST"/LICENSE; fi
+          if [ -f "$PREV" ]; then cp "$PREV" "$DEST/VENDORED.md"; fi
+
+      - name: Commit and push to dlac dev
+        run: |
+          DEST=.dlac/jobhelpers/blu/bludex
+          git -C .dlac config user.name  "bludex-sync[bot]"
+          git -C .dlac config user.email "actions@users.noreply.github.com"
+          git -C .dlac add -A jobhelpers/blu/bludex
+          if git -C .dlac diff --cached --quiet; then
+            echo "module already up to date -- nothing vendored changed"
+            exit 0
+          fi
+          # only now is the stamp worth moving: the library really differs
           {
             echo "# VENDORED -- do not hand-edit"
             echo ""
@@ -45,16 +68,6 @@ jobs:
             echo "init.lua and README.md are authored there under dlacmodule/."
             echo "Edit in the bludex repo; this folder is overwritten wholesale."
           } > "$DEST"/VENDORED.md
-
-      - name: Commit and push to dlac dev
-        run: |
-          cd .dlac
-          git config user.name  "bludex-sync[bot]"
-          git config user.email "actions@users.noreply.github.com"
-          git add -A jobhelpers/blu/bludex
-          if git diff --cached --quiet; then
-            echo "module already up to date"
-            exit 0
-          fi
-          git commit -m "jobhelpers/blu/bludex: sync from bludex@${GITHUB_SHA:0:7}"
-          git push origin dev
+          git -C .dlac add -A jobhelpers/blu/bludex
+          git -C .dlac commit -m "jobhelpers/blu/bludex: sync from bludex@${GITHUB_SHA:0:7}"
+          git -C .dlac push origin dev
