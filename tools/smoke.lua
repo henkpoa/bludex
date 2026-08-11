@@ -1877,8 +1877,8 @@ do
         budgetMax = function() return 79; end,
     });
     local arScreen = table.concat(drew, '\n');
-    check(arScreen:match('Maxed %- %d+ Points spare') ~= nil,
-        'a maxed ladder names the points spent past its top rung');
+    check(arScreen:match('11 trait points overspent from 27 blue points spent%.') ~= nil,
+        'a maxed ladder names the overspend in BOTH currencies (Henrik\'s wording)');
     check(arScreen:find('Tier 2:', 1, true) == nil,
         'and never prices a tier 2 that blue magic does not get');
     check(arScreen:find('weight', 1, true) == nil,
@@ -1917,8 +1917,17 @@ do
     check(best == h.cost,
         ('the DP matches brute force over all %d subsets (%s vs %s)')
             :format(2 ^ #pool, tostring(best), tostring(h.cost)));
-    check(arScreen:find('set pts free', 1, true) ~= nil,
-        'and the tab names the set points a trim would free');
+    -- the blue-point figure must come off the eval, not the trim: a ladder can
+    -- be over-fed AND already be its own cheapest hold, and the line still owes
+    -- an answer then
+    local arEv = nil;
+    for _, e in ipairs(sets.traitEval(arSet, book)) do
+        if e.cat == AR then arEv = e; end
+    end
+    check(arEv ~= nil and arEv.setPoints == 27 and arEv.weight == 19,
+        'traitEval reports both currencies per ladder: 19 trait points, 27 blue');
+    check(arEv.setPoints == h.cost + h.saved,
+        'and the trim accounts for exactly the blue points the eval counted');
 end
 
 print('smoke: the level-change rule (the levels kind\'s watcher)');

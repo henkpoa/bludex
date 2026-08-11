@@ -271,12 +271,14 @@ function M.render(ctx)
                     local last = info.tiers[#info.tiers];
                     if last ~= nil and weight > last.points then
                         if kit.isFn(im, 'SameLine') then im.SameLine(); end
-                        local spare = ('  Maxed - %d Points spare'):format(
-                            weight - last.points);
-                        if hold ~= nil then
-                            spare = spare .. (', %d set pts free'):format(hold.saved);
-                        end
-                        kit.ctext(im, kit.COL.warn, spare);
+                        -- Henrik's wording (2026-08-11): name the overspend in
+                        -- BOTH currencies. Trait points alone say the ladder is
+                        -- over-fed; the blue points say what that cost. The
+                        -- spend comes off the eval, not off the trim, because a
+                        -- ladder can be over-fed AND already the cheapest hold.
+                        kit.ctext(im, kit.COL.warn,
+                            ('  %d trait points overspent from %d blue points spent.')
+                                :format(weight - last.points, (ev and ev.setPoints) or 0));
                         kit.tip(im, ('Tier %d is the top of this ladder for blue magic,\n'
                             .. 'and it costs %d points. The %d above it buy nothing --\n'
                             .. 'those spells are earning their set points elsewhere\n'

@@ -366,7 +366,12 @@ been skipping Tier I, and the ladder is `5/10/15`, no longer `verify`.
 
 That second reading exposed a hole in the Traits tab: the "road above" only
 priced a NEXT tier, so a **maxed** ladder said nothing at all while the set
-poured points into it. It now appends `Maxed - N Points spare`. The waste was
+poured points into it. It now appends, in Henrik's own wording, `N trait
+points overspent from M blue points spent.` — the overspend named in BOTH
+currencies, because trait points alone say a ladder is over-fed but not what
+that cost. `traitEval` grew a `setPoints` field per ladder to carry the second
+number; it is read off the EVAL and not off `cheapestHold`, since a ladder can
+be over-fed and already be its own cheapest hold. The waste was
 invisible before only because the ladder used to claim a rung above the one
 blue magic gets — correcting the cut is what made it nameable. Auto Refresh
 at 75 is the worst case: 27 set points fed in, 9 would hold the rung.

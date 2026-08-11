@@ -1632,13 +1632,20 @@ end
 
 function M.traitEval(setOrIds, book)
     local ids = flatIds(setOrIds);
-    local weights, order = {}, {};
+    -- BOTH CURRENCIES, per ladder: the TRAIT points it is fed, and the BLUE
+    -- points (set points) the feeding costs. The second is what makes an
+    -- overspend legible -- trait points alone cannot say what it cost you.
+    local weights, spends, order = {}, {}, {};
     for i = 1, 20 do
         local s = book.spells[ids[i] or 0];
         if s and s.trait then
             local c = s.trait.category;
-            if weights[c] == nil then weights[c] = 0; order[#order + 1] = c; end
+            if weights[c] == nil then
+                weights[c], spends[c] = 0, 0;
+                order[#order + 1] = c;
+            end
             weights[c] = weights[c] + (s.trait.weight or 0);
+            spends[c] = spends[c] + (s.setPoints or 0);
         end
     end
     local out = {};
@@ -1667,6 +1674,7 @@ function M.traitEval(setOrIds, book)
             cat = cat,
             name = (info and info.name) or ('Trait ' .. cat),
             weight = total,
+            setPoints = spends[cat],
             tier = active,
             tierText = tierText(active),
             nextPoints = nextTier and nextTier.points or nil,
