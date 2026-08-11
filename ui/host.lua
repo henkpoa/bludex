@@ -772,24 +772,22 @@ local function renderBody(im, st, deps, embedded)
                 tostring(deps.blu.capLevel())));
         end
     end
-    -- THE LIVE POINTS NOTE SITS AFTER THE BUTTONS (Henrik 2026-08-12: "those
+    -- THE STATUS NOTES SIT AT THE END OF THE ROW (Henrik 2026-08-12: "those
     -- buttons are more important than that message"). Only the per-frame WORK
-    -- happens here -- the nudge, which is logic and not drawing; the label
-    -- itself is drawn right of Revert, below.
+    -- happens here -- the nudge, which is logic and not drawing; both labels
+    -- are drawn after the buttons and after every badge, at the bottom of
+    -- this function.
     --
-    -- It also stopped claiming to be reading. nudgePoints gives up after three
-    -- tries and only re-arms on a successful read, so 'reading...' went on
-    -- saying it for the rest of the session while nothing was being asked --
-    -- and on this server the struct can sit at zero all session anyway (the
-    -- 0x061 ask does not always wake it). The label now names the one thing
-    -- that does fill it, which is what /bludex debug already said.
-    local livePointsCold = deps.blu.onBlu() and (deps.blu.points()) == nil;
-    if livePointsCold then
-        deps.blu.nudgePoints();
-    elseif not deps.blu.onBlu() then
-        if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        kit.ctext(im, kit.COL.dim, '   (not on BLU)');
-    end
+    -- The live-points one also stopped claiming to be reading. nudgePoints
+    -- gives up after three tries and only re-arms on a successful read, so
+    -- 'reading...' went on saying it for the rest of the session while nothing
+    -- was being asked -- and on this server the struct can sit at zero all
+    -- session anyway (the 0x061 ask does not always wake it). The label now
+    -- names the one thing that does fill it, which is what /bludex debug
+    -- already said.
+    local onBlu = deps.blu.onBlu();
+    local livePointsCold = onBlu and (deps.blu.points()) == nil;
+    if livePointsCold then deps.blu.nudgePoints(); end
 
     -- set actions on the header line, every tab (Henrik 2026-08-04): Save
     -- and Apply light GREEN when they have work, Revert discards the unsaved
@@ -866,17 +864,23 @@ local function renderBody(im, st, deps, embedded)
             .. 'minute. The countdown runs from the last set change Bludex sent.');
     end
 
-    -- LAST ON THE ROW, after every badge: the live-points note (the nudge that
-    -- goes with it runs above, where the condition is read). It sits at the end
-    -- because everything between it and Revert is louder than it is -- an
-    -- enforced over-budget, a changed plan, the cast lock -- and a standing
-    -- hint must not push a warning further from the button it is about.
-    -- An underlined helpLabel rather than a sentence: the panel-text standard
-    -- is a short label with the explanation in the hover.
-    if livePointsCold then
+    -- LAST ON THE ROW, after every badge: the standing status notes (the nudge
+    -- that goes with the first one runs above, where the condition is read).
+    -- They sit at the end because everything between them and Revert is louder
+    -- -- an enforced over-budget, a changed plan, the cast lock -- and a note
+    -- that is true all session must not push a warning further from the button
+    -- it is about. The two are mutually exclusive by construction: one needs
+    -- to be on BLU, the other needs not to be, so the tail slot is never
+    -- contested.
+    if not onBlu then
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        -- no leading pad on the text: helpLabel underlines the ITEM, and
-        -- spaces inside it drag the rule out past the words. SameLine's own
+        kit.ctext(im, kit.COL.dim, '   (not on BLU)');
+    elseif livePointsCold then
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        -- an underlined helpLabel rather than a sentence: the panel-text
+        -- standard is a short label with the explanation in the hover. No
+        -- leading pad on the text -- helpLabel underlines the ITEM, and
+        -- spaces inside it drag the rule out past the words; SameLine's own
         -- spacing is the gap.
         kit.helpLabel(im, 'Update Live Points?',
             'To update your live points, open the blue mage set spells menu.',
