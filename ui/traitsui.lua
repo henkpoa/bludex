@@ -272,19 +272,28 @@ function M.render(ctx)
                     if last ~= nil and weight > last.points then
                         if kit.isFn(im, 'SameLine') then im.SameLine(); end
                         -- Henrik's wording (2026-08-11): name the overspend in
-                        -- BOTH currencies. Trait points alone say the ladder is
-                        -- over-fed; the blue points say what that cost. The
-                        -- spend comes off the eval, not off the trim, because a
-                        -- ladder can be over-fed AND already the cheapest hold.
-                        kit.ctext(im, kit.COL.warn,
-                            ('  %d trait points overspent from %d blue points spent.')
-                                :format(weight - last.points, (ev and ev.setPoints) or 0));
+                        -- BOTH currencies. BOTH figures are the WASTE, never
+                        -- the total -- the blue number is what the surplus
+                        -- trait points COST, i.e. what a trim would give back,
+                        -- not what the ladder holds. The total belongs in the
+                        -- tooltip, where it is context rather than a verdict.
+                        --
+                        -- A ladder can be over-fed and still be its own
+                        -- cheapest hold (one big feeder overshooting a small
+                        -- rung). Nothing is recoverable then, so the blue
+                        -- clause is dropped rather than printed as a zero.
+                        local over = weight - last.points;
+                        kit.ctext(im, kit.COL.warn, hold ~= nil
+                            and ('  %d trait points overspent from %d blue points spent.')
+                                :format(over, hold.saved)
+                            or ('  %d trait points overspent.'):format(over));
                         kit.tip(im, ('Tier %d is the top of this ladder for blue magic,\n'
-                            .. 'and it costs %d points. The %d above it buy nothing --\n'
-                            .. 'those spells are earning their blue points elsewhere\n'
-                            .. 'or not at all.%s'):format(
-                            #info.tiers, last.points, weight - last.points,
-                            holdLine(nil)));
+                            .. 'and it costs %d Points. The %d above it buy nothing --\n'
+                            .. 'the spells feeding them are earning their keep as\n'
+                            .. 'spells to cast, or not at all.\n\n'
+                            .. 'This ladder is holding %d blue points in total.%s'):format(
+                            #info.tiers, last.points, over,
+                            (ev and ev.setPoints) or 0, holdLine(nil)));
                     end
                 end
             elseif weight > 0 then

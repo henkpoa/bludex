@@ -1867,6 +1867,12 @@ do
         ('the fixture over-feeds Auto Refresh: %d points into a %d point rung')
             :format(fed, arTop.points));
     drew = {};
+    -- hover ON for this render so the TOOLTIPS land in `drew` too: half of
+    -- what this section asserts is which number sits in the headline and
+    -- which is only context in the hover
+    local wasHovered, wasDelay = stubIm.IsItemHovered, kit.hoverDelay;
+    stubIm.IsItemHovered = function() return true; end;
+    kit.hoverDelay = 0;
     traitsui.render({
         im = stubIm, book = book, sets = sets,
         blu = { onBlu = function() return true; end },
@@ -1876,9 +1882,19 @@ do
         verdict = function(c, w) return tsrc.verdict(c, w, book, {}, nil); end,
         budgetMax = function() return 79; end,
     });
+    stubIm.IsItemHovered, kit.hoverDelay = wasHovered, wasDelay;
     local arScreen = table.concat(drew, '\n');
-    check(arScreen:match('11 trait points overspent from 27 blue points spent%.') ~= nil,
-        'a maxed ladder names the overspend in BOTH currencies (Henrik\'s wording)');
+    -- BOTH figures are the WASTE, never the total: 19 trait points fed into an
+    -- 8 point rung is 11 overspent, and the 18 blue points are what those 11
+    -- COST -- what a trim gives back. The 27 the ladder holds is context and
+    -- lives in the tooltip. (Henrik 2026-08-11: "now you just summarize all
+    -- the points used, not the overspent points.")
+    check(arScreen:match('11 trait points overspent from 18 blue points spent%.') ~= nil,
+        'a maxed ladder names the WASTE in both currencies, not the total');
+    check(arScreen:find('27 blue points spent', 1, true) == nil,
+        'and never passes the total off as the overspend');
+    check(arScreen:find('holding 27 blue points in total', 1, true) ~= nil,
+        'the total is context, and it lives in the tooltip');
     check(arScreen:find('Tier 2:', 1, true) == nil,
         'and never prices a tier 2 that blue magic does not get');
     check(arScreen:find('weight', 1, true) == nil,

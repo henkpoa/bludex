@@ -377,9 +377,18 @@ priced a NEXT tier, so a **maxed** ladder said nothing at all while the set
 poured points into it. It now appends, in Henrik's own wording, `N trait
 points overspent from M blue points spent.` — the overspend named in BOTH
 currencies, because trait points alone say a ladder is over-fed but not what
-that cost. `traitEval` grew a `setPoints` field per ladder to carry the second
-number; it is read off the EVAL and not off `cheapestHold`, since a ladder can
-be over-fed and already be its own cheapest hold. The waste was
+that cost.
+
+**BOTH FIGURES ARE THE WASTE, NEVER THE TOTAL** (Henrik, correcting a first
+attempt that read the total: *"now you just summarize all the points used,
+not the overspent points"*). Auto Refresh at 75 reads **11 trait points
+overspent from 18 blue points spent** — 19 fed into an 8-point rung is 11
+wasted, and `cheapestHold` prices those 11 at 18 blue points, which is exactly
+what a trim gives back. The 27 the ladder holds is context and lives in the
+tooltip. `traitEval` grew a `setPoints` field per ladder to carry that total.
+A ladder can be over-fed and still be its own cheapest hold (one big feeder
+overshooting a small rung); nothing is recoverable then, so the blue clause is
+dropped rather than printed as a zero. The waste was
 invisible before only because the ladder used to claim a rung above the one
 blue magic gets — correcting the cut is what made it nameable. Auto Refresh
 at 75 is the worst case: 27 set points fed in, 9 would hold the rung.
