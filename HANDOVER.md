@@ -66,6 +66,44 @@ leftover from days before. Corollary, learned the same day: check
 can be tagged AND published while a stale line in this file says otherwise
 — that is exactly what happened when 1.1.2 was being planned.
 
+### THE CI TOOLCHAIN (2026-08-11, both repos)
+
+`actions/checkout@v4` targets **Node 20**, which GitHub has deprecated — runs
+were already being force-migrated to Node 24 and annotated as such, and would
+have started failing outright whenever the removal completes. Bumped to **v7**
+in all three places:
+
+| repo | workflow | what it does |
+| --- | --- | --- |
+| bludex | `sync-dlac.yml` | ×2 — vendors bludex into dlac on every push to main |
+| dlac | `ci.yml` | the headless Lua suite, on PR and push to main |
+| dlac | `issue-agent.yml` | the cloud agent that implements labelled issues |
+
+**Why v7 and not the smallest jump.** v4 is the last node20 major; v5, v6 and
+v7 all target node24. The majors were read before picking: v6.0.0 moves
+`persist-credentials` out of the local git config into a file under
+`RUNNER_TEMP` (runner ≥ 2.329.0 — only binding for Docker container actions,
+and every step here runs directly on `ubuntu-latest`); v7.0.0 blocks fork-PR
+checkout for `pull_request_target` and `workflow_run`, and no workflow here
+uses either trigger. The `allow-unsafe-pr-checkout` breaking change was
+backported all the way down to v4, so it is not a reason to stay put.
+
+**The one that could have broken quietly.** `sync-dlac.yml`'s SECOND checkout
+clones dlac with a token and then runs `git push origin dev` out of that
+working copy — so it leans on exactly the credential storage v6 changed. If it
+had broken, dlac would simply have stopped receiving bludex with nothing to
+announce it. Merging the bump to main exercised it: the run went green and
+pushed `3de012a`. Both repos' logs are now clean of the deprecation warning
+(checked with `gh run view --log`, not eyeballed).
+
+**Sequencing, if you ever bump these again.** Do bludex FIRST. Pushing bludex
+main fires the sync, which lands a commit on dlac `dev`; doing dlac first just
+leaves its main behind again the moment bludex is pushed. bludex → watch the
+sync → then fast-forward dlac, and dlac main comes fully current in one go.
+
+**Not mirrored into dlac's own docs.** dlac keeps `CONTEXT.md` and
+`docs/HANDOFF.md`; the two workflow bumps there are recorded only here so far.
+
 ### THE TRAIT-POINT SCALE (Henrik, from the field, 2026-08-11)
 
 **base-LSB is not the authority for blue traits. bg-wiki is.** Henrik set
