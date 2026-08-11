@@ -1,17 +1,202 @@
 # Bludex — Session Handover
 
-**Date:** 2026-08-10 (the KINDS session — the merge, the two-kind model and
-FOUR live field rounds with Henrik in game, all landed same day; supersedes
-the 2026-08-08 timeline handover, kept below as §0 for the slotlist's design
-history, and the 2026-08-04 handover below that as §H)
+**Date:** 2026-08-11/12 (the TRAIT LADDER session — every blue trait ladder
+rebuilt on a new authority after Henrik caught the old one in game, plus the
+over-cap feature and the blue-points rename; supersedes the 2026-08-10 KINDS
+handover, kept below as §-1, and the two older ones as §0 and §H)
 **Repo:** https://github.com/henkpoa/bludex — public, `main` + `dev` (all work on `dev`,
 dev→main only on Henrik's explicit go; same law in dlac). `addon.version`
-**1.1.1 — RELEASED to main 2026-08-10** on Henrik's go, after SIX live field
-rounds the same day (1.1.0 reached main after four; 1.1.1 carries rounds
-five and six on top and is the first of the two to be TAGGED — there is no
-v1.1.0 tag or GitHub release, so anyone updating from GitHub crosses both).
-The field list in §-1 stays open as the next session's first errand; items
-confirmed there harden the release, they do not gate it anymore.
+**1.1.2 — RELEASED and TAGGED 2026-08-11**, `v1.1.2` on origin with a
+published GitHub release and the `bludex.zip` asset; the dlac sync workflow
+ran green on the same push. 1.1.1 was left exactly as it was.
+
+---
+
+## -2. THE STATE OF 2026-08-11 — read this first
+
+A data-correctness session. Henrik was levelling Attack Bonus in game, saw
+his attack climb, and asked why Bludex showed a single tier. It showed a
+single tier because base-LSB ships one, and I had confirmed that reading as
+correct before checking it against anything else. It was wrong. Every blue
+trait ladder in the addon is rebuilt.
+
+Suite: **551 checks green** — `lua bludex/tools/smoke.lua` from
+`Ashita/addons/`. Released as **1.1.2**.
+
+### WHAT IS OWED from this session
+
+Short list, and none of it gates anything.
+
+* **The cheapest-hold tooltip has not been read in game.** Henrik saw the
+  over-cap LINE live and reworded it twice (that is where "over cap, from
+  overspending" came from), but the hover underneath — which spells hold the
+  tier, for how many blue points — has only ever been read in the suite.
+* **`ui/traitsui.lua` is getting long.** The per-ladder block now carries the
+  next-tier price, the over-cap line, the cheapest hold and two tooltips that
+  must word the surplus differently. It works and it is pinned, but it is the
+  next thing that will resist a change.
+* **The four `XCHECK_EXEMPT` categories are exemptions, not verdicts** (Clear
+  Mind's MPHEAL/CLEAR_MIND divergence, Beast Killer past BST's ranks, the
+  BLU-only Tier 0 on Fast Cast and Double Attack). Each has a written reason;
+  none has been read in game.
+
+Nothing else. The three ladders that used to carry `confidence = 'verify'`
+are settled, and no ladder carries it now.
+
+### THE VERSION RULE (Henrik, 2026-08-11 — a hard rule, not a preference)
+
+**`addon.version` is NEVER bumped during development.** It stays at the last
+RELEASED version for the whole of a working session, however much lands on
+`dev`. It changes in exactly one commit — the `Version X.Y.Z:` commit that
+IS the release, written once the number has been decided with Henrik.
+
+**Why:** bumping it mid-session is what produced the 1.1.0 hole. The version
+was raised to 1.1.0 while work continued, more work landed, and by release
+time the number had moved on to 1.1.1 — so 1.1.0 exists as a commit on
+`main` with no tag and no release, and the 1.1.1 notes had to cover two
+versions at once. From the outside the numbering simply skips, which reads
+as a mistake because it is one.
+
+**How to apply:** during a session, `addon.version` in `bludex.lua` should
+equal the newest `git tag`. If it does not, someone bumped early — say so
+before doing anything else. At release time the sequence is
+[[release-packaging]]'s, and the bump is the first step of it, not a
+leftover from days before. Corollary, learned the same day: check
+`gh release list` against `git tag -l` BEFORE proposing a number. A version
+can be tagged AND published while a stale line in this file says otherwise
+— that is exactly what happened when 1.1.2 was being planned.
+
+### THE TRAIT-POINT SCALE (Henrik, from the field, 2026-08-11)
+
+**base-LSB is not the authority for blue traits. bg-wiki is.** Henrik set
+Attack Bonus in game, watched his attack climb as he added spells, and
+brought the wiki's table: every feeder is worth 4 trait points, a rung costs
+8, and a Blue Mage climbs the ladder to tier V. bludex was showing one rung
+and a weight of 1 per spell.
+
+The cause: `blue_spell_list`/`blue_traits` **mix two scales**. Most rows
+carry a legacy "1 unit" weight against a 2-point rung; later rows hold the
+REAL wiki numbers and were never converted — Auto Refresh matches the wiki
+exactly, Max Hp Boost's thresholds are already 8/16/24/32, and stray rows
+like Embalming Earth sit at 8 inside an otherwise-legacy ladder. Dropping
+the SoA spells in at their true 8 made ONE spell out-weigh five era spells.
+
+Rebuilt 2026-08-11 from a 26-page bg-wiki scrape. **LSB supplies the shape**
+(which modifiers a ladder moves, which trait id owns each rung); **the wiki
+supplies the scale and the rung values**. Generator carries
+`WIKI_POINTS_PER_TIER` / `WIKI_FEEDER_POINTS` / `WIKI_LADDER`; the scrape
+itself is summarised in that file's headers.
+
+What a blanket ×4 would have got wrong, and why the scrape was worth it:
+Skillchain Bonus, Mag. Burst Bonus and Gilfinder pay **6** per feeder, not
+4; Auto Refresh is per-spell (1/2/3/4); Glutinous Dart is 4 where LSB says
+8; Max Mp Boost rung 2 is 20 where LSB says 30; Store Tp rung 2 is 15 where
+LSB says 25; and Gilfinder→Treasure Hunter sits at 16, LSB's "3" having been
+a spell-COUNT hack.
+
+**WHERE A LADDER STOPS** (Henrik, second pass same day — he caught Auto
+Refresh advertising a rung 2 that does not exist for us). The cut is NOT
+"however many rungs the feeders can pay for". It is the wiki's job-trait
+table, whose **Level Obtained** column names the jobs that hold each tier:
+
+| marker | meaning | verdict |
+| --- | --- | --- |
+| `BLU63*` | "requires the setting of appropriate spells" | on the ladder |
+| `BLU99**` | "requires the 100 or 1,200 Blue Mage job gift" | **cut** |
+| no BLU entry | the tier is another job's outright | **cut** |
+
+Cut at the last SINGLE-asterisk BLU tier. The feeder arithmetic stays only
+as a cross-check: the two agree on eight of the twelve multi-rung ladders,
+and where they disagree the asterisk is right and tighter. What that fixed:
+Auto Refresh 2→**1** rung (tier II is SMN90 alone), Clear Mind 6→**4**
+(twelve feeders pay for six; blue magic gets four), Magic Atk. Bonus 6→**4**,
+Attack Bonus 5→**4**.
+
+It also settled Fast Cast, which had been the one open question: BLU holds
+the wiki's **Tier 0** (5%), I (10%) and II (15%) — so LSB's 15 on rung 2 had
+been skipping Tier I, and the ladder is `5/10/15`, no longer `verify`.
+
+**FIELD-CONFIRMED** (Henrik, 2026-08-11, both predictions, in game):
+
+* *"I get more attack yes"* — Attack Bonus really is a multi-rung ladder that
+  climbs as spells are added. This is the whole reason for the rebuild and it
+  is now witnessed, not inferred.
+* *"if I equip everything I only get 1 MP / tick refresh"* — Auto Refresh
+  stops at one rung with **every** feeder set (19 trait points against a rung
+  that costs 8). The asterisk cut is confirmed from the other direction: 11
+  surplus trait points produced no second rung.
+
+That second reading exposed a hole in the Traits tab: the "road above" only
+priced a NEXT tier, so a **maxed** ladder said nothing at all while the set
+poured points into it. It now appends, in Henrik's own wording after reading
+it live: `N trait points over cap, from overspending M blue points.` — the
+waste named in BOTH currencies, because trait points alone say a ladder is
+over-fed but not what that cost. Two earlier attempts are worth keeping as
+the reason this sentence reads the way it does: `Maxed - N Points spare` never
+said what it cost, and `N trait points overspent from M blue points spent`
+put the ladder's TOTAL where the waste belonged. "over cap" says why the
+points are lost; "from overspending" makes the blue number plainly the waste.
+
+**BOTH FIGURES ARE THE WASTE, NEVER THE TOTAL** (Henrik, correcting that
+middle version: *"now you just summarize all the points used, not the
+overspent points"*). Auto Refresh at 75 reads **11 trait points over cap,
+from overspending 18 blue points** — 19 fed into an 8-point rung is 11 over,
+and `cheapestHold` prices those 11 at 18 blue points, which is exactly what a
+trim gives back. The 27 the ladder holds is context and lives in the tooltip. `traitEval` grew a `setPoints` field per ladder to carry that total.
+A ladder can be over-fed and still be its own cheapest hold (one big feeder
+overshooting a small rung); nothing is recoverable then, so the blue clause is
+dropped rather than printed as a zero. The waste was
+invisible before only because the ladder used to claim a rung above the one
+blue magic gets — correcting the cut is what made it nameable. Auto Refresh
+at 75 is the worst case: 27 set points fed in, 9 would hold the rung.
+**The cheapest hold** (`setmodel.cheapestHold`, built same day on Henrik's
+go): a rung has a price in TRAIT points and a set can pay it many ways — the
+spells you happen to have set are rarely the cheapest. Given a ladder, it
+returns the minimum-SET-point subset of that set's own feeders that still
+holds the tier you are standing on, plus what dropping the rest would free.
+A 0/1 knapsack with sums capped at the rung's price, so it is exact and tiny
+(≤20 feeders over ≤48 points); the suite checks it against brute force over
+all 256 subsets of the real Auto Refresh ladder.
+
+It is **advisory and must stay worded that way**. Every spell feeds exactly
+one category, so a trim can never cost another ladder its tier — but it can
+cost you a spell you set to CAST, and the stat mods it carries while set. It
+names what the TRAIT does not need, never what you do not want. The surplus
+also means two different things and the tooltips never merge them: past the
+last rung it buys nothing ever; below it the spare points are progress toward
+the next tier.
+
+Auto Refresh at 75 is the worst case in the data: 27 set points spent, **9**
+would hold the rung, 18 free.
+
+**THE JOB-LADDER CROSS-CHECK** (third pass, same day — Henrik asked for the
+remaining `verify` ladders to be checked in game; they turned out not to need
+the game at all). A blue rung and a job rank of the **same trait** move the
+**same modifier**, and `sql/traits.sql`'s job side is well-maintained where
+`blue_traits` is not — it agrees with bg-wiki value for value. So a blue rung
+value that appears nowhere on that trait's job ladder is simply wrong:
+
+| ladder | mod | job ranks | blue had | now |
+| --- | --- | --- | --- | --- |
+| Resist Sleep | `SLEEPRES` 240 | 10/15/20/25/30 | **2** | 10/15 |
+| Resist Gravity | `GRAVITYRES` 249 | 10/15/20/25/30 | **2** | 10 |
+| Rapid Shot | `RAPID_SHOT` 359 | 25/30 | **10** | 25 |
+
+There was never a "unit mismatch" — the wiki's percentages ARE the modifier
+values. Those three were just wrong numbers, and the `verify` flag was
+mis-diagnosing them. **No ladder carries `confidence = 'verify'` any more.**
+
+The check now runs on **every generator run** (`XCHECK_EXEMPT` holds the four
+documented exceptions with reasons: Clear Mind's MPHEAL/CLEAR_MIND modifier
+divergence, Beast Killer climbing past BST's ranks, and the BLU-only Tier 0 on
+Fast Cast and Double Attack). It reconciles 19 ladders against an independent
+source, which is the strongest evidence the rebuild is right — and it fires
+correctly when a bad value is put back, which was tested rather than assumed.
+
+Category ids 201/202 replaced 29/30 in the same pass — base-LSB already uses
+`trait_category` 29 for a real spell (Foul Waters), so the internal ids had
+been squatting on a live id that would have mis-fed the ladder the day that
+spell landed. A smoke check now pins that they stay clear of the live range.
 
 ---
 
@@ -311,138 +496,6 @@ Eva. (NEW cat 201), 726→Magic Def., 727→Evasion, 728→Magic Acc. (NEW cat
 2026-08-04 field readings, so mods stand. Cats 201/202 are bludex-internal
 ids (traitId = LSB trait.h 126/125, rung at 8 pts, +10) — bg-wiki has since
 confirmed both ladders outright, so the "assumption" note is retired.
-
-### THE TRAIT-POINT SCALE (Henrik, from the field, 2026-08-11)
-
-**base-LSB is not the authority for blue traits. bg-wiki is.** Henrik set
-Attack Bonus in game, watched his attack climb as he added spells, and
-brought the wiki's table: every feeder is worth 4 trait points, a rung costs
-8, and a Blue Mage climbs the ladder to tier V. bludex was showing one rung
-and a weight of 1 per spell.
-
-The cause: `blue_spell_list`/`blue_traits` **mix two scales**. Most rows
-carry a legacy "1 unit" weight against a 2-point rung; later rows hold the
-REAL wiki numbers and were never converted — Auto Refresh matches the wiki
-exactly, Max Hp Boost's thresholds are already 8/16/24/32, and stray rows
-like Embalming Earth sit at 8 inside an otherwise-legacy ladder. Dropping
-the SoA spells in at their true 8 made ONE spell out-weigh five era spells.
-
-Rebuilt 2026-08-11 from a 26-page bg-wiki scrape. **LSB supplies the shape**
-(which modifiers a ladder moves, which trait id owns each rung); **the wiki
-supplies the scale and the rung values**. Generator carries
-`WIKI_POINTS_PER_TIER` / `WIKI_FEEDER_POINTS` / `WIKI_LADDER`; the scrape
-itself is summarised in that file's headers.
-
-What a blanket ×4 would have got wrong, and why the scrape was worth it:
-Skillchain Bonus, Mag. Burst Bonus and Gilfinder pay **6** per feeder, not
-4; Auto Refresh is per-spell (1/2/3/4); Glutinous Dart is 4 where LSB says
-8; Max Mp Boost rung 2 is 20 where LSB says 30; Store Tp rung 2 is 15 where
-LSB says 25; and Gilfinder→Treasure Hunter sits at 16, LSB's "3" having been
-a spell-COUNT hack.
-
-**WHERE A LADDER STOPS** (Henrik, second pass same day — he caught Auto
-Refresh advertising a rung 2 that does not exist for us). The cut is NOT
-"however many rungs the feeders can pay for". It is the wiki's job-trait
-table, whose **Level Obtained** column names the jobs that hold each tier:
-
-| marker | meaning | verdict |
-| --- | --- | --- |
-| `BLU63*` | "requires the setting of appropriate spells" | on the ladder |
-| `BLU99**` | "requires the 100 or 1,200 Blue Mage job gift" | **cut** |
-| no BLU entry | the tier is another job's outright | **cut** |
-
-Cut at the last SINGLE-asterisk BLU tier. The feeder arithmetic stays only
-as a cross-check: the two agree on eight of the twelve multi-rung ladders,
-and where they disagree the asterisk is right and tighter. What that fixed:
-Auto Refresh 2→**1** rung (tier II is SMN90 alone), Clear Mind 6→**4**
-(twelve feeders pay for six; blue magic gets four), Magic Atk. Bonus 6→**4**,
-Attack Bonus 5→**4**.
-
-It also settled Fast Cast, which had been the one open question: BLU holds
-the wiki's **Tier 0** (5%), I (10%) and II (15%) — so LSB's 15 on rung 2 had
-been skipping Tier I, and the ladder is `5/10/15`, no longer `verify`.
-
-**FIELD-CONFIRMED** (Henrik, 2026-08-11, both predictions, in game):
-
-* *"I get more attack yes"* — Attack Bonus really is a multi-rung ladder that
-  climbs as spells are added. This is the whole reason for the rebuild and it
-  is now witnessed, not inferred.
-* *"if I equip everything I only get 1 MP / tick refresh"* — Auto Refresh
-  stops at one rung with **every** feeder set (19 trait points against a rung
-  that costs 8). The asterisk cut is confirmed from the other direction: 11
-  surplus trait points produced no second rung.
-
-That second reading exposed a hole in the Traits tab: the "road above" only
-priced a NEXT tier, so a **maxed** ladder said nothing at all while the set
-poured points into it. It now appends, in Henrik's own wording after reading
-it live: `N trait points over cap, from overspending M blue points.` — the
-waste named in BOTH currencies, because trait points alone say a ladder is
-over-fed but not what that cost. Two earlier attempts are worth keeping as
-the reason this sentence reads the way it does: `Maxed - N Points spare` never
-said what it cost, and `N trait points overspent from M blue points spent`
-put the ladder's TOTAL where the waste belonged. "over cap" says why the
-points are lost; "from overspending" makes the blue number plainly the waste.
-
-**BOTH FIGURES ARE THE WASTE, NEVER THE TOTAL** (Henrik, correcting that
-middle version: *"now you just summarize all the points used, not the
-overspent points"*). Auto Refresh at 75 reads **11 trait points over cap,
-from overspending 18 blue points** — 19 fed into an 8-point rung is 11 over,
-and `cheapestHold` prices those 11 at 18 blue points, which is exactly what a
-trim gives back. The 27 the ladder holds is context and lives in the tooltip. `traitEval` grew a `setPoints` field per ladder to carry that total.
-A ladder can be over-fed and still be its own cheapest hold (one big feeder
-overshooting a small rung); nothing is recoverable then, so the blue clause is
-dropped rather than printed as a zero. The waste was
-invisible before only because the ladder used to claim a rung above the one
-blue magic gets — correcting the cut is what made it nameable. Auto Refresh
-at 75 is the worst case: 27 set points fed in, 9 would hold the rung.
-**The cheapest hold** (`setmodel.cheapestHold`, built same day on Henrik's
-go): a rung has a price in TRAIT points and a set can pay it many ways — the
-spells you happen to have set are rarely the cheapest. Given a ladder, it
-returns the minimum-SET-point subset of that set's own feeders that still
-holds the tier you are standing on, plus what dropping the rest would free.
-A 0/1 knapsack with sums capped at the rung's price, so it is exact and tiny
-(≤20 feeders over ≤48 points); the suite checks it against brute force over
-all 256 subsets of the real Auto Refresh ladder.
-
-It is **advisory and must stay worded that way**. Every spell feeds exactly
-one category, so a trim can never cost another ladder its tier — but it can
-cost you a spell you set to CAST, and the stat mods it carries while set. It
-names what the TRAIT does not need, never what you do not want. The surplus
-also means two different things and the tooltips never merge them: past the
-last rung it buys nothing ever; below it the spare points are progress toward
-the next tier.
-
-Auto Refresh at 75 is the worst case in the data: 27 set points spent, **9**
-would hold the rung, 18 free.
-
-**THE JOB-LADDER CROSS-CHECK** (third pass, same day — Henrik asked for the
-remaining `verify` ladders to be checked in game; they turned out not to need
-the game at all). A blue rung and a job rank of the **same trait** move the
-**same modifier**, and `sql/traits.sql`'s job side is well-maintained where
-`blue_traits` is not — it agrees with bg-wiki value for value. So a blue rung
-value that appears nowhere on that trait's job ladder is simply wrong:
-
-| ladder | mod | job ranks | blue had | now |
-| --- | --- | --- | --- | --- |
-| Resist Sleep | `SLEEPRES` 240 | 10/15/20/25/30 | **2** | 10/15 |
-| Resist Gravity | `GRAVITYRES` 249 | 10/15/20/25/30 | **2** | 10 |
-| Rapid Shot | `RAPID_SHOT` 359 | 25/30 | **10** | 25 |
-
-There was never a "unit mismatch" — the wiki's percentages ARE the modifier
-values. Those three were just wrong numbers, and the `verify` flag was
-mis-diagnosing them. **No ladder carries `confidence = 'verify'` any more.**
-
-The check now runs on **every generator run** (`XCHECK_EXEMPT` holds the four
-documented exceptions with reasons: Clear Mind's MPHEAL/CLEAR_MIND modifier
-divergence, Beast Killer climbing past BST's ranks, and the BLU-only Tier 0 on
-Fast Cast and Double Attack). It reconciles 19 ladders against an independent
-source, which is the strongest evidence the rebuild is right — and it fires
-correctly when a bad value is put back, which was tested rather than assumed.
-
-Category ids 201/202 replaced 29/30 in the same pass — base-LSB already uses
-`trait_category` 29 for a real spell (Foul Waters), so the internal ids had
-been squatting on a live id that would have mis-fed the ladder the day that
-spell landed. A smoke check now pins that they stay clear of the live range.
 
 ### Decisions made on maintainer authority (alternatives noted)
 
