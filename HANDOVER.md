@@ -96,10 +96,44 @@ announce it. Merging the bump to main exercised it: the run went green and
 pushed `3de012a`. Both repos' logs are now clean of the deprecation warning
 (checked with `gh run view --log`, not eyeballed).
 
-**Sequencing, if you ever bump these again.** Do bludex FIRST. Pushing bludex
-main fires the sync, which lands a commit on dlac `dev`; doing dlac first just
-leaves its main behind again the moment bludex is pushed. bludex → watch the
-sync → then fast-forward dlac, and dlac main comes fully current in one go.
+**Sequencing, when a change touches both.** Do bludex FIRST *if the library
+changed* — pushing bludex main fires the sync, which lands a commit on dlac
+`dev`, and doing dlac first leaves its main behind again the moment bludex is
+pushed. bludex → watch the sync → then fast-forward dlac. (Since the stamp fix
+below, a bludex push that changes NO vendored file produces no dlac commit at
+all, so the order stops mattering for docs- and workflow-only work.)
+
+### THE VENDOR STAMP — why dlac used to drift for nothing
+
+Found immediately after the above, by checking a claim rather than repeating
+it: I had told Henrik a docs-only sync was "effectively a no-op for dlac". It
+was not, and never had been.
+
+`VENDORED.md` records the bludex SHA the folder came from, and it was written
+**before** the change check. That SHA differs on every push, so the staged diff
+was never empty and the `module already up to date` branch never ran. Every
+push to bludex main — including one that touched only `HANDOVER.md` — produced
+a dlac commit whose entire content was `VENDORED.md +1 -1`, library
+byte-identical. dlac's dev and main sat diverged over a line of provenance, and
+"dlac dev is ahead of main" stopped carrying any information.
+
+The fix: carry the previous stamp across the rebuild untouched, and rewrite it
+only AFTER the staged diff proves a vendored file really differs. Provenance is
+unchanged — a real sync still records its source SHA — what stops is the empty
+commit.
+
+**The subtlety that would have made the fix a no-op:** the stamp is preserved
+by copying the FILE. `PREV=$(cat …)` / `printf '%s'` looks equivalent and is
+not — command substitution strips the trailing newline, so the restored file
+differs from the committed one by exactly the one-line diff the fix exists to
+remove. It would have looked correct and changed nothing.
+
+Verified twice before being believed: a `workflow_dispatch --ref dev` run
+(testing the logic from dev, before it could reach main), then the real push of
+the merge. Both printed `module already up to date -- nothing vendored changed`
+and left dlac's dev head untouched at `cc407f3`. The step also moved from `cd`
+to `git -C`, so it no longer depends on its own working directory while writing
+into two repositories.
 
 **Not mirrored into dlac's own docs.** dlac keeps `CONTEXT.md` and
 `docs/HANDOFF.md`; the two workflow bumps there are recorded only here so far.
