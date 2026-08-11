@@ -428,16 +428,28 @@ end
 check(badRung == nil, 'every rung on every ladder is a multiple of 8 trait points');
 check(badStep == nil, 'and the rungs step by exactly 8, from 8 -- no ladder skips');
 
--- the ladder the field report was about
+-- WHERE A LADDER STOPS (Henrik 2026-08-11, second pass -- he caught Auto
+-- Refresh advertising a rung 2 that is SMN90's alone). A ladder runs to the
+-- last tier whose BLU entry in the wiki's job-trait table carries a SINGLE
+-- asterisk ("requires the setting of appropriate spells"). A double asterisk
+-- is the 100/1,200 job gift and no amount of set points reaches it; a tier
+-- with no BLU entry at all is another job's outright. Feeder arithmetic is a
+-- cross-check only -- it is the looser of the two and must never be the cut.
 local AB = book.traits.categories[8];
-check(AB.name == 'Attack Bonus' and #AB.tiers == 5,
-    'Attack Bonus is a FIVE rung ladder, not the single rung base-LSB ships');
+check(AB.name == 'Attack Bonus' and #AB.tiers == 4,
+    'Attack Bonus runs to tier IV -- V and VI are BLU99**, job gift only');
 local abv = {};
 for i, t in ipairs(AB.tiers) do abv[i] = t.mods[1].value; end
-check(abv[1] == 10 and abv[2] == 22 and abv[3] == 35 and abv[4] == 48 and abv[5] == 60,
-    'and it climbs 10/22/35/48/60 the way bg-wiki says');
+check(abv[1] == 10 and abv[2] == 22 and abv[3] == 35 and abv[4] == 48,
+    'and it climbs 10/22/35/48 the way bg-wiki says');
 check(AB.tiers[2].mods[2].stat == 'RATT' and AB.tiers[2].mods[2].value == 22,
     'ranged attack rides every rung with melee');
+-- the one that was wrong: blue magic gets ONE rung of Auto Refresh, however
+-- many trait points the nine feeders can pile up (they reach 23, i.e. two).
+check(#book.traits.categories[14].tiers == 1,
+    'Auto Refresh is ONE rung for blue magic -- tier II is SMN90 alone');
+check(#book.traits.categories[4].tiers == 4,
+    'and Clear Mind stops at IV, though its twelve feeders could pay for six');
 
 -- the exact symptom: one spell must not out-weigh the rest of its own ladder
 local st = book.spells[719].trait.weight;      -- Searing Tempest, a lv99 spell

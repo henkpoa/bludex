@@ -167,8 +167,24 @@ WIKI_FEEDER_POINTS = {
 }
 
 # category -> (confidence, [rung values]). Rung N sits at N*8 trait points.
-# Each ladder is cut at the last rung blue magic can actually REACH with the
-# wiki's own feeder list, so no ladder advertises a rung no set can buy.
+#
+# WHERE A LADDER STOPS (Henrik, 2026-08-11, second pass -- he caught Auto
+# Refresh advertising a rung 2 that does not exist for us). The cut is NOT
+# "however many rungs the feeder spells can pay for". It is the wiki's job
+# trait table, whose "Level Obtained" column names the jobs that can hold each
+# tier, with two footnote markers that decide everything:
+#
+#     BLU63*   single asterisk -- "requires the setting of appropriate
+#              spells": REACHABLE, this rung belongs on the ladder
+#     BLU99**  double asterisk -- "requires the 100 or 1,200 Blue Mage job
+#              gift": NOT reachable by setting spells, cut it
+#     (absent) the tier is some other job's entirely -- Auto Refresh II is
+#              SMN90 and nothing else, so blue magic stops at rung 1
+#
+# So: cut at the last tier carrying a SINGLE-asterisk BLU entry. The feeder
+# arithmetic is kept only as a cross-check -- the two agree on eight of the
+# twelve multi-rung ladders, and where they disagree the asterisk is right and
+# tighter (Clear Mind's twelve feeders pay for six rungs; blue magic gets four).
 #
 # The value is in the SAME UNIT as LSB's modifier for that category, which is
 # why the wiki's percentages are not always usable:
@@ -183,17 +199,17 @@ WIKI_LADDER = {
     1:  ("wiki",   [8, 10, 12]),
     2:  ("wiki",   [1]),
     3:  ("wiki",   [8, 10]),
-    4:  ("wiki",   [1, 2, 3, 4, 5, 6]),
+    4:  ("wiki",   [1, 2, 3, 4]),    # V/VI are BLU99** -- job gift, not spells
     5:  ("verify", [2, 4]),          # SLEEPRES is a rank, not the wiki's %
-    6:  ("wiki",   [20, 24, 28, 32, 36, 40]),
+    6:  ("wiki",   [20, 24, 28, 32]),      # V/VI are BLU99**
     7:  ("wiki",   [8]),
-    8:  ("wiki",   [10, 22, 35, 48, 60]),
+    8:  ("wiki",   [10, 22, 35, 48]),      # V/VI are BLU99**
     9:  ("verify", [10]),            # wiki quotes a proc RATE, LSB a bonus
     10: ("wiki",   [10, 20]),
     11: ("wiki",   [10, 22, 35, 48]),
     12: ("wiki",   [8]),
     13: ("wiki",   [10, 12, 14]),
-    14: ("wiki",   [1, 2]),
+    14: ("wiki",   [1]),             # tier II is SMN90 ALONE -- no BLU entry
     15: ("wiki",   [30, 60, 120, 180]),
     16: ("wiki",   [10, 22, 35, 48]),
     17: ("wiki",   [25, 28, 31]),
@@ -201,8 +217,9 @@ WIKI_LADDER = {
     19: ("verify", [2]),             # GRAVITYRES is a rank, not the wiki's %
     20: ("wiki",   [10, 15, 20]),
     21: ("wiki",   [10, 12]),
-    22: ("verify", [5, 15, 20]),     # BLU starts at the wiki's Tier 0 (5%);
-                                     # LSB's second rung (15) skips Tier I
+    22: ("wiki",   [5, 10, 15]),     # BLU starts at the wiki's Tier 0 (5%) and
+                                     # climbs 0/I/II; LSB's 15 on rung 2 had
+                                     # skipped Tier I. III+ are BLU99**
     23: ("wiki",   [8, 12, 16]),
     24: ("wiki",   [(15, 7), (16, 5)]),   # Double Attack -> Triple Attack
     25: ("wiki",   [10, 15, 25, 30]),

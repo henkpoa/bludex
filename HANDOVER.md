@@ -332,11 +332,32 @@ Skillchain Bonus, Mag. Burst Bonus and Gilfinder pay **6** per feeder, not
 LSB says 25; and Gilfinder→Treasure Hunter sits at 16, LSB's "3" having been
 a spell-COUNT hack.
 
-Ladders carrying `confidence = 'verify'` (Resist Sleep, Resist Gravity,
-Rapid Shot, Fast Cast) are the ones where the wiki quotes a unit LSB's
-modifier does not share — rung 1 keeps LSB's shipped value, anything above
-it wants a field reading. **Fast Cast is the one real open question**: BLU
-starts at the wiki's Tier 0 (5%) and LSB's second rung (15%) skips Tier I.
+**WHERE A LADDER STOPS** (Henrik, second pass same day — he caught Auto
+Refresh advertising a rung 2 that does not exist for us). The cut is NOT
+"however many rungs the feeders can pay for". It is the wiki's job-trait
+table, whose **Level Obtained** column names the jobs that hold each tier:
+
+| marker | meaning | verdict |
+| --- | --- | --- |
+| `BLU63*` | "requires the setting of appropriate spells" | on the ladder |
+| `BLU99**` | "requires the 100 or 1,200 Blue Mage job gift" | **cut** |
+| no BLU entry | the tier is another job's outright | **cut** |
+
+Cut at the last SINGLE-asterisk BLU tier. The feeder arithmetic stays only
+as a cross-check: the two agree on eight of the twelve multi-rung ladders,
+and where they disagree the asterisk is right and tighter. What that fixed:
+Auto Refresh 2→**1** rung (tier II is SMN90 alone), Clear Mind 6→**4**
+(twelve feeders pay for six; blue magic gets four), Magic Atk. Bonus 6→**4**,
+Attack Bonus 5→**4**.
+
+It also settled Fast Cast, which had been the one open question: BLU holds
+the wiki's **Tier 0** (5%), I (10%) and II (15%) — so LSB's 15 on rung 2 had
+been skipping Tier I, and the ladder is `5/10/15`, no longer `verify`.
+
+Ladders still carrying `confidence = 'verify'` (Resist Sleep, Resist Gravity,
+Rapid Shot) are the ones where the wiki quotes a unit LSB's modifier does not
+share — rung 1 keeps LSB's shipped value, anything above it wants a field
+reading. All three are single-rung or two-rung, so little rides on them.
 
 Category ids 201/202 replaced 29/30 in the same pass — base-LSB already uses
 `trait_category` 29 for a real spell (Foul Waters), so the internal ids had
