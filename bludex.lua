@@ -111,7 +111,7 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
         msg('/bludex apply <name> - apply a saved set (its plan for your current level).');
         msg('/bludex replan - apply the editing set\'s plan for your current level.');
         msg('/bludex reset - unset every spell.');
-        msg('/bludex refresh - re-request job data (wakes a stuck points read).');
+        msg('/bludex refresh - re-request job data (wakes a stuck blue-points read).');
         msg('/bludex delay <0.2-5> - seconds between set-spell packets.');
         msg('/bludex mode safe|fast - client-paced sends vs injected packets.');
         msg('/bludex debug - signature / points / live-set diagnostics.');
@@ -183,7 +183,7 @@ ashita.events.register('command', 'bdx_command_cb', function(e)
 
     if args[2]:any('refresh') then
         if blu.requestJobData() then
-            msg('Requested a job-data refresh from the server (packet 0x061) - the points header should fill within a second.');
+            msg('Requested a job-data refresh from the server (packet 0x061) - the blue-points header should fill within a second.');
         else
             msg('Could not send the refresh request.');
         end

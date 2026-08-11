@@ -240,10 +240,10 @@ function M.render(ctx)
                     local names = {};
                     for _, f in ipairs(hold.keep) do names[#names + 1] = f.name; end
                     local fate = nextTier
-                        and ('The other %d set points only count toward tier %d.')
+                        and ('The other %d blue points only count toward tier %d.')
                             :format(hold.saved, nextTier)
-                        or ('The other %d set points buy nothing at all.'):format(hold.saved);
-                    return ('\n\nTier %d costs %d Points, and %d set points hold it:\n%s.\n%s')
+                        or ('The other %d blue points buy nothing at all.'):format(hold.saved);
+                    return ('\n\nTier %d costs %d Points, and %d blue points hold it:\n%s.\n%s')
                         :format(hold.tier, hold.points, hold.cost,
                                 table.concat(names, ', '), fate);
                 end
@@ -281,7 +281,7 @@ function M.render(ctx)
                                 :format(weight - last.points, (ev and ev.setPoints) or 0));
                         kit.tip(im, ('Tier %d is the top of this ladder for blue magic,\n'
                             .. 'and it costs %d points. The %d above it buy nothing --\n'
-                            .. 'those spells are earning their set points elsewhere\n'
+                            .. 'those spells are earning their blue points elsewhere\n'
                             .. 'or not at all.%s'):format(
                             #info.tiers, last.points, weight - last.points,
                             holdLine(nil)));
@@ -367,9 +367,9 @@ function M.render(ctx)
                     -- the two numbers a trait row is picked on, each named:
                     -- what it feeds THIS ladder, and what it costs the SET
                     -- (Henrik 2026-08-10, fifth round: no more "weight" -- and
-                    -- 'pts' already means set points everywhere else)
+                    -- 'pts' already means BLUE points everywhere else)
                     local tw = s.trait.weight or 0;
-                    local label = ('%s  +%d Point%s / Set: %s pts  Lv.%s%s'):format(
+                    local label = ('%s  +%d Point%s / Set: %s blue pts  Lv.%s%s'):format(
                         s.name, tw, tw == 1 and '' or 's',
                         s.setPoints or '?', s.level or '?',
                         inSet and '  [in set]' or '');

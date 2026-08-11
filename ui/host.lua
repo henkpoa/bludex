@@ -674,11 +674,11 @@ local function renderBody(im, st, deps, embedded)
     -- the level you are planning at -- a sync, or simply not being 75 yet
     local synced = (ss ~= nil and ss.level < planLvl) and ss or nil;
     local liveMax = synced and deps.blu.budget() or nil;
-    kit.meter(im, '   Set:', deps.sets.usedPoints(st.editingSet, deps.book), max, ' pts',
+    kit.meter(im, '   Set:', deps.sets.usedPoints(st.editingSet, deps.book), max, ' blue pts',
         synced and synced.activePoints or nil, liveMax);
     kit.tip(im, (max ~= nil
-        and ('Points used by the set you are editing / the budget it is\nplanned against (Lv.%d).'):format(planLvl)
-        or 'Points used by the set you are editing.\nThe total appears when you are on BLU (or set budgetOverride).')
+        and ('Blue points used by the set you are editing / the budget it is\nplanned against (Lv.%d).'):format(planLvl)
+        or 'Blue points used by the set you are editing.\nThe total appears when you are on BLU (or set budgetOverride).')
         .. (synced and ('\n\nIn brackets: what the game holds RIGHT NOW at Lv.%d,\n'
             .. 'against the budget for that level.%s\n'
             .. 'The rest of the set is disabled by the game itself and\n'
@@ -726,8 +726,8 @@ local function renderBody(im, st, deps, embedded)
         -- found it sitting there. Almost always the level sync's leftover.
         -- Tell the player the two clicks that refresh it for good.
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        kit.ctext(im, kit.COL.warn, '   refresh points');
-        kit.tip(im, ('The game client still reports %s points; Bludex works your\n'
+        kit.ctext(im, kit.COL.warn, '   refresh blue points');
+        kit.tip(im, ('The game client still reports %s blue points; Bludex works your\n'
             .. 'total out as %s and is showing that.\n\n'
             .. 'To refresh the game\'s own number, open:\n'
             .. '    Magic  ->  Blue Magic  ->  Set\n'
@@ -882,8 +882,8 @@ local function renderBody(im, st, deps, embedded)
         -- leading pad on the text -- helpLabel underlines the ITEM, and
         -- spaces inside it drag the rule out past the words; SameLine's own
         -- spacing is the gap.
-        kit.helpLabel(im, 'Update Live Points?',
-            'To update your live points, open the blue mage set spells menu.',
+        kit.helpLabel(im, 'Update Live Blue Points?',
+            'To update your live blue points, open the blue mage set spells menu.',
             kit.COL.dim);
     end
 

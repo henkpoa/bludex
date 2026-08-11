@@ -148,8 +148,16 @@ kinds, amended in place through the rounds), `docs/timeline-sets-plan.md`
    **"Tier N: X/Y Points"** (Henrik 2026-08-10, fifth round — the word
    "weight" is retired from every user-facing string; `trait.weight` stays
    the data field name because the server calls it that). Feeder rows read
-   "+N Point(s) / Set: M pts" — the two numbers named apart, since bare
-   "pts" means SET points everywhere else in the addon.
+   "+N Point(s) / Set: M blue pts" — the two numbers named apart.
+   **THE TWO CURRENCIES, AND WHAT THEY ARE CALLED** (Henrik 2026-08-11):
+   bare **"Points"** is always TRAIT points — what a spell feeds a ladder and
+   what a rung costs. The set-cost budget is always **"blue points"** (or
+   "blue pts"), never "set points" and never bare "pts", because the two were
+   being confused in exactly the place it mattered: an over-fed ladder wastes
+   BOTH, and the line naming it has to say which is which. Renamed across
+   every user-facing string in `ui/`, `bludex.lua` and the dlac adapter; the
+   DATA field names (`setPoints`, `usedPoints`, `capMeritPoints`) are
+   untouched, since they are API, not prose.
    "(game says no)" only where the 0x0AC bit
    can know (job-sourced, or the editing set actually worn).
 2. **The level-change watcher** (`ui/host.lua`): the behavior belongs to the
@@ -501,7 +509,7 @@ the native Set Spells menu opens. See §7.
 | **THE SELECTION RULE** (`setmodel.groupPick`, Henrik 2026-08-06 from the field — "I walked out now, and I still have my level 31 set equipped"): the build for a level is that band's OWN build, else THE FLAT BUILD. A level build serves its band and **never fills forward**. Only exception: a set whose flat build is empty has no backup, so the nearest build below answers rather than nothing | Suite-proven, **field round owed**. |
 | **Copy** (`setmodel.copyInto` + the `Copy from:` row, empty level builds only): fills a band from the flat build or the nearest built band — lowest spell levels first, nothing above what the band casts, no more than its slots. **Points are deliberately allowed to overflow** (trimming is the player's judgement, and a copy that silently dropped spells would hide the choice). This is also how a flat set becomes a level one | Suite-proven, **field round owed**. |
 | **The level-change rule BELONGS TO THE SET** (Henrik 2026-08-07 — "Level Change should NOT be a setting for a Level Set, it should only be on a set"): `entry.rule` ∈ restore / switch / manual, picked from a combo under the Name box (each choice carries Henrik's own wording as its hover). Unset it is **derived** from the set's shape — `restore` while flat, `switch` once it has levels — so the default follows what you build and nothing is flipped behind your back; a stored pick stands. The **set last APPLIED** is the one whose rule runs (`cfg.lastAppliedSet`); the global `autoRestore`/`autoSwitch` keys are gone. **Lvl Set Switch = Restore behaviour on the normal set, UNLESS the band has its own build**, which is then equipped outright: `bandSwitch` acts only on a band that has one (silent when the live set already matches — a band change must not cost the 60s cast lock for nothing, and it suppresses the level-down report only when it will actually act), while `restoreNow` covers every other level move, adds-only, targeting the set's build for this band or its flat build. Fires 3s after the band moves (sync transitions bounce the structs). The dlac codec carries a picked rule as a `name<TAB>rule<TAB>key` line, written only when stored | Driven end-to-end against a stub client (`smoke: the level-change rule`), **field round owed — this is the one that sends packets on its own.** |
-| Header (all tabs): the band being edited (`Lv.71`), editing-build meters (`Set: x / max pts`, `Slots: n / that band's slots`), **Save / Apply / Revert** (green when they have work; slot-wise sorted-layout dirty compare), cast-lock countdown | Proven; the `Lv.` chip and the band-aware Slots max are new. |
+| Header (all tabs): the band being edited (`Lv.71`), editing-build meters (`Set: x / max blue pts`, `Slots: n / that band's slots`), **Save / Apply / Revert** (green when they have work; slot-wise sorted-layout dirty compare), cast-lock countdown | Proven; the `Lv.` chip and the band-aware Slots max are new. |
 | Apply engine (`lib/blu.lua`): **level-sorted slot layout** (slot 1 = lowest level; slot-wise diff, unsets first, adds ascend), skip-unlearned, full reset fallback, `/bludex reset` | Proven incl. the one-click re-sort of a patchwork set. Low-slot insertions shift the tail — inherent cost, documented in the commit. |
 | Auto-restore on level change ("Level change: Restore / Manual", default Manual): adds-only via identity `planDiff` (NO reshuffle mid-sync), honest stuck-count report | Built + suite-proven; **field pass still thin** (mechanism proven via the job watcher, a real level-sync round-trip not yet observed). |
 | Cast lock: every 0x102 restamps a 60s clock; header countdown + deferred-task chat line "Blue Magic is castable again." (fires window-closed too, generation-checked) | Countdown + announcement field-confirmed. **60s is retail-assumed — calibrate against CEXI once** (`M.castLock`, one number). |
