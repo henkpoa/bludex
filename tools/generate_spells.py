@@ -200,11 +200,11 @@ WIKI_LADDER = {
     2:  ("wiki",   [1]),
     3:  ("wiki",   [8, 10]),
     4:  ("wiki",   [1, 2, 3, 4]),    # V/VI are BLU99** -- job gift, not spells
-    5:  ("verify", [2, 4]),          # SLEEPRES is a rank, not the wiki's %
+    5:  ("wiki",   [10, 15]),        # III/IV are BLU99**
     6:  ("wiki",   [20, 24, 28, 32]),      # V/VI are BLU99**
     7:  ("wiki",   [8]),
     8:  ("wiki",   [10, 22, 35, 48]),      # V/VI are BLU99**
-    9:  ("verify", [10]),            # wiki quotes a proc RATE, LSB a bonus
+    9:  ("wiki",   [25]),            # II/III are BLU99**
     10: ("wiki",   [10, 20]),
     11: ("wiki",   [10, 22, 35, 48]),
     12: ("wiki",   [8]),
@@ -214,7 +214,7 @@ WIKI_LADDER = {
     16: ("wiki",   [10, 22, 35, 48]),
     17: ("wiki",   [25, 28, 31]),
     18: ("wiki",   [10, 22, 35]),
-    19: ("verify", [2]),             # GRAVITYRES is a rank, not the wiki's %
+    19: ("wiki",   [10]),            # II/III are BLU99**
     20: ("wiki",   [10, 15, 20]),
     21: ("wiki",   [10, 12]),
     22: ("wiki",   [5, 10, 15]),     # BLU starts at the wiki's Tier 0 (5%) and
@@ -393,6 +393,7 @@ def parse_blue_traits(modnames):
     modids = {}
     for mid, mname in modnames.items():
         modids.setdefault(mname, mid)
+    _MODNAMES_FOR_WARN.update(modnames)
 
     # the two categories LSB has no rows for at all
     for cat, tname, tid, stat in WIKI_TRAIT_CATEGORIES:
@@ -401,6 +402,21 @@ def parse_blue_traits(modnames):
             warn("modifier.h has no %s -- cat %d cannot be built" % (stat, cat))
             continue
         lsb[cat] = {WIKI_POINTS_PER_TIER: {"traitId": tid, "mods": [mid]}}
+
+    # THE CROSS-CHECK. A blue rung and a job rank of the SAME trait move the
+    # SAME modifier, so the blue rung's value must appear somewhere on that
+    # trait's job ladder -- and sql/traits.sql's job side is well-maintained
+    # where the blue side is not. This is what caught Resist Sleep sitting at
+    # SLEEPRES 2 when the real ladder is 10/15/20/25/30 (Henrik 2026-08-11).
+    # Exempt ladders carry their reason; everything else must reconcile.
+    XCHECK_EXEMPT = {
+        1:  "blue climbs to tier III (BLU99*); LSB's job table stops at BST's two ranks",
+        4:  "job Clear Mind grants MPHEAL (mod 71), the blue ladder CLEAR_MIND "
+            "(mod 295) -- different modifiers, so the values cannot compare",
+        22: "rung 1 is the wiki's Tier 0 (5%), which no job holds; rungs 2/3 do "
+            "match RDM's 10/15",
+        24: "rung 1 is the wiki's Tier 0 (7%), BLU-only; rung 2 is Triple Attack",
+    }
 
     out = {}
     for cat in sorted(lsb):
@@ -422,7 +438,43 @@ def parse_blue_traits(modnames):
                 "traitId": tid, "mods": [(m, value) for m in base["mods"]]}
         out[cat] = {"traitId": shape[0]["traitId"], "confidence": confidence,
                     "tiers": tiers}
+
+    jobvals = job_trait_values()
+    for cat, tinfo in sorted(out.items()):
+        if cat in XCHECK_EXEMPT:
+            continue
+        for pts in sorted(tinfo["tiers"]):
+            tier = tinfo["tiers"][pts]
+            for mod, val in tier["mods"]:
+                ladder = jobvals.get(tier["traitId"], {}).get(mod)
+                if ladder and val not in ladder:
+                    warn("cat %d @%dpts: %s %d is nowhere on trait %d's job "
+                         "ladder %s -- blue and job move the SAME modifier, so "
+                         "one of them is wrong (the job side is the reliable one)"
+                         % (cat, pts, modname_of(mod), val, tier["traitId"],
+                            sorted(ladder)))
     return out
+
+def job_trait_values():
+    """traitid -> mod -> {every value any job's rank grants}
+
+    The job side of sql/traits.sql, used only to cross-check the blue ladder.
+    Unlike blue_traits it is well-maintained and agrees with bg-wiki."""
+    out = {}
+    path = os.path.join(CLONE, "sql", "traits.sql")
+    for commented, v in sql_rows(path, "traits"):
+        if commented or len(v) < 7:
+            continue
+        try:
+            tid, mod, val = int(v[0]), int(v[5]), int(v[6])
+        except ValueError:
+            continue
+        out.setdefault(tid, {}).setdefault(mod, set()).add(val)
+    return out
+
+_MODNAMES_FOR_WARN = {}
+def modname_of(mod):
+    return _MODNAMES_FOR_WARN.get(mod, "mod %d" % mod)
 
 # ------------------------------------------------------- 6b. job traits (collisions)
 def parse_job_enum():
@@ -876,8 +928,10 @@ def main():
     T.append("-- 8 points and Triple Attack (16) at 16 -- and the id is what a job trait")
     T.append("-- suppresses. data/jobtraits.lua holds the other side of that collision.")
     T.append("--")
-    T.append("-- confidence = 'verify' means the rung VALUES still want a field reading:")
-    T.append("-- the wiki quotes them in a unit LSB's modifier does not share.")
+    T.append("-- confidence = 'verify' would mark rung values still wanting a field")
+    T.append("-- reading. NO ladder carries it: every rung value is either bg-wiki's or")
+    T.append("-- reconciles with the same trait's job ranks in sql/traits.sql, which the")
+    T.append("-- generator checks on every run (blue and job move the SAME modifier).")
     T.append("-- Categories 201/202 are bludex-internal (never on the wire): base-LSB has")
     T.append("-- no blue_traits rows for Magic Eva./Magic Acc. Bonus. They are NOT 29/30 --")
     T.append("-- LSB already uses trait_category 29 for a real spell (Foul Waters).")

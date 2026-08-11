@@ -354,10 +354,29 @@ It also settled Fast Cast, which had been the one open question: BLU holds
 the wiki's **Tier 0** (5%), I (10%) and II (15%) — so LSB's 15 on rung 2 had
 been skipping Tier I, and the ladder is `5/10/15`, no longer `verify`.
 
-Ladders still carrying `confidence = 'verify'` (Resist Sleep, Resist Gravity,
-Rapid Shot) are the ones where the wiki quotes a unit LSB's modifier does not
-share — rung 1 keeps LSB's shipped value, anything above it wants a field
-reading. All three are single-rung or two-rung, so little rides on them.
+**THE JOB-LADDER CROSS-CHECK** (third pass, same day — Henrik asked for the
+remaining `verify` ladders to be checked in game; they turned out not to need
+the game at all). A blue rung and a job rank of the **same trait** move the
+**same modifier**, and `sql/traits.sql`'s job side is well-maintained where
+`blue_traits` is not — it agrees with bg-wiki value for value. So a blue rung
+value that appears nowhere on that trait's job ladder is simply wrong:
+
+| ladder | mod | job ranks | blue had | now |
+| --- | --- | --- | --- | --- |
+| Resist Sleep | `SLEEPRES` 240 | 10/15/20/25/30 | **2** | 10/15 |
+| Resist Gravity | `GRAVITYRES` 249 | 10/15/20/25/30 | **2** | 10 |
+| Rapid Shot | `RAPID_SHOT` 359 | 25/30 | **10** | 25 |
+
+There was never a "unit mismatch" — the wiki's percentages ARE the modifier
+values. Those three were just wrong numbers, and the `verify` flag was
+mis-diagnosing them. **No ladder carries `confidence = 'verify'` any more.**
+
+The check now runs on **every generator run** (`XCHECK_EXEMPT` holds the four
+documented exceptions with reasons: Clear Mind's MPHEAL/CLEAR_MIND modifier
+divergence, Beast Killer climbing past BST's ranks, and the BLU-only Tier 0 on
+Fast Cast and Double Attack). It reconciles 19 ladders against an independent
+source, which is the strongest evidence the rebuild is right — and it fires
+correctly when a bad value is put back, which was tested rather than assumed.
 
 Category ids 201/202 replaced 29/30 in the same pass — base-LSB already uses
 `trait_category` 29 for a real spell (Foul Waters), so the internal ids had

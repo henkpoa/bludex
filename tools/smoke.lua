@@ -451,6 +451,25 @@ check(#book.traits.categories[14].tiers == 1,
 check(#book.traits.categories[4].tiers == 4,
     'and Clear Mind stops at IV, though its twelve feeders could pay for six');
 
+-- THE JOB-LADDER CROSS-CHECK (Henrik 2026-08-11, third pass). A blue rung and
+-- a job rank of the SAME trait move the SAME modifier, so a blue value that
+-- appears nowhere on that trait's job ladder is simply wrong. sql/traits.sql's
+-- job side is well-maintained where blue_traits is not, and it agrees with
+-- bg-wiki -- which is how these three were caught sitting on invented numbers.
+check(book.traits.categories[5].tiers[1].mods[1].value == 10
+    and book.traits.categories[5].tiers[2].mods[1].value == 15,
+    'Resist Sleep is 10/15 -- LSB had SLEEPRES 2, a number on no ladder anywhere');
+check(book.traits.categories[9].tiers[1].mods[1].value == 25,
+    'Rapid Shot is 25 -- LSB had 10, where the job ladder reads 25/30');
+check(book.traits.categories[19].tiers[1].mods[1].value == 10,
+    'Resist Gravity is 10 -- LSB had GRAVITYRES 2');
+local unverified = {};
+for cat, info in pairs(book.traits.categories) do
+    if info.confidence == 'verify' then unverified[#unverified + 1] = cat; end
+end
+check(#unverified == 0,
+    'and NO ladder is left guessing: every rung value reconciles with a source');
+
 -- the exact symptom: one spell must not out-weigh the rest of its own ladder
 local st = book.spells[719].trait.weight;      -- Searing Tempest, a lv99 spell
 local bd = book.spells[620].trait.weight;      -- Battle Dance, an era spell

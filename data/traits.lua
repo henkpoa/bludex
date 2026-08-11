@@ -15,8 +15,10 @@
 -- 8 points and Triple Attack (16) at 16 -- and the id is what a job trait
 -- suppresses. data/jobtraits.lua holds the other side of that collision.
 --
--- confidence = 'verify' means the rung VALUES still want a field reading:
--- the wiki quotes them in a unit LSB's modifier does not share.
+-- confidence = 'verify' would mark rung values still wanting a field
+-- reading. NO ladder carries it: every rung value is either bg-wiki's or
+-- reconciles with the same trait's job ranks in sql/traits.sql, which the
+-- generator checks on every run (blue and job move the SAME modifier).
 -- Categories 201/202 are bludex-internal (never on the wire): base-LSB has
 -- no blue_traits rows for Magic Eva./Magic Acc. Bonus. They are NOT 29/30 --
 -- LSB already uses trait_category 29 for a real spell (Foul Waters).
@@ -27,11 +29,11 @@ M.categories[1] = { name = 'Beast Killer', traitId = 32, tiers = { { points = 8,
 M.categories[2] = { name = 'Auto Regen', traitId = 9, tiers = { { points = 8, traitId = 9, mods = { { stat = 'REGEN', value = 1 } } } } }
 M.categories[3] = { name = 'Lizard Killer', traitId = 35, tiers = { { points = 8, traitId = 35, mods = { { stat = 'LIZARD_KILLER', value = 8 } } }, { points = 16, traitId = 35, mods = { { stat = 'LIZARD_KILLER', value = 10 } } } } }
 M.categories[4] = { name = 'Clear Mind', traitId = 24, tiers = { { points = 8, traitId = 24, mods = { { stat = 'CLEAR_MIND', value = 1 } } }, { points = 16, traitId = 24, mods = { { stat = 'CLEAR_MIND', value = 2 } } }, { points = 24, traitId = 24, mods = { { stat = 'CLEAR_MIND', value = 3 } } }, { points = 32, traitId = 24, mods = { { stat = 'CLEAR_MIND', value = 4 } } } } }
-M.categories[5] = { name = 'Resist Sleep', traitId = 48, confidence = 'verify', tiers = { { points = 8, traitId = 48, mods = { { stat = 'SLEEPRES', value = 2 } } }, { points = 16, traitId = 48, mods = { { stat = 'SLEEPRES', value = 4 } } } } }
+M.categories[5] = { name = 'Resist Sleep', traitId = 48, tiers = { { points = 8, traitId = 48, mods = { { stat = 'SLEEPRES', value = 10 } } }, { points = 16, traitId = 48, mods = { { stat = 'SLEEPRES', value = 15 } } } } }
 M.categories[6] = { name = 'Magic Atk. Bonus', traitId = 5, tiers = { { points = 8, traitId = 5, mods = { { stat = 'MATT', value = 20 } } }, { points = 16, traitId = 5, mods = { { stat = 'MATT', value = 24 } } }, { points = 24, traitId = 5, mods = { { stat = 'MATT', value = 28 } } }, { points = 32, traitId = 5, mods = { { stat = 'MATT', value = 32 } } } } }
 M.categories[7] = { name = 'Undead Killer', traitId = 39, tiers = { { points = 8, traitId = 39, mods = { { stat = 'UNDEAD_KILLER', value = 8 } } } } }
 M.categories[8] = { name = 'Attack Bonus', traitId = 3, tiers = { { points = 8, traitId = 3, mods = { { stat = 'ATT', value = 10 }, { stat = 'RATT', value = 10 } } }, { points = 16, traitId = 3, mods = { { stat = 'ATT', value = 22 }, { stat = 'RATT', value = 22 } } }, { points = 24, traitId = 3, mods = { { stat = 'ATT', value = 35 }, { stat = 'RATT', value = 35 } } }, { points = 32, traitId = 3, mods = { { stat = 'ATT', value = 48 }, { stat = 'RATT', value = 48 } } } } }
-M.categories[9] = { name = 'Rapid Shot', traitId = 11, confidence = 'verify', tiers = { { points = 8, traitId = 11, mods = { { stat = 'RAPID_SHOT', value = 10 } } } } }
+M.categories[9] = { name = 'Rapid Shot', traitId = 11, tiers = { { points = 8, traitId = 11, mods = { { stat = 'RAPID_SHOT', value = 25 } } } } }
 M.categories[10] = { name = 'Max Mp Boost', traitId = 8, tiers = { { points = 8, traitId = 8, mods = { { stat = 'MP', value = 10 } } }, { points = 16, traitId = 8, mods = { { stat = 'MP', value = 20 } } } } }
 M.categories[11] = { name = 'Defense Bonus', traitId = 4, tiers = { { points = 8, traitId = 4, mods = { { stat = 'DEF', value = 10 } } }, { points = 16, traitId = 4, mods = { { stat = 'DEF', value = 22 } } }, { points = 24, traitId = 4, mods = { { stat = 'DEF', value = 35 } } }, { points = 32, traitId = 4, mods = { { stat = 'DEF', value = 48 } } } } }
 M.categories[12] = { name = 'Plantoid Killer', traitId = 33, tiers = { { points = 8, traitId = 33, mods = { { stat = 'PLANTOID_KILLER', value = 8 } } } } }
@@ -41,7 +43,7 @@ M.categories[15] = { name = 'Max Hp Boost', traitId = 7, tiers = { { points = 8,
 M.categories[16] = { name = 'Accuracy Bonus', traitId = 1, tiers = { { points = 8, traitId = 1, mods = { { stat = 'ACC', value = 10 }, { stat = 'RACC', value = 10 } } }, { points = 16, traitId = 1, mods = { { stat = 'ACC', value = 22 }, { stat = 'RACC', value = 22 } } }, { points = 24, traitId = 1, mods = { { stat = 'ACC', value = 35 }, { stat = 'RACC', value = 35 } } }, { points = 32, traitId = 1, mods = { { stat = 'ACC', value = 48 }, { stat = 'RACC', value = 48 } } } } }
 M.categories[17] = { name = 'Conserve Mp', traitId = 13, tiers = { { points = 8, traitId = 13, mods = { { stat = 'CONSERVE_MP', value = 25 } } }, { points = 16, traitId = 13, mods = { { stat = 'CONSERVE_MP', value = 28 } } }, { points = 24, traitId = 13, mods = { { stat = 'CONSERVE_MP', value = 31 } } } } }
 M.categories[18] = { name = 'Evasion Bonus', traitId = 2, tiers = { { points = 8, traitId = 2, mods = { { stat = 'EVA', value = 10 } } }, { points = 16, traitId = 2, mods = { { stat = 'EVA', value = 22 } } }, { points = 24, traitId = 2, mods = { { stat = 'EVA', value = 35 } } } } }
-M.categories[19] = { name = 'Resist Gravity', traitId = 58, confidence = 'verify', tiers = { { points = 8, traitId = 58, mods = { { stat = 'GRAVITYRES', value = 2 } } } } }
+M.categories[19] = { name = 'Resist Gravity', traitId = 58, tiers = { { points = 8, traitId = 58, mods = { { stat = 'GRAVITYRES', value = 10 } } } } }
 M.categories[20] = { name = 'Store Tp', traitId = 14, tiers = { { points = 8, traitId = 14, mods = { { stat = 'STORETP', value = 10 } } }, { points = 16, traitId = 14, mods = { { stat = 'STORETP', value = 15 } } }, { points = 24, traitId = 14, mods = { { stat = 'STORETP', value = 20 } } } } }
 M.categories[21] = { name = 'Counter', traitId = 17, tiers = { { points = 8, traitId = 17, mods = { { stat = 'COUNTER', value = 10 } } }, { points = 16, traitId = 17, mods = { { stat = 'COUNTER', value = 12 } } } } }
 M.categories[22] = { name = 'Fast Cast', traitId = 12, tiers = { { points = 8, traitId = 12, mods = { { stat = 'FASTCAST', value = 5 } } }, { points = 16, traitId = 12, mods = { { stat = 'FASTCAST', value = 10 } } }, { points = 24, traitId = 12, mods = { { stat = 'FASTCAST', value = 15 } } } } }
