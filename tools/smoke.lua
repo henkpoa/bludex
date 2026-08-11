@@ -1848,6 +1848,43 @@ check(#drew > 20, 'it renders without the job side too');
 check(table.concat(drew, '\n'):find('blocked', 1, true) == nil,
     'and blocks nothing it cannot know about');
 
+-- MAXED, AND STILL BEING FED (Henrik's Auto Refresh reading, 2026-08-11:
+-- "if I equip everything I only get 1 MP / tick refresh"). Every feeder set
+-- is 19 trait points against a rung that costs 8. The tab has to say so --
+-- and could not, while the ladder still claimed a rung blue magic never gets.
+-- (scoped: the main chunk is near Lua's 200-local ceiling)
+do
+    local AR = 14;
+    local arSet = sets.new('AR smoke', 'levels');
+    local fed = 0;
+    for _, id in ipairs(book.filter({ traitCat = AR })) do
+        if sets.add(arSet, id, book, 999) then
+            fed = fed + (book.spells[id].trait.weight or 0);
+        end
+    end
+    local arTop = book.traits.categories[AR].tiers[#book.traits.categories[AR].tiers];
+    check(fed > arTop.points,
+        ('the fixture over-feeds Auto Refresh: %d points into a %d point rung')
+            :format(fed, arTop.points));
+    drew = {};
+    traitsui.render({
+        im = stubIm, book = book, sets = sets,
+        blu = { onBlu = function() return true; end },
+        cfg = { traitsDensity = 'normal' },
+        state = { editingSet = arSet, openCat = { [AR] = true }, detailOpen = { false } },
+        tsrc = tsrc, jobTraits = {},
+        verdict = function(c, w) return tsrc.verdict(c, w, book, {}, nil); end,
+        budgetMax = function() return 79; end,
+    });
+    local arScreen = table.concat(drew, '\n');
+    check(arScreen:match('Maxed %- %d+ Points spare') ~= nil,
+        'a maxed ladder names the points spent past its top rung');
+    check(arScreen:find('Tier 2:', 1, true) == nil,
+        'and never prices a tier 2 that blue magic does not get');
+    check(arScreen:find('weight', 1, true) == nil,
+        'the new line keeps the no-"weight" grammar');
+end
+
 print('smoke: the level-change rule (the levels kind\'s watcher)');
 -- The one rule that sends packets on its own, so it is driven end to end
 -- here with a stub client. What it must get right: fire only when the level

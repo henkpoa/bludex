@@ -364,6 +364,15 @@ been skipping Tier I, and the ladder is `5/10/15`, no longer `verify`.
   that costs 8). The asterisk cut is confirmed from the other direction: 11
   surplus trait points produced no second rung.
 
+That second reading exposed a hole in the Traits tab: the "road above" only
+priced a NEXT tier, so a **maxed** ladder said nothing at all while the set
+poured points into it. It now appends `Maxed - N Points spare`. The waste was
+invisible before only because the ladder used to claim a rung above the one
+blue magic gets — correcting the cut is what made it nameable. Auto Refresh
+at 75 is the worst case: 27 set points fed in, 9 would hold the rung.
+(A follow-up that NAMES the cheapest holding subset was offered and declined
+for now — "just name the surplus". The subset-sum is the owed part.)
+
 **THE JOB-LADDER CROSS-CHECK** (third pass, same day — Henrik asked for the
 remaining `verify` ladders to be checked in game; they turned out not to need
 the game at all). A blue rung and a job rank of the **same trait** move the

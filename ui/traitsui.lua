@@ -237,6 +237,23 @@ function M.render(ctx)
                             .. '-- %d more from here.%s'):format(
                             nxtTier, nxt.points, nxt.points - weight, jobNote));
                     end
+                    -- MAXED, AND STILL BEING FED (Henrik 2026-08-11, from the
+                    -- field: "if I equip everything I only get 1 MP / tick
+                    -- refresh"). The last rung is the last -- points past it
+                    -- buy nothing at all. This waste was invisible until the
+                    -- rung counts were cut to what blue magic can actually
+                    -- reach, because the ladder used to claim a rung above.
+                    local last = info.tiers[#info.tiers];
+                    if last ~= nil and weight > last.points then
+                        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+                        kit.ctext(im, kit.COL.warn, ('  Maxed - %d Points spare'):format(
+                            weight - last.points));
+                        kit.tip(im, ('Tier %d is the top of this ladder for blue magic,\n'
+                            .. 'and it costs %d points. The %d above it buy nothing --\n'
+                            .. 'those spells are earning their set points elsewhere\n'
+                            .. 'or not at all.'):format(
+                            #info.tiers, last.points, weight - last.points));
+                    end
                 end
             elseif weight > 0 then
                 -- price the first tier too (fourth round: "add the tier
