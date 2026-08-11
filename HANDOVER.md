@@ -354,6 +354,16 @@ It also settled Fast Cast, which had been the one open question: BLU holds
 the wiki's **Tier 0** (5%), I (10%) and II (15%) — so LSB's 15 on rung 2 had
 been skipping Tier I, and the ladder is `5/10/15`, no longer `verify`.
 
+**FIELD-CONFIRMED** (Henrik, 2026-08-11, both predictions, in game):
+
+* *"I get more attack yes"* — Attack Bonus really is a multi-rung ladder that
+  climbs as spells are added. This is the whole reason for the rebuild and it
+  is now witnessed, not inferred.
+* *"if I equip everything I only get 1 MP / tick refresh"* — Auto Refresh
+  stops at one rung with **every** feeder set (19 trait points against a rung
+  that costs 8). The asterisk cut is confirmed from the other direction: 11
+  surplus trait points produced no second rung.
+
 **THE JOB-LADDER CROSS-CHECK** (third pass, same day — Henrik asked for the
 remaining `verify` ladders to be checked in game; they turned out not to need
 the game at all). A blue rung and a job rank of the **same trait** move the

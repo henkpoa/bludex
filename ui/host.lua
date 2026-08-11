@@ -772,13 +772,19 @@ local function renderBody(im, st, deps, embedded)
                 tostring(deps.blu.capLevel())));
         end
     end
-    if deps.blu.onBlu() and (deps.blu.points()) == nil then
-        if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        kit.ctext(im, kit.COL.dim, '   (live points: reading...)');
-        kit.tip(im, 'The client has not filled the points struct yet.\n'
-            .. 'Bludex is requesting the data from the server (the same\n'
-            .. '0x061 ask the native menus send). If it stays stuck:\n'
-            .. '/bludex refresh re-asks, /bludex debug shows details.');
+    -- THE LIVE POINTS NOTE SITS AFTER THE BUTTONS (Henrik 2026-08-12: "those
+    -- buttons are more important than that message"). Only the per-frame WORK
+    -- happens here -- the nudge, which is logic and not drawing; the label
+    -- itself is drawn right of Revert, below.
+    --
+    -- It also stopped claiming to be reading. nudgePoints gives up after three
+    -- tries and only re-arms on a successful read, so 'reading...' went on
+    -- saying it for the rest of the session while nothing was being asked --
+    -- and on this server the struct can sit at zero all session anyway (the
+    -- 0x061 ask does not always wake it). The label now names the one thing
+    -- that does fill it, which is what /bludex debug already said.
+    local livePointsCold = deps.blu.onBlu() and (deps.blu.points()) == nil;
+    if livePointsCold then
         deps.blu.nudgePoints();
     elseif not deps.blu.onBlu() then
         if kit.isFn(im, 'SameLine') then im.SameLine(); end
@@ -827,6 +833,16 @@ local function renderBody(im, st, deps, embedded)
     end
     kit.tip(im, unsaved and 'Discard the unsaved changes - back to the saved set.'
         or 'No unsaved changes to revert.');
+
+    -- ...and here, right of Revert, the live-points note (see above). An
+    -- underlined helpLabel rather than a sentence: the panel-text standard is
+    -- that the label is short and the explanation lives in the hover.
+    if livePointsCold then
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        kit.helpLabel(im, 'Update Live Points?',
+            'To update your live points, open the blue mage set spells menu.',
+            kit.COL.dim);
+    end
 
     -- the over-budget badge (plan 2.6): an ENFORCED band violation shows
     -- wherever the eye is, and Apply is blocked while it stands. Save is
