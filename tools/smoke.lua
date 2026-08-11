@@ -1889,9 +1889,9 @@ do
     -- COST -- what a trim gives back. The 27 the ladder holds is context and
     -- lives in the tooltip. (Henrik 2026-08-11: "now you just summarize all
     -- the points used, not the overspent points.")
-    check(arScreen:match('11 trait points overspent from 18 blue points spent%.') ~= nil,
+    check(arScreen:match('11 trait points over cap, from overspending 18 blue points%.') ~= nil,
         'a maxed ladder names the WASTE in both currencies, not the total');
-    check(arScreen:find('27 blue points spent', 1, true) == nil,
+    check(arScreen:find('overspending 27', 1, true) == nil,
         'and never passes the total off as the overspend');
     check(arScreen:find('holding 27 blue points in total', 1, true) ~= nil,
         'the total is context, and it lives in the tooltip');

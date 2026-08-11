@@ -284,9 +284,9 @@ function M.render(ctx)
                         -- clause is dropped rather than printed as a zero.
                         local over = weight - last.points;
                         kit.ctext(im, kit.COL.warn, hold ~= nil
-                            and ('  %d trait points overspent from %d blue points spent.')
+                            and ('  %d trait points over cap, from overspending %d blue points.')
                                 :format(over, hold.saved)
-                            or ('  %d trait points overspent.'):format(over));
+                            or ('  %d trait points over cap.'):format(over));
                         kit.tip(im, ('Tier %d is the top of this ladder for blue magic,\n'
                             .. 'and it costs %d Points. The %d above it buy nothing --\n'
                             .. 'the spells feeding them are earning their keep as\n'

@@ -374,18 +374,21 @@ been skipping Tier I, and the ladder is `5/10/15`, no longer `verify`.
 
 That second reading exposed a hole in the Traits tab: the "road above" only
 priced a NEXT tier, so a **maxed** ladder said nothing at all while the set
-poured points into it. It now appends, in Henrik's own wording, `N trait
-points overspent from M blue points spent.` — the overspend named in BOTH
-currencies, because trait points alone say a ladder is over-fed but not what
-that cost.
+poured points into it. It now appends, in Henrik's own wording after reading
+it live: `N trait points over cap, from overspending M blue points.` — the
+waste named in BOTH currencies, because trait points alone say a ladder is
+over-fed but not what that cost. Two earlier attempts are worth keeping as
+the reason this sentence reads the way it does: `Maxed - N Points spare` never
+said what it cost, and `N trait points overspent from M blue points spent`
+put the ladder's TOTAL where the waste belonged. "over cap" says why the
+points are lost; "from overspending" makes the blue number plainly the waste.
 
-**BOTH FIGURES ARE THE WASTE, NEVER THE TOTAL** (Henrik, correcting a first
-attempt that read the total: *"now you just summarize all the points used,
-not the overspent points"*). Auto Refresh at 75 reads **11 trait points
-overspent from 18 blue points spent** — 19 fed into an 8-point rung is 11
-wasted, and `cheapestHold` prices those 11 at 18 blue points, which is exactly
-what a trim gives back. The 27 the ladder holds is context and lives in the
-tooltip. `traitEval` grew a `setPoints` field per ladder to carry that total.
+**BOTH FIGURES ARE THE WASTE, NEVER THE TOTAL** (Henrik, correcting that
+middle version: *"now you just summarize all the points used, not the
+overspent points"*). Auto Refresh at 75 reads **11 trait points over cap,
+from overspending 18 blue points** — 19 fed into an 8-point rung is 11 over,
+and `cheapestHold` prices those 11 at 18 blue points, which is exactly what a
+trim gives back. The 27 the ladder holds is context and lives in the tooltip. `traitEval` grew a `setPoints` field per ladder to carry that total.
 A ladder can be over-fed and still be its own cheapest hold (one big feeder
 overshooting a small rung); nothing is recoverable then, so the blue clause is
 dropped rather than printed as a zero. The waste was
