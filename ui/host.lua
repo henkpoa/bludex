@@ -834,16 +834,6 @@ local function renderBody(im, st, deps, embedded)
     kit.tip(im, unsaved and 'Discard the unsaved changes - back to the saved set.'
         or 'No unsaved changes to revert.');
 
-    -- ...and here, right of Revert, the live-points note (see above). An
-    -- underlined helpLabel rather than a sentence: the panel-text standard is
-    -- that the label is short and the explanation lives in the hover.
-    if livePointsCold then
-        if kit.isFn(im, 'SameLine') then im.SameLine(); end
-        kit.helpLabel(im, 'Update Live Points?',
-            'To update your live points, open the blue mage set spells menu.',
-            kit.COL.dim);
-    end
-
     -- the over-budget badge (plan 2.6): an ENFORCED band violation shows
     -- wherever the eye is, and Apply is blocked while it stands. Save is
     -- never blocked -- the badge, not a lost edit, is the protection.
@@ -874,6 +864,23 @@ local function renderBody(im, st, deps, embedded)
         kit.ctext(im, kit.COL.warn, ('   castable in %ds'):format(lockRem));
         kit.tip(im, 'Changing set spells locks Blue Magic casting for about a\n'
             .. 'minute. The countdown runs from the last set change Bludex sent.');
+    end
+
+    -- LAST ON THE ROW, after every badge: the live-points note (the nudge that
+    -- goes with it runs above, where the condition is read). It sits at the end
+    -- because everything between it and Revert is louder than it is -- an
+    -- enforced over-budget, a changed plan, the cast lock -- and a standing
+    -- hint must not push a warning further from the button it is about.
+    -- An underlined helpLabel rather than a sentence: the panel-text standard
+    -- is a short label with the explanation in the hover.
+    if livePointsCold then
+        if kit.isFn(im, 'SameLine') then im.SameLine(); end
+        -- no leading pad on the text: helpLabel underlines the ITEM, and
+        -- spaces inside it drag the rule out past the words. SameLine's own
+        -- spacing is the gap.
+        kit.helpLabel(im, 'Update Live Points?',
+            'To update your live points, open the blue mage set spells menu.',
+            kit.COL.dim);
     end
 
     -- tab row
